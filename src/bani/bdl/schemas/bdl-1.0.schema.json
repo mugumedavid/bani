@@ -1,0 +1,198 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "BDL 1.0 Schema",
+  "description": "Bani Definition Language 1.0 JSON Schema",
+  "type": "object",
+  "required": ["schemaVersion", "project"],
+  "properties": {
+    "schemaVersion": {
+      "type": "string",
+      "enum": ["1.0"]
+    },
+    "project": {
+      "type": "object",
+      "required": ["name"],
+      "properties": {
+        "name": { "type": "string" },
+        "description": { "type": "string" },
+        "author": { "type": "string" },
+        "created": { "type": "string", "format": "date-time" },
+        "tags": {
+          "type": "array",
+          "items": { "type": "string" }
+        }
+      }
+    },
+    "source": {
+      "type": "object",
+      "required": ["connector", "connection"],
+      "properties": {
+        "connector": { "type": "string" },
+        "connection": {
+          "type": "object",
+          "required": ["host", "port", "database"],
+          "properties": {
+            "host": { "type": "string" },
+            "port": { "type": "integer" },
+            "database": { "type": "string" },
+            "username": { "type": "string" },
+            "password": { "type": "string" },
+            "encrypt": { "type": "boolean" },
+            "sslMode": { "type": "string" }
+          }
+        },
+        "connectorConfig": {
+          "type": "object",
+          "properties": {
+            "option": {
+              "type": "array",
+              "items": {
+                "type": "object",
+                "required": ["name", "value"],
+                "properties": {
+                  "name": { "type": "string" },
+                  "value": { "type": "string" }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "target": {
+      "type": "object",
+      "required": ["connector", "connection"],
+      "properties": {
+        "connector": { "type": "string" },
+        "connection": {
+          "type": "object",
+          "required": ["host", "port", "database"],
+          "properties": {
+            "host": { "type": "string" },
+            "port": { "type": "integer" },
+            "database": { "type": "string" },
+            "username": { "type": "string" },
+            "password": { "type": "string" },
+            "encrypt": { "type": "boolean" },
+            "sslMode": { "type": "string" }
+          }
+        },
+        "connectorConfig": {
+          "type": "object",
+          "properties": {
+            "option": {
+              "type": "array",
+              "items": {
+                "type": "object",
+                "required": ["name", "value"],
+                "properties": {
+                  "name": { "type": "string" },
+                  "value": { "type": "string" }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "options": {
+      "type": "object",
+      "properties": {
+        "batchSize": { "type": "integer" },
+        "parallelWorkers": { "type": "integer" },
+        "memoryLimitMB": { "type": "integer" },
+        "onError": { "type": "string", "enum": ["log-and-continue", "fail-fast"] },
+        "createTargetSchema": { "type": "boolean" },
+        "dropTargetTablesFirst": { "type": "boolean" },
+        "transferIndexes": { "type": "boolean" },
+        "transferForeignKeys": { "type": "boolean" },
+        "transferDefaults": { "type": "boolean" },
+        "transferCheckConstraints": { "type": "boolean" }
+      }
+    },
+    "typeMappings": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["source", "target"],
+        "properties": {
+          "source": { "type": "string" },
+          "target": { "type": "string" }
+        }
+      }
+    },
+    "tables": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["sourceName"],
+        "properties": {
+          "sourceSchema": { "type": "string" },
+          "sourceName": { "type": "string" },
+          "targetName": { "type": "string" },
+          "targetSchema": { "type": "string" },
+          "columnMappings": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "required": ["source", "target"],
+              "properties": {
+                "source": { "type": "string" },
+                "target": { "type": "string" },
+                "targetType": { "type": "string" }
+              }
+            }
+          },
+          "filter": { "type": "string" }
+        }
+      }
+    },
+    "hooks": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["event", "command"],
+        "properties": {
+          "name": { "type": "string" },
+          "event": { "type": "string" },
+          "command": { "type": "string" },
+          "timeout": { "type": "integer" },
+          "onFailure": { "type": "string" }
+        }
+      }
+    },
+    "schedule": {
+      "type": "object",
+      "properties": {
+        "enabled": { "type": "boolean" },
+        "cron": { "type": "string" },
+        "timezone": { "type": "string" },
+        "retryOnFailure": {
+          "type": "object",
+          "properties": {
+            "maxRetries": { "type": "integer" },
+            "delaySeconds": { "type": "integer" }
+          }
+        }
+      }
+    },
+    "sync": {
+      "type": "object",
+      "properties": {
+        "enabled": { "type": "boolean" },
+        "strategy": { "type": "string", "enum": ["full", "timestamp", "rowversion", "checksum"] },
+        "trackingColumns": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": ["table", "column"],
+            "properties": {
+              "table": { "type": "string" },
+              "column": { "type": "string" }
+            }
+          }
+        }
+      }
+    }
+  }
+}

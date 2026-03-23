@@ -1,0 +1,118 @@
+{
+  "schemaVersion": "1.0",
+  "project": {
+    "name": "legacy-to-postgres",
+    "description": "Nightly migration from MSSQL ERP to PostgreSQL analytics",
+    "author": "ops-team",
+    "created": "2026-03-19T10:00:00Z",
+    "tags": ["erp", "nightly"]
+  },
+  "source": {
+    "connector": "mssql",
+    "connection": {
+      "host": "erp-db.internal",
+      "port": 1433,
+      "database": "ERP_Production",
+      "username": "${env:MSSQL_USER}",
+      "password": "${env:MSSQL_PASS}",
+      "encrypt": true
+    },
+    "connectorConfig": {
+      "option": [
+        { "name": "applicationIntent", "value": "ReadOnly" },
+        { "name": "commandTimeout", "value": "300" }
+      ]
+    }
+  },
+  "target": {
+    "connector": "postgresql",
+    "connection": {
+      "host": "analytics-pg.internal",
+      "port": 5432,
+      "database": "analytics",
+      "username": "${env:PG_USER}",
+      "password": "${env:PG_PASS}",
+      "sslMode": "require"
+    },
+    "connectorConfig": {
+      "option": [
+        { "name": "targetSchema", "value": "erp_mirror" }
+      ]
+    }
+  },
+  "options": {
+    "batchSize": 100000,
+    "parallelWorkers": 4,
+    "memoryLimitMB": 2048,
+    "onError": "log-and-continue",
+    "createTargetSchema": true,
+    "dropTargetTablesFirst": false,
+    "transferIndexes": true,
+    "transferForeignKeys": true,
+    "transferDefaults": true,
+    "transferCheckConstraints": true
+  },
+  "typeMappings": [
+    { "source": "NVARCHAR(MAX)", "target": "TEXT" },
+    { "source": "DATETIME2", "target": "TIMESTAMP WITH TIME ZONE" },
+    { "source": "MONEY", "target": "NUMERIC(19,4)" },
+    { "source": "BIT", "target": "BOOLEAN" }
+  ],
+  "tables": [
+    {
+      "sourceSchema": "dbo",
+      "sourceName": "Customers",
+      "targetName": "customers",
+      "columnMappings": [
+        { "source": "CustID", "target": "customer_id" },
+        { "source": "CustName", "target": "customer_name" },
+        { "source": "IsActive", "target": "is_active", "targetType": "BOOLEAN" }
+      ]
+    },
+    {
+      "sourceSchema": "dbo",
+      "sourceName": "Orders",
+      "targetName": "orders",
+      "filter": "WHERE OrderDate >= '2024-01-01'"
+    },
+    {
+      "sourceSchema": "dbo",
+      "sourceName": "OrderItems",
+      "targetName": "order_items"
+    },
+    {
+      "sourceSchema": "dbo",
+      "sourceName": "Products",
+      "targetName": "products"
+    }
+  ],
+  "hooks": [
+    {
+      "event": "before-migration",
+      "command": "CREATE SCHEMA IF NOT EXISTS erp_mirror;",
+      "timeout": 300
+    },
+    {
+      "event": "after-migration",
+      "command": "notify-ops --channel=#data-eng --message=\"ERP mirror refresh complete\"",
+      "timeout": 300
+    }
+  ],
+  "schedule": {
+    "enabled": true,
+    "cron": "0 2 * * *",
+    "timezone": "Africa/Nairobi",
+    "retryOnFailure": {
+      "maxRetries": 3,
+      "delaySeconds": 300
+    }
+  },
+  "sync": {
+    "enabled": false,
+    "strategy": "timestamp",
+    "trackingColumns": [
+      { "table": "Orders", "column": "ModifiedAt" },
+      { "table": "Customers", "column": "UpdatedAt" }
+    ]
+  }
+}

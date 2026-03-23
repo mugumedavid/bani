@@ -1,0 +1,30 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<bani schemaVersion="1.0">
+  <project name="multi-table-migration" description="Test with multiple tables and options" author="test" />
+  <source connector="mssql">
+    <connection host="localhost" port="1433" database="source" username="${env:SRC_USER}" password="${env:SRC_PASS}" />
+  </source>
+  <target connector="postgresql">
+    <connection host="localhost" port="5432" database="target" username="${env:TGT_USER}" password="${env:TGT_PASS}" />
+  </target>
+  <options>
+    <batchSize>50000</batchSize>
+    <parallelWorkers>8</parallelWorkers>
+    <onError>fail-fast</onError>
+    <transferIndexes>true</transferIndexes>
+  </options>
+  <tables>
+    <table sourceSchema="dbo" sourceName="Table1" targetName="table1">
+      <columnMappings>
+        <column source="ID" target="id" />
+        <column source="Name" target="name" />
+      </columnMappings>
+    </table>
+    <table sourceSchema="dbo" sourceName="Table2" targetName="table2">
+      <filter>WHERE status = 'active'</filter>
+    </table>
+    <table sourceSchema="dbo" sourceName="Table3" targetName="table3" />
+    <table sourceSchema="dbo" sourceName="Table4" targetName="table4" />
+    <table sourceSchema="dbo" sourceName="Table5" targetName="table5" />
+  </tables>
+</bani>

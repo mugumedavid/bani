@@ -1,0 +1,176 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<xs:schema xmlns:xs="http://www.w3.org/2001/XMLSchema"
+           elementFormDefault="qualified">
+
+  <!-- Root element -->
+  <xs:element name="bani">
+    <xs:complexType>
+      <xs:sequence>
+        <xs:element name="project" minOccurs="1" maxOccurs="1">
+          <xs:complexType>
+            <xs:sequence>
+              <xs:element name="tags" minOccurs="0" maxOccurs="1">
+                <xs:complexType>
+                  <xs:sequence>
+                    <xs:element name="tag" type="xs:string" minOccurs="0" maxOccurs="unbounded"/>
+                  </xs:sequence>
+                </xs:complexType>
+              </xs:element>
+            </xs:sequence>
+            <xs:attribute name="name" type="xs:string" use="required"/>
+            <xs:attribute name="description" type="xs:string"/>
+            <xs:attribute name="author" type="xs:string"/>
+            <xs:attribute name="created" type="xs:string"/>
+          </xs:complexType>
+        </xs:element>
+        <xs:element name="source" minOccurs="0" maxOccurs="1">
+          <xs:complexType>
+            <xs:sequence>
+              <xs:element name="connection">
+                <xs:complexType>
+                  <xs:attribute name="host" type="xs:string" use="required"/>
+                  <xs:attribute name="port" type="xs:int" use="required"/>
+                  <xs:attribute name="database" type="xs:string" use="required"/>
+                  <xs:anyAttribute processContents="skip"/>
+                </xs:complexType>
+              </xs:element>
+              <xs:element name="connectorConfig" minOccurs="0">
+                <xs:complexType>
+                  <xs:sequence>
+                    <xs:element name="option" minOccurs="0" maxOccurs="unbounded">
+                      <xs:complexType>
+                        <xs:attribute name="name" type="xs:string" use="required"/>
+                        <xs:attribute name="value" type="xs:string" use="required"/>
+                      </xs:complexType>
+                    </xs:element>
+                  </xs:sequence>
+                </xs:complexType>
+              </xs:element>
+            </xs:sequence>
+            <xs:attribute name="connector" type="xs:string" use="required"/>
+          </xs:complexType>
+        </xs:element>
+        <xs:element name="target" minOccurs="0" maxOccurs="1">
+          <xs:complexType>
+            <xs:sequence>
+              <xs:element name="connection">
+                <xs:complexType>
+                  <xs:attribute name="host" type="xs:string" use="required"/>
+                  <xs:attribute name="port" type="xs:int" use="required"/>
+                  <xs:attribute name="database" type="xs:string" use="required"/>
+                  <xs:anyAttribute processContents="skip"/>
+                </xs:complexType>
+              </xs:element>
+              <xs:element name="connectorConfig" minOccurs="0">
+                <xs:complexType>
+                  <xs:sequence>
+                    <xs:element name="option" minOccurs="0" maxOccurs="unbounded">
+                      <xs:complexType>
+                        <xs:attribute name="name" type="xs:string" use="required"/>
+                        <xs:attribute name="value" type="xs:string" use="required"/>
+                      </xs:complexType>
+                    </xs:element>
+                  </xs:sequence>
+                </xs:complexType>
+              </xs:element>
+            </xs:sequence>
+            <xs:attribute name="connector" type="xs:string" use="required"/>
+          </xs:complexType>
+        </xs:element>
+        <xs:element name="options" minOccurs="0" maxOccurs="1">
+          <xs:complexType>
+            <xs:sequence>
+              <xs:any minOccurs="0" maxOccurs="unbounded" processContents="skip"/>
+            </xs:sequence>
+          </xs:complexType>
+        </xs:element>
+        <xs:element name="typeMappings" minOccurs="0" maxOccurs="1">
+          <xs:complexType>
+            <xs:sequence>
+              <xs:element name="mapping" minOccurs="0" maxOccurs="unbounded">
+                <xs:complexType>
+                  <xs:attribute name="source" type="xs:string" use="required"/>
+                  <xs:attribute name="target" type="xs:string" use="required"/>
+                </xs:complexType>
+              </xs:element>
+            </xs:sequence>
+          </xs:complexType>
+        </xs:element>
+        <xs:element name="tables" minOccurs="0" maxOccurs="1">
+          <xs:complexType>
+            <xs:sequence>
+              <xs:element name="table" minOccurs="0" maxOccurs="unbounded">
+                <xs:complexType>
+                  <xs:sequence>
+                    <xs:element name="columnMappings" minOccurs="0">
+                      <xs:complexType>
+                        <xs:sequence>
+                          <xs:element name="column" minOccurs="0" maxOccurs="unbounded">
+                            <xs:complexType>
+                              <xs:attribute name="source" type="xs:string" use="required"/>
+                              <xs:attribute name="target" type="xs:string" use="required"/>
+                              <xs:attribute name="targetType" type="xs:string"/>
+                            </xs:complexType>
+                          </xs:element>
+                        </xs:sequence>
+                      </xs:complexType>
+                    </xs:element>
+                    <xs:element name="filter" type="xs:string" minOccurs="0"/>
+                  </xs:sequence>
+                  <xs:attribute name="sourceSchema" type="xs:string"/>
+                  <xs:attribute name="sourceName" type="xs:string" use="required"/>
+                  <xs:attribute name="targetName" type="xs:string"/>
+                  <xs:attribute name="targetSchema" type="xs:string"/>
+                </xs:complexType>
+              </xs:element>
+            </xs:sequence>
+            <xs:attribute name="mode" type="xs:string"/>
+          </xs:complexType>
+        </xs:element>
+        <xs:element name="hooks" minOccurs="0" maxOccurs="1">
+          <xs:complexType>
+            <xs:sequence>
+              <xs:element name="hook" minOccurs="0" maxOccurs="unbounded">
+                <xs:complexType mixed="true">
+                  <xs:anyAttribute processContents="skip"/>
+                </xs:complexType>
+              </xs:element>
+            </xs:sequence>
+          </xs:complexType>
+        </xs:element>
+        <xs:element name="schedule" minOccurs="0" maxOccurs="1">
+          <xs:complexType>
+            <xs:sequence>
+              <xs:element name="cron" type="xs:string" minOccurs="0"/>
+              <xs:element name="timezone" type="xs:string" minOccurs="0"/>
+              <xs:element name="retryOnFailure" minOccurs="0">
+                <xs:complexType>
+                  <xs:attribute name="maxRetries" type="xs:string"/>
+                  <xs:attribute name="delaySeconds" type="xs:string"/>
+                </xs:complexType>
+              </xs:element>
+            </xs:sequence>
+            <xs:attribute name="enabled" type="xs:string"/>
+          </xs:complexType>
+        </xs:element>
+        <xs:element name="sync" minOccurs="0" maxOccurs="1">
+          <xs:complexType>
+            <xs:sequence>
+              <xs:element name="strategy" type="xs:string" minOccurs="0"/>
+              <xs:element name="trackingColumn" minOccurs="0" maxOccurs="unbounded">
+                <xs:complexType>
+                  <xs:attribute name="table" type="xs:string" use="required"/>
+                  <xs:attribute name="column" type="xs:string" use="required"/>
+                </xs:complexType>
+              </xs:element>
+            </xs:sequence>
+            <xs:attribute name="enabled" type="xs:string"/>
+          </xs:complexType>
+        </xs:element>
+      </xs:sequence>
+      <xs:attribute name="schemaVersion" type="xs:string" use="required"/>
+      <xs:anyAttribute processContents="skip"/>
+    </xs:complexType>
+  </xs:element>
+
+</xs:schema>

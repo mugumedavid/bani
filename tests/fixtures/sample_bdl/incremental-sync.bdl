@@ -1,0 +1,19 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<bani schemaVersion="1.0">
+  <project name="incremental-sync" description="Test incremental sync configuration" />
+  <source connector="mssql">
+    <connection host="localhost" port="1433" database="testdb" username="${env:DB_USER}" password="${env:DB_PASS}" />
+  </source>
+  <target connector="postgresql">
+    <connection host="localhost" port="5432" database="testdb" username="${env:DB_USER}" password="${env:DB_PASS}" />
+  </target>
+  <tables>
+    <table sourceSchema="dbo" sourceName="Orders" targetName="orders" />
+    <table sourceSchema="dbo" sourceName="Customers" targetName="customers" />
+  </tables>
+  <sync enabled="true">
+    <strategy>timestamp</strategy>
+    <trackingColumn table="Orders" column="ModifiedAt" />
+    <trackingColumn table="Customers" column="UpdatedAt" />
+  </sync>
+</bani>
