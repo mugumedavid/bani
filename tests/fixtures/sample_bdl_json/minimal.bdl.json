@@ -1,0 +1,35 @@
+{
+  "schemaVersion": "1.0",
+  "project": {
+    "name": "minimal-json",
+    "description": "Minimal JSON BDL",
+    "author": "test"
+  },
+  "source": {
+    "connector": "mssql",
+    "connection": {
+      "host": "localhost",
+      "port": 1433,
+      "database": "testdb",
+      "username": "${env:DB_USER}",
+      "password": "${env:DB_PASS}"
+    }
+  },
+  "target": {
+    "connector": "postgresql",
+    "connection": {
+      "host": "localhost",
+      "port": 5432,
+      "database": "testdb",
+      "username": "${env:DB_USER}",
+      "password": "${env:DB_PASS}"
+    }
+  },
+  "tables": [
+    {
+      "sourceSchema": "dbo",
+      "sourceName": "Users",
+      "targetName": "users"
+    }
+  ]
+}

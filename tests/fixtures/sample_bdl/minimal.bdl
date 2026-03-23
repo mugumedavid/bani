@@ -1,0 +1,17 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<bani schemaVersion="1.0">
+  <project name="minimal-project" description="Minimal BDL document" author="test-user" />
+  <source connector="mssql">
+    <connection host="localhost" port="1433" database="testdb" username="${env:DB_USER}" password="${env:DB_PASS}" />
+  </source>
+  <target connector="postgresql">
+    <connection host="localhost" port="5432" database="testdb" username="${env:DB_USER}" password="${env:DB_PASS}" />
+  </target>
+  <options>
+    <batchSize>50000</batchSize>
+    <parallelWorkers>2</parallelWorkers>
+  </options>
+  <tables>
+    <table sourceSchema="dbo" sourceName="Users" targetName="users" />
+  </tables>
+</bani>

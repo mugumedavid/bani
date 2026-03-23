@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<bani schemaVersion="1.0">
+  <project name="bad-on-error" />
+  <options>
+    <onError>invalid-strategy</onError>
+  </options>
+</bani>

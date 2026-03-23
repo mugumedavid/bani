@@ -1,0 +1,92 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<bani schemaVersion="1.0"
+      xmlns="https://bani.dev/bdl/1.0"
+      xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+      xsi:schemaLocation="https://bani.dev/bdl/1.0 bdl-1.0.xsd">
+
+  <project name="legacy-to-postgres"
+           description="Nightly migration from MSSQL ERP to PostgreSQL analytics"
+           author="ops-team"
+           created="2026-03-19T10:00:00Z">
+    <tags>
+      <tag>erp</tag>
+      <tag>nightly</tag>
+    </tags>
+  </project>
+
+  <source connector="mssql">
+    <connection host="erp-db.internal" port="1433" database="ERP_Production"
+      username="${env:MSSQL_USER}" password="${env:MSSQL_PASS}" encrypt="true" />
+    <connectorConfig>
+      <option name="applicationIntent" value="ReadOnly" />
+      <option name="commandTimeout" value="300" />
+    </connectorConfig>
+  </source>
+
+  <target connector="postgresql">
+    <connection host="analytics-pg.internal" port="5432" database="analytics"
+      username="${env:PG_USER}" password="${env:PG_PASS}" sslMode="require" />
+    <connectorConfig>
+      <option name="targetSchema" value="erp_mirror" />
+    </connectorConfig>
+  </target>
+
+  <options>
+    <batchSize>100000</batchSize>
+    <parallelWorkers>4</parallelWorkers>
+    <memoryLimitMB>2048</memoryLimitMB>
+    <onError>log-and-continue</onError>
+    <createTargetSchema>true</createTargetSchema>
+    <dropTargetTablesFirst>false</dropTargetTablesFirst>
+    <transferIndexes>true</transferIndexes>
+    <transferForeignKeys>true</transferForeignKeys>
+    <transferDefaults>true</transferDefaults>
+    <transferCheckConstraints>true</transferCheckConstraints>
+  </options>
+
+  <typeMappings>
+    <mapping source="NVARCHAR(MAX)" target="TEXT" />
+    <mapping source="DATETIME2" target="TIMESTAMP WITH TIME ZONE" />
+    <mapping source="MONEY" target="NUMERIC(19,4)" />
+    <mapping source="BIT" target="BOOLEAN" />
+  </typeMappings>
+
+  <tables mode="include">
+    <table sourceSchema="dbo" sourceName="Customers" targetName="customers">
+      <columnMappings>
+        <column source="CustID" target="customer_id" />
+        <column source="CustName" target="customer_name" />
+        <column source="IsActive" target="is_active" targetType="BOOLEAN" />
+      </columnMappings>
+    </table>
+    <table sourceSchema="dbo" sourceName="Orders" targetName="orders">
+      <filter>WHERE OrderDate >= '2024-01-01'</filter>
+    </table>
+    <table sourceSchema="dbo" sourceName="OrderItems" targetName="order_items" />
+    <table sourceSchema="dbo" sourceName="Products" targetName="products" />
+  </tables>
+
+  <hooks>
+    <hook event="before-migration" type="sql" target="target">
+      CREATE SCHEMA IF NOT EXISTS erp_mirror;
+    </hook>
+    <hook event="after-table" tableName="customers" type="sql" target="target">
+      CREATE INDEX IF NOT EXISTS idx_customers_name ON erp_mirror.customers (customer_name);
+    </hook>
+    <hook event="after-migration" type="shell">
+      notify-ops --channel=#data-eng --message="ERP mirror refresh complete"
+    </hook>
+  </hooks>
+
+  <schedule enabled="true">
+    <cron>0 2 * * *</cron>
+    <timezone>Africa/Nairobi</timezone>
+    <retryOnFailure maxRetries="3" delaySeconds="300" />
+  </schedule>
+
+  <sync enabled="false">
+    <strategy>timestamp</strategy>
+    <trackingColumn table="Orders" column="ModifiedAt" />
+    <trackingColumn table="Customers" column="UpdatedAt" />
+  </sync>
+</bani>

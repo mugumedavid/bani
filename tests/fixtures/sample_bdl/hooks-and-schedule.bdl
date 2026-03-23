@@ -1,0 +1,26 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<bani schemaVersion="1.0">
+  <project name="hooks-and-schedule" description="Test hooks and schedule configuration" />
+  <source connector="mssql">
+    <connection host="localhost" port="1433" database="testdb" username="${env:DB_USER}" password="${env:DB_PASS}" />
+  </source>
+  <target connector="postgresql">
+    <connection host="localhost" port="5432" database="testdb" username="${env:DB_USER}" password="${env:DB_PASS}" />
+  </target>
+  <tables>
+    <table sourceSchema="dbo" sourceName="Data" targetName="data" />
+  </tables>
+  <hooks>
+    <hook event="before-migration" type="sql" target="target">
+      CREATE SCHEMA IF NOT EXISTS staging;
+    </hook>
+    <hook event="after-migration" type="shell">
+      echo "Migration complete"
+    </hook>
+  </hooks>
+  <schedule enabled="true">
+    <cron>0 3 * * *</cron>
+    <timezone>UTC</timezone>
+    <retryOnFailure maxRetries="2" delaySeconds="600" />
+  </schedule>
+</bani>

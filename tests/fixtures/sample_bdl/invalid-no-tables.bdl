@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<bani schemaVersion="1.0">
+  <project name="no-tables" />
+  <source connector="mssql">
+    <connection host="localhost" port="1433" database="testdb" username="user" password="pass" />
+  </source>
+  <target connector="postgresql">
+    <connection host="localhost" port="5432" database="testdb" username="user" password="pass" />
+  </target>
+</bani>
