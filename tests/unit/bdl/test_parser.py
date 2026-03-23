@@ -199,7 +199,7 @@ class TestParseTableMappings:
         customers_table = result.table_mappings[0]
         assert customers_table.source_table == "Customers"
         assert customers_table.target_table == "customers"
-        assert len(customers_table.columns) == 3
+        assert len(customers_table.column_mappings) == 3
 
     def test_parse_table_with_filter(self) -> None:
         """Test parsing table with filter."""

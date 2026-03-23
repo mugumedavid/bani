@@ -3,15 +3,16 @@
 from __future__ import annotations
 
 from bani.domain.project import (
+    ColumnMapping,
     ConnectionConfig,
     HookConfig,
     MigrationPlan,
     ProjectModel,
     SyncStrategy,
     TableMapping,
+    TypeMappingOverride,
     WriteStrategy,
 )
-from bani.domain.type_mapping import MappingRuleSet
 
 
 class TestConnectionConfig:
@@ -55,7 +56,7 @@ class TestTableMapping:
         tm = TableMapping(source_schema="dbo", source_table="users")
         assert tm.target_schema == ""
         assert tm.target_table == ""
-        assert tm.columns == ()
+        assert tm.column_mappings == ()
         assert tm.filter_sql is None
         assert tm.write_strategy == WriteStrategy.INSERT
         assert tm.batch_size is None
@@ -66,7 +67,11 @@ class TestTableMapping:
             source_table="users",
             target_schema="public",
             target_table="users",
-            columns=("id", "name", "email"),
+            column_mappings=(
+                ColumnMapping(source_name="id", target_name="id"),
+                ColumnMapping(source_name="name", target_name="name"),
+                ColumnMapping(source_name="email", target_name="email"),
+            ),
             filter_sql="is_active = 1",
             write_strategy=WriteStrategy.UPSERT,
             batch_size=5000,
@@ -90,29 +95,25 @@ class TestProjectModel:
     def test_minimal(self) -> None:
         project = ProjectModel(
             name="test-migration",
-            version="1.0",
             source=ConnectionConfig(dialect="mysql"),
             target=ConnectionConfig(dialect="postgresql"),
         )
         assert project.table_mappings == ()
-        assert project.type_overrides is None
-        assert project.sync_strategy == SyncStrategy.FULL
-        assert project.default_batch_size == 10_000
+        assert project.type_overrides == ()
         assert project.hooks == ()
         assert project.description == ""
+        assert project.author == ""
 
     def test_with_overrides(self) -> None:
-        overrides = MappingRuleSet(rules=(), name="user-overrides")
+        overrides = (TypeMappingOverride(source_type="INT", target_type="INTEGER"),)
         project = ProjectModel(
             name="test",
-            version="1.0",
             source=ConnectionConfig(dialect="mysql"),
             target=ConnectionConfig(dialect="postgresql"),
             type_overrides=overrides,
-            sync_strategy=SyncStrategy.TIMESTAMP,
         )
-        assert project.type_overrides is not None
-        assert project.sync_strategy == SyncStrategy.TIMESTAMP
+        assert project.type_overrides == overrides
+        assert len(project.type_overrides) == 1
 
 
 class TestMigrationPlan:
@@ -121,7 +122,6 @@ class TestMigrationPlan:
     def test_basic(self) -> None:
         project = ProjectModel(
             name="test",
-            version="1.0",
             source=ConnectionConfig(dialect="mysql"),
             target=ConnectionConfig(dialect="postgresql"),
         )

@@ -8,9 +8,8 @@ the orchestrator consumes them.
 from __future__ import annotations
 
 from dataclasses import dataclass
+from datetime import datetime
 from enum import Enum, auto
-
-from bani.domain.type_mapping import MappingRuleSet
 
 
 class SyncStrategy(Enum):
@@ -28,6 +27,13 @@ class WriteStrategy(Enum):
     INSERT = auto()
     UPSERT = auto()
     TRUNCATE_INSERT = auto()
+
+
+class ErrorHandlingStrategy(Enum):
+    """How errors are handled during migration."""
+
+    ABORT = "fail-fast"
+    LOG_AND_CONTINUE = "log-and-continue"
 
 
 @dataclass(frozen=True)
@@ -59,6 +65,97 @@ class ConnectionConfig:
 
 
 @dataclass(frozen=True)
+class ColumnMapping:
+    """Mapping for a single column in a table.
+
+    Attributes:
+        source_name: Source column name.
+        target_name: Target column name.
+        target_type: Optional type override for the target column.
+    """
+
+    source_name: str
+    target_name: str
+    target_type: str | None = None
+
+
+@dataclass(frozen=True)
+class TypeMappingOverride:
+    """Type mapping override from source to target type.
+
+    Attributes:
+        source_type: Source data type.
+        target_type: Target data type to map to.
+    """
+
+    source_type: str
+    target_type: str
+
+
+@dataclass(frozen=True)
+class ProjectOptions:
+    """Project-level configuration options.
+
+    Attributes:
+        batch_size: Number of rows per batch.
+        parallel_workers: Number of parallel workers.
+        memory_limit_mb: Memory limit in MB.
+        on_error: Error handling strategy.
+        create_target_schema: Whether to create target schema.
+        drop_target_tables_first: Whether to drop target tables first.
+        transfer_indexes: Whether to transfer indexes.
+        transfer_foreign_keys: Whether to transfer foreign keys.
+        transfer_defaults: Whether to transfer default values.
+        transfer_check_constraints: Whether to transfer check constraints.
+    """
+
+    batch_size: int = 100_000
+    parallel_workers: int = 4
+    memory_limit_mb: int = 2048
+    on_error: ErrorHandlingStrategy = ErrorHandlingStrategy.LOG_AND_CONTINUE
+    create_target_schema: bool = True
+    drop_target_tables_first: bool = False
+    transfer_indexes: bool = True
+    transfer_foreign_keys: bool = True
+    transfer_defaults: bool = True
+    transfer_check_constraints: bool = True
+
+
+@dataclass(frozen=True)
+class ScheduleConfig:
+    """Configuration for scheduled migrations.
+
+    Attributes:
+        enabled: Whether the schedule is enabled.
+        cron: Cron expression for scheduling (optional).
+        timezone: Timezone for cron evaluation.
+        max_retries: Maximum number of retries on failure.
+        retry_delay_seconds: Delay in seconds between retries.
+    """
+
+    enabled: bool = False
+    cron: str | None = None
+    timezone: str = "UTC"
+    max_retries: int = 0
+    retry_delay_seconds: int = 0
+
+
+@dataclass(frozen=True)
+class SyncConfig:
+    """Configuration for incremental sync.
+
+    Attributes:
+        enabled: Whether sync is enabled.
+        strategy: Sync strategy to use.
+        tracking_columns: Tuples of (table, column) for tracking changes.
+    """
+
+    enabled: bool = False
+    strategy: SyncStrategy = SyncStrategy.FULL
+    tracking_columns: tuple[tuple[str, str], ...] = ()
+
+
+@dataclass(frozen=True)
 class TableMapping:
     """Mapping configuration for a single table.
 
@@ -67,7 +164,7 @@ class TableMapping:
         source_table: Source table name.
         target_schema: Target schema name (may differ from source).
         target_table: Target table name (may differ from source).
-        columns: Tuple of column names to include (empty = all).
+        column_mappings: Tuple of column mappings (empty = all).
         filter_sql: Optional WHERE clause to filter source rows.
         write_strategy: How to write data to the target.
         batch_size: Number of rows per batch (``None`` = use project default).
@@ -77,7 +174,7 @@ class TableMapping:
     source_table: str
     target_schema: str = ""
     target_table: str = ""
-    columns: tuple[str, ...] = ()
+    column_mappings: tuple[ColumnMapping, ...] = ()
     filter_sql: str | None = None
     write_strategy: WriteStrategy = WriteStrategy.INSERT
     batch_size: int | None = None
@@ -108,27 +205,33 @@ class ProjectModel:
 
     Attributes:
         name: Project name.
-        version: BDL schema version (e.g. ``"1.0"``).
         source: Source database connection configuration.
         target: Target database connection configuration.
+        description: Optional project description.
+        author: Project author.
+        created: Project creation timestamp.
+        tags: Tuple of project tags.
         table_mappings: Tuple of per-table mapping configurations.
         type_overrides: Optional user-supplied type mapping overrides.
-        sync_strategy: Sync strategy for incremental migrations.
-        default_batch_size: Default batch size for data transfer.
+        options: Project-level configuration options.
         hooks: Tuple of pre/post migration hooks.
-        description: Optional project description.
+        schedule: Schedule configuration for migrations.
+        sync: Sync configuration for incremental migrations.
     """
 
     name: str
-    version: str
-    source: ConnectionConfig
-    target: ConnectionConfig
-    table_mappings: tuple[TableMapping, ...] = ()
-    type_overrides: MappingRuleSet | None = None
-    sync_strategy: SyncStrategy = SyncStrategy.FULL
-    default_batch_size: int = 10_000
-    hooks: tuple[HookConfig, ...] = ()
+    source: ConnectionConfig | None = None
+    target: ConnectionConfig | None = None
     description: str = ""
+    author: str = ""
+    created: datetime | None = None
+    tags: tuple[str, ...] = ()
+    table_mappings: tuple[TableMapping, ...] = ()
+    type_overrides: tuple[TypeMappingOverride, ...] = ()
+    options: ProjectOptions | None = None
+    hooks: tuple[HookConfig, ...] = ()
+    schedule: ScheduleConfig | None = None
+    sync: SyncConfig | None = None
 
 
 @dataclass(frozen=True)

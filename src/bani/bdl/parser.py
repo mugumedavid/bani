@@ -391,7 +391,7 @@ def _parse_options(elem: ET.Element) -> ProjectOptions:
     on_error_str = get_str("onError", "log-and-continue")
     on_error = ErrorHandlingStrategy.LOG_AND_CONTINUE
     if on_error_str == "fail-fast":
-        on_error = ErrorHandlingStrategy.FAIL_FAST
+        on_error = ErrorHandlingStrategy.ABORT
 
     return ProjectOptions(
         batch_size=get_int("batchSize", 100000),
@@ -412,7 +412,7 @@ def _parse_options_json(data: dict[str, Any]) -> ProjectOptions:
     on_error_str = data.get("onError", "log-and-continue")
     on_error = ErrorHandlingStrategy.LOG_AND_CONTINUE
     if on_error_str == "fail-fast":
-        on_error = ErrorHandlingStrategy.FAIL_FAST
+        on_error = ErrorHandlingStrategy.ABORT
 
     return ProjectOptions(
         batch_size=data.get("batchSize", 100000),
@@ -449,7 +449,7 @@ def _parse_table(elem: ET.Element) -> TableMapping:
         filter_elem = elem.find("filter")
     filter_sql = filter_elem.text if filter_elem is not None else None
 
-    columns: tuple[ColumnMapping, ...] = ()
+    column_mappings: tuple[ColumnMapping, ...] = ()
     col_mappings_elem = elem.find("b:columnMappings", NS)
     if col_mappings_elem is None:
         col_mappings_elem = elem.find("columnMappings")
@@ -457,7 +457,7 @@ def _parse_table(elem: ET.Element) -> TableMapping:
         col_elems = col_mappings_elem.findall("b:column", NS)
         if not col_elems:
             col_elems = col_mappings_elem.findall("column")
-        columns = tuple(
+        column_mappings = tuple(
             ColumnMapping(
                 source_name=c.get("source", ""),
                 target_name=c.get("target", ""),
@@ -471,7 +471,7 @@ def _parse_table(elem: ET.Element) -> TableMapping:
         source_table=source_name,
         target_schema=target_schema,
         target_table=target_name,
-        columns=columns,
+        column_mappings=column_mappings,
         filter_sql=filter_sql,
     )
 
@@ -484,10 +484,10 @@ def _parse_table_json(data: dict[str, Any]) -> TableMapping:
     target_schema = data.get("targetSchema", source_schema)
     filter_sql = data.get("filter")
 
-    columns: tuple[ColumnMapping, ...] = ()
+    column_mappings: tuple[ColumnMapping, ...] = ()
     col_mappings = data.get("columnMappings", [])
     if col_mappings:
-        columns = tuple(
+        column_mappings = tuple(
             ColumnMapping(
                 source_name=c.get("source", ""),
                 target_name=c.get("target", ""),
@@ -501,7 +501,7 @@ def _parse_table_json(data: dict[str, Any]) -> TableMapping:
         source_table=source_name,
         target_schema=target_schema,
         target_table=target_name,
-        columns=columns,
+        column_mappings=column_mappings,
         filter_sql=filter_sql,
     )
 
@@ -542,7 +542,7 @@ def _parse_schedule(elem: ET.Element) -> ScheduleConfig:
     cron_elem = elem.find("b:cron", NS)
     if cron_elem is None:
         cron_elem = elem.find("cron")
-    cron = cron_elem.text if cron_elem is not None else None
+    cron = cron_elem.text if cron_elem is not None else ""
 
     tz_elem = elem.find("b:timezone", NS)
     if tz_elem is None:
@@ -554,10 +554,10 @@ def _parse_schedule(elem: ET.Element) -> ScheduleConfig:
         retry_elem = elem.find("retryOnFailure")
 
     max_retries = 0
-    retry_delay = 300
+    retry_delay = 0
     if retry_elem is not None:
         max_retries = int(retry_elem.get("maxRetries", "0"))
-        retry_delay = int(retry_elem.get("delaySeconds", "300"))
+        retry_delay = int(retry_elem.get("delaySeconds", "0"))
 
     return ScheduleConfig(
         enabled=enabled,
@@ -571,12 +571,12 @@ def _parse_schedule(elem: ET.Element) -> ScheduleConfig:
 def _parse_schedule_json(data: dict[str, Any]) -> ScheduleConfig:
     """Parse schedule from JSON data."""
     enabled = data.get("enabled", False)
-    cron = data.get("cron")
+    cron = data.get("cron", "")
     timezone = data.get("timezone", "UTC")
 
     retry_data = data.get("retryOnFailure", {})
     max_retries = retry_data.get("maxRetries", 0) if retry_data else 0
-    retry_delay = retry_data.get("delaySeconds", 300) if retry_data else 300
+    retry_delay = retry_data.get("delaySeconds", 0) if retry_data else 0
 
     return ScheduleConfig(
         enabled=enabled,
@@ -595,7 +595,15 @@ def _parse_sync(elem: ET.Element) -> SyncConfig:
     if strategy_elem is None:
         strategy_elem = elem.find("strategy")
     strategy_str = strategy_elem.text or "full" if strategy_elem is not None else "full"
-    strategy = SyncStrategy(strategy_str.lower())
+
+    # Convert string value to SyncStrategy enum
+    strategy_map = {
+        "full": SyncStrategy.FULL,
+        "timestamp": SyncStrategy.TIMESTAMP,
+        "rowversion": SyncStrategy.ROWVERSION,
+        "checksum": SyncStrategy.CHECKSUM,
+    }
+    strategy = strategy_map.get(strategy_str.lower(), SyncStrategy.FULL)
 
     tracking_elems = elem.findall("b:trackingColumn", NS)
     if not tracking_elems:
@@ -616,7 +624,15 @@ def _parse_sync_json(data: dict[str, Any]) -> SyncConfig:
     """Parse sync from JSON data."""
     enabled = data.get("enabled", False)
     strategy_str = data.get("strategy", "full")
-    strategy = SyncStrategy(strategy_str.lower())
+
+    # Convert string value to SyncStrategy enum
+    strategy_map = {
+        "full": SyncStrategy.FULL,
+        "timestamp": SyncStrategy.TIMESTAMP,
+        "rowversion": SyncStrategy.ROWVERSION,
+        "checksum": SyncStrategy.CHECKSUM,
+    }
+    strategy = strategy_map.get(strategy_str.lower(), SyncStrategy.FULL)
 
     tracking_data = data.get("trackingColumns", [])
     tracking_columns: tuple[tuple[str, str], ...] = tuple(

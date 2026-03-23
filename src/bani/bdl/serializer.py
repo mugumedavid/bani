@@ -32,11 +32,11 @@ def serialize(project: ProjectModel) -> str:
         project_elem.set("description", project.description)
     if project.author:
         project_elem.set("author", project.author)
-    if project.created:
-        project_elem.set(
-            "created",
-            project.created.isoformat().replace("+00:00", "Z"),
-        )
+    if project.created is not None:
+        created_str = project.created.isoformat()
+        if created_str.endswith("+00:00"):
+            created_str = created_str.replace("+00:00", "Z")
+        project_elem.set("created", created_str)
 
     # Tags
     if project.tags:
@@ -58,8 +58,9 @@ def serialize(project: ProjectModel) -> str:
         _serialize_connection(target_elem, project.target)
 
     # Options
-    options_elem = ET.SubElement(root, "options")
-    _serialize_options(options_elem, project.options)
+    if project.options is not None:
+        options_elem = ET.SubElement(root, "options")
+        _serialize_options(options_elem, project.options)
 
     # Type Mappings
     if project.type_overrides:
@@ -86,28 +87,30 @@ def serialize(project: ProjectModel) -> str:
             hook_elem.text = hook.command
 
     # Schedule
-    schedule_elem = ET.SubElement(root, "schedule")
-    schedule_elem.set("enabled", "true" if project.schedule.enabled else "false")
-    if project.schedule.cron:
-        cron_elem = ET.SubElement(schedule_elem, "cron")
-        cron_elem.text = project.schedule.cron
-    tz_elem = ET.SubElement(schedule_elem, "timezone")
-    tz_elem.text = project.schedule.timezone
-    if project.schedule.max_retries > 0:
-        retry_elem = ET.SubElement(schedule_elem, "retryOnFailure")
-        retry_elem.set("maxRetries", str(project.schedule.max_retries))
-        retry_elem.set("delaySeconds", str(project.schedule.retry_delay_seconds))
+    if project.schedule is not None:
+        schedule_elem = ET.SubElement(root, "schedule")
+        schedule_elem.set("enabled", "true" if project.schedule.enabled else "false")
+        if project.schedule.cron:
+            cron_elem = ET.SubElement(schedule_elem, "cron")
+            cron_elem.text = project.schedule.cron
+        tz_elem = ET.SubElement(schedule_elem, "timezone")
+        tz_elem.text = project.schedule.timezone
+        if project.schedule.max_retries > 0:
+            retry_elem = ET.SubElement(schedule_elem, "retryOnFailure")
+            retry_elem.set("maxRetries", str(project.schedule.max_retries))
+            retry_elem.set("delaySeconds", str(project.schedule.retry_delay_seconds))
 
     # Sync
-    sync_elem = ET.SubElement(root, "sync")
-    sync_elem.set("enabled", "true" if project.sync.enabled else "false")
-    if project.sync.enabled:
-        strategy_elem = ET.SubElement(sync_elem, "strategy")
-        strategy_elem.text = project.sync.strategy.value
-        for tracking_col in project.sync.tracking_columns:
-            tracking_elem = ET.SubElement(sync_elem, "trackingColumn")
-            tracking_elem.set("table", tracking_col[0])
-            tracking_elem.set("column", tracking_col[1])
+    if project.sync is not None:
+        sync_elem = ET.SubElement(root, "sync")
+        sync_elem.set("enabled", "true" if project.sync.enabled else "false")
+        if project.sync.enabled:
+            strategy_elem = ET.SubElement(sync_elem, "strategy")
+            strategy_elem.text = project.sync.strategy.name.lower()
+            for tracking_col in project.sync.tracking_columns:
+                tracking_elem = ET.SubElement(sync_elem, "trackingColumn")
+                tracking_elem.set("table", tracking_col[0])
+                tracking_elem.set("column", tracking_col[1])
 
     # Pretty-print
     indent_tree(root)
@@ -178,9 +181,24 @@ def _serialize_options(parent: ET.Element, opts: object) -> None:
     checks_elem.text = "true" if opts.transfer_check_constraints else "false"
 
 
+def _serialize_columns(parent: ET.Element, columns: tuple[object, ...]) -> None:
+    """Serialize column mappings."""
+    from bani.domain.project import ColumnMapping
+
+    col_mappings_elem = ET.SubElement(parent, "columnMappings")
+    for col in columns:
+        if not isinstance(col, ColumnMapping):
+            continue
+        col_elem = ET.SubElement(col_mappings_elem, "column")
+        col_elem.set("source", col.source_name)
+        col_elem.set("target", col.target_name)
+        if col.target_type:
+            col_elem.set("targetType", col.target_type)
+
+
 def _serialize_table(parent: ET.Element, table: object) -> None:
     """Serialize table mapping."""
-    from bani.domain.project import TableMapping
+    from bani.domain.project import ColumnMapping, TableMapping
 
     if not isinstance(table, TableMapping):
         return
@@ -192,14 +210,15 @@ def _serialize_table(parent: ET.Element, table: object) -> None:
     if table.target_schema != table.source_schema:
         table_elem.set("targetSchema", table.target_schema)
 
-    if table.columns:
+    if table.column_mappings:
         col_mappings_elem = ET.SubElement(table_elem, "columnMappings")
-        for column in table.columns:
-            col_elem = ET.SubElement(col_mappings_elem, "column")
-            col_elem.set("source", column.source_name)
-            col_elem.set("target", column.target_name)
-            if column.target_type:
-                col_elem.set("targetType", column.target_type)
+        for column in table.column_mappings:
+            if isinstance(column, ColumnMapping):
+                col_elem = ET.SubElement(col_mappings_elem, "column")
+                col_elem.set("source", column.source_name)
+                col_elem.set("target", column.target_name)
+                if column.target_type:
+                    col_elem.set("targetType", column.target_type)
 
     if table.filter_sql:
         filter_elem = ET.SubElement(table_elem, "filter")
