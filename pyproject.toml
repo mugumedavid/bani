@@ -25,6 +25,7 @@ classifiers = [
 dependencies = [
     "pyarrow>=14.0",
     "psycopg[binary]>=3.1",
+    "pymysql>=1.0",
 ]
 
 [project.urls]
