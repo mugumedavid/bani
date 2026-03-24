@@ -126,7 +126,7 @@ class ProgressTracker:
     ) -> None:
         """Emit a migration start event."""
         event = MigrationStarted(
-            timestamp=datetime.now(timezone.utc),  # noqa: UP017
+            timestamp=datetime.now(timezone.utc),
             project_name=project_name,
             source_dialect=source_dialect,
             target_dialect=target_dialect,
@@ -137,7 +137,7 @@ class ProgressTracker:
     def table_started(self, table_name: str, estimated_rows: int | None = None) -> None:
         """Emit a table start event."""
         event = TableStarted(
-            timestamp=datetime.now(timezone.utc),  # noqa: UP017
+            timestamp=datetime.now(timezone.utc),
             table_name=table_name,
             estimated_rows=estimated_rows,
         )
@@ -152,7 +152,7 @@ class ProgressTracker:
     ) -> None:
         """Emit a batch completion event."""
         event = BatchComplete(
-            timestamp=datetime.now(timezone.utc),  # noqa: UP017
+            timestamp=datetime.now(timezone.utc),
             table_name=table_name,
             batch_number=batch_number,
             rows_read=rows_read,
@@ -169,7 +169,7 @@ class ProgressTracker:
     ) -> None:
         """Emit a table completion event."""
         event = TableComplete(
-            timestamp=datetime.now(timezone.utc),  # noqa: UP017
+            timestamp=datetime.now(timezone.utc),
             table_name=table_name,
             total_rows_read=total_rows_read,
             total_rows_written=total_rows_written,
@@ -188,7 +188,7 @@ class ProgressTracker:
     ) -> None:
         """Emit a migration completion event."""
         event = MigrationComplete(
-            timestamp=datetime.now(timezone.utc),  # noqa: UP017
+            timestamp=datetime.now(timezone.utc),
             project_name=project_name,
             tables_completed=tables_completed,
             tables_failed=tables_failed,

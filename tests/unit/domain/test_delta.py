@@ -17,7 +17,7 @@ class TestSyncState:
         assert state.last_checksum is None
 
     def test_with_timestamp(self) -> None:
-        ts = datetime(2025, 1, 1, 12, 0, 0, tzinfo=timezone.utc)  # noqa: UP017
+        ts = datetime(2025, 1, 1, 12, 0, 0, tzinfo=timezone.utc)
         state = SyncState(
             project_name="myproj",
             table_name="public.users",

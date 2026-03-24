@@ -149,9 +149,9 @@ def test_progress_events_have_timestamps() -> None:
 
     tracker.add_listener(lambda e: events.append(e))
 
-    before = datetime.now(timezone.utc)  # noqa: UP017
+    before = datetime.now(timezone.utc)
     tracker.migration_started("proj", "pg", "mssql", 1)
-    after = datetime.now(timezone.utc)  # noqa: UP017
+    after = datetime.now(timezone.utc)
 
     event = events[0]
     assert isinstance(event, MigrationStarted)

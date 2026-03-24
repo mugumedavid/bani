@@ -258,7 +258,7 @@ class ProjectBuilder:
         )
 
         # If created timestamp not set, use current time
-        created = self._created or datetime.now(timezone.utc)  # noqa: UP017
+        created = self._created or datetime.now(timezone.utc)
 
         return ProjectModel(
             name=self._name,
