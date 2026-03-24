@@ -12,6 +12,7 @@ from typing import TYPE_CHECKING, Any
 if TYPE_CHECKING:
     import pymysql
 
+from bani.connectors.mysql.type_mapper import MySQLTypeMapper
 from bani.domain.schema import (
     ColumnDefinition,
     DatabaseSchema,
@@ -39,6 +40,7 @@ class MySQLSchemaReader:
         """
         self.connection = connection
         self.database = database
+        self._type_mapper = MySQLTypeMapper()
 
     def read_schema(self) -> DatabaseSchema:
         """Introspect the complete schema and return a DatabaseSchema.
@@ -132,6 +134,10 @@ class MySQLSchemaReader:
             # Detect auto_increment from EXTRA field
             is_auto = "auto_increment" in str(extra).lower()
 
+            # Resolve canonical Arrow type for cross-database portability
+            arrow_type = self._type_mapper.map_mysql_type_name(column_type)
+            arrow_type_str = str(arrow_type)
+
             col_def = ColumnDefinition(
                 name=col_name,
                 data_type=column_type,
@@ -139,6 +145,7 @@ class MySQLSchemaReader:
                 default_value=column_default,
                 is_auto_increment=is_auto,
                 ordinal_position=int(ordinal_pos) - 1,  # Convert to 0-based
+                arrow_type_str=arrow_type_str,
             )
             columns.append(col_def)
 

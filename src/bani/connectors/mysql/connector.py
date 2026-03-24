@@ -18,6 +18,7 @@ from bani.connectors.base import SinkConnector, SourceConnector
 from bani.connectors.mysql.data_reader import MySQLDataReader
 from bani.connectors.mysql.data_writer import MySQLDataWriter
 from bani.connectors.mysql.schema_reader import MySQLSchemaReader
+from bani.connectors.mysql.type_mapper import MySQLTypeMapper
 from bani.domain.project import ConnectionConfig
 from bani.domain.schema import (
     DatabaseSchema,
@@ -204,7 +205,16 @@ class MySQLConnector(SourceConnector, SinkConnector):
         # Build column definitions
         col_defs = []
         for col in table_def.columns:
-            col_def = f"`{col.name}` {col.data_type}"
+            # Resolve target type via the canonical Arrow mapping layer
+            # when arrow_type_str is available; fall back to raw data_type.
+            if col.arrow_type_str:
+                mysql_type = MySQLTypeMapper.from_arrow_type(
+                    col.arrow_type_str
+                )
+            else:
+                mysql_type = col.data_type
+
+            col_def = f"`{col.name}` {mysql_type}"
 
             if not col.nullable:
                 col_def += " NOT NULL"

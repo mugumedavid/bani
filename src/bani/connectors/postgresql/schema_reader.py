@@ -12,6 +12,7 @@ from typing import TYPE_CHECKING
 if TYPE_CHECKING:
     import psycopg
 
+from bani.connectors.postgresql.type_mapper import PostgreSQLTypeMapper
 from bani.domain.schema import (
     ColumnDefinition,
     DatabaseSchema,
@@ -35,6 +36,7 @@ class PostgreSQLSchemaReader:
             connection: An active psycopg connection.
         """
         self.connection = connection
+        self._type_mapper = PostgreSQLTypeMapper()
 
     def read_schema(self) -> DatabaseSchema:
         """Introspect the complete schema and return a DatabaseSchema.
@@ -122,6 +124,10 @@ class PostgreSQLSchemaReader:
             # Check if column is auto-increment (serial/bigserial)
             is_auto = self._is_auto_increment(full_type)
 
+            # Resolve canonical Arrow type for cross-database portability
+            arrow_type = self._type_mapper.map_pg_type_name(full_type)
+            arrow_type_str = str(arrow_type)
+
             col_def = ColumnDefinition(
                 name=col_name,
                 data_type=full_type,
@@ -129,6 +135,7 @@ class PostgreSQLSchemaReader:
                 default_value=column_default,
                 is_auto_increment=is_auto,
                 ordinal_position=int(ordinal_pos) - 1,  # Convert to 0-based
+                arrow_type_str=arrow_type_str,
             )
             columns.append(col_def)
 

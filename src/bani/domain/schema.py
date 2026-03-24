@@ -30,6 +30,12 @@ class ColumnDefinition:
         default_value: Default value expression, if any.
         is_auto_increment: Whether the column auto-increments.
         ordinal_position: 0-based position of the column in the table.
+        arrow_type_str: Canonical Arrow type string (e.g. ``"int32"``,
+            ``"timestamp[us]"``).  Populated during schema introspection
+            and used by sink connectors to generate target-native DDL
+            without needing NxN source→target translation tables.
+            ``None`` when the column has not been through introspection
+            (e.g. hand-built ``TableDefinition`` in tests).
     """
 
     name: str
@@ -38,6 +44,7 @@ class ColumnDefinition:
     default_value: str | None = None
     is_auto_increment: bool = False
     ordinal_position: int = 0
+    arrow_type_str: str | None = None
 
 
 @dataclass(frozen=True)

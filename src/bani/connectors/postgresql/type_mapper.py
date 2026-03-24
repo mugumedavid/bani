@@ -130,3 +130,93 @@ class PostgreSQLTypeMapper:
         }
 
         return mapping.get(type_lower, pa.string())
+
+    # ------------------------------------------------------------------
+    # Arrow → PostgreSQL DDL mapping  (used by create_table in the sink)
+    # ------------------------------------------------------------------
+
+    @staticmethod
+    def from_arrow_type(arrow_type_str: str) -> str:
+        """Convert a canonical Arrow type string to a PostgreSQL DDL type.
+
+        This is the *reverse* of ``map_pg_type_name`` / ``map_pg_type_oid``.
+        Every sink connector implements one of these so that N connectors
+        need only N mappers (not NxN cross-database translation tables).
+
+        Args:
+            arrow_type_str: Arrow type string as produced by
+                ``str(pa_type)`` — e.g. ``"int32"``, ``"timestamp[us]"``,
+                ``"decimal128(38, 10)"``, ``"string"``.
+
+        Returns:
+            A PostgreSQL DDL type string such as ``"integer"`` or
+            ``"timestamp"``.
+        """
+        # Exact-match table.  Keys must use the *actual* strings
+        # produced by ``str(pa_type)`` — e.g. PyArrow emits
+        # ``"float"`` (not ``"float32"``), ``"double"`` (not
+        # ``"float64"``), ``"date32[day]"`` (not ``"date32"``).
+        # We include both the PyArrow form and the short alias so
+        # callers using either convention are handled.
+        _ARROW_TO_PG: dict[str, str] = {
+            # Boolean
+            "bool": "boolean",
+            # Integer types
+            "int8": "smallint",
+            "int16": "smallint",
+            "int32": "integer",
+            "int64": "bigint",
+            "uint8": "smallint",
+            "uint16": "integer",
+            "uint32": "bigint",
+            "uint64": "numeric(20)",
+            # Floating-point — PyArrow str() forms
+            "float": "real",
+            "double": "double precision",
+            # Floating-point — explicit aliases
+            "float16": "real",
+            "float32": "real",
+            "float64": "double precision",
+            "halffloat": "real",
+            # String / binary
+            "string": "text",
+            "utf8": "text",
+            "large_string": "text",
+            "large_utf8": "text",
+            "binary": "bytea",
+            "large_binary": "bytea",
+            # Null
+            "null": "text",
+        }
+
+        ts = arrow_type_str.strip()
+
+        # Fast exact match
+        if ts in _ARROW_TO_PG:
+            return _ARROW_TO_PG[ts]
+
+        # date32[day], date64[ms]
+        if ts.startswith("date32") or ts.startswith("date64"):
+            return "date"
+
+        # timestamp[us], timestamp[us, tz=UTC], etc.
+        if ts.startswith("timestamp"):
+            if "tz=" in ts:
+                return "timestamp with time zone"
+            return "timestamp"
+
+        # time32[ms], time64[us]
+        if ts.startswith("time32") or ts.startswith("time64"):
+            return "time"
+
+        # duration[us]
+        if ts.startswith("duration"):
+            return "interval"
+
+        # decimal128(p, s) -> numeric(p, s)
+        if ts.startswith("decimal128"):
+            params = ts[len("decimal128"):]  # e.g. "(38, 10)"
+            return f"numeric{params}"
+
+        # Fallback: pass through (might already be a PG type)
+        return arrow_type_str

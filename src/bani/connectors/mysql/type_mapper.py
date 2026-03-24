@@ -228,3 +228,90 @@ class MySQLTypeMapper:
                 return decimal_mod.Decimal(str(value))
 
         return value
+
+    # ------------------------------------------------------------------
+    # Arrow → MySQL DDL mapping  (used by create_table in the sink)
+    # ------------------------------------------------------------------
+
+    @staticmethod
+    def from_arrow_type(arrow_type_str: str) -> str:
+        """Convert a canonical Arrow type string to a MySQL DDL type.
+
+        Counterpart of ``map_mysql_type_name`` / ``map_mysql_type_code``.
+        Every sink connector implements one of these so that N connectors
+        need only N mappers (not NxN cross-database translation tables).
+
+        Args:
+            arrow_type_str: Arrow type string as produced by
+                ``str(pa_type)`` — e.g. ``"int32"``, ``"timestamp[us]"``,
+                ``"decimal128(38, 10)"``, ``"string"``.
+
+        Returns:
+            A MySQL DDL type string such as ``"INT"`` or ``"DATETIME"``.
+        """
+        # Exact-match table.  Keys must use the *actual* strings
+        # produced by ``str(pa_type)`` — e.g. PyArrow emits
+        # ``"float"`` (not ``"float32"``), ``"double"`` (not
+        # ``"float64"``).  We include both forms.
+        _ARROW_TO_MYSQL: dict[str, str] = {
+            # Boolean
+            "bool": "TINYINT(1)",
+            # Integer types
+            "int8": "TINYINT",
+            "int16": "SMALLINT",
+            "int32": "INT",
+            "int64": "BIGINT",
+            "uint8": "SMALLINT UNSIGNED",
+            "uint16": "INT UNSIGNED",
+            "uint32": "BIGINT UNSIGNED",
+            "uint64": "DECIMAL(20,0) UNSIGNED",
+            # Floating-point — PyArrow str() forms
+            "float": "FLOAT",
+            "double": "DOUBLE",
+            # Floating-point — explicit aliases
+            "float16": "FLOAT",
+            "float32": "FLOAT",
+            "float64": "DOUBLE",
+            "halffloat": "FLOAT",
+            # String / binary
+            "string": "TEXT",
+            "utf8": "TEXT",
+            "large_string": "LONGTEXT",
+            "large_utf8": "LONGTEXT",
+            "binary": "BLOB",
+            "large_binary": "LONGBLOB",
+            # Null
+            "null": "TEXT",
+        }
+
+        ts = arrow_type_str.strip()
+
+        # Fast exact match
+        if ts in _ARROW_TO_MYSQL:
+            return _ARROW_TO_MYSQL[ts]
+
+        # date32[day], date64[ms]
+        if ts.startswith("date32") or ts.startswith("date64"):
+            return "DATE"
+
+        # timestamp[us], timestamp[us, tz=UTC]
+        if ts.startswith("timestamp"):
+            if "tz=" in ts:
+                return "TIMESTAMP"
+            return "DATETIME"
+
+        # time32[ms], time64[us]
+        if ts.startswith("time32") or ts.startswith("time64"):
+            return "TIME"
+
+        # duration[us]
+        if ts.startswith("duration"):
+            return "TIME"
+
+        # decimal128(p, s) -> DECIMAL(p, s)
+        if ts.startswith("decimal128"):
+            params = ts[len("decimal128"):]
+            return f"DECIMAL{params}"
+
+        # Fallback: pass through
+        return arrow_type_str
