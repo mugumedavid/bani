@@ -157,7 +157,9 @@ class MigrationOrchestrator:
             # Drop if requested
             if self.options.drop_target_tables_first:
                 try:
-                    self.sink.drop_table(table.fully_qualified_name)
+                    self.sink.execute_sql(
+                        f"DROP TABLE IF EXISTS {table.fully_qualified_name}"
+                    )
                 except Exception:
                     pass  # Ignore errors if table doesn't exist
 
@@ -238,12 +240,16 @@ class MigrationOrchestrator:
             )
 
             batch_size = self.options.batch_size
-            for batch in self.source.read_batches(table, batch_size=batch_size):
+            for batch in self.source.read_table(
+                table.table_name, table.schema_name, batch_size=batch_size
+            ):
                 rows_read = len(batch)
                 total_rows_read += rows_read
 
                 try:
-                    rows_written = self.sink.write_batch(table_name, batch)
+                    rows_written = self.sink.write_batch(
+                        table.table_name, table.schema_name, batch
+                    )
                     total_rows_written += rows_written
 
                     self.tracker.batch_complete(
@@ -293,28 +299,33 @@ class MigrationOrchestrator:
         """
         if self.options.transfer_indexes:
             for table in source_schema.tables:
-                for index in table.indexes:
+                if table.indexes:
                     try:
-                        self.sink.create_index(table.fully_qualified_name, index)
+                        self.sink.create_indexes(
+                            table.table_name, table.schema_name, table.indexes
+                        )
                     except Exception:
                         if self.options.on_error == ErrorHandlingStrategy.ABORT:
                             raise
                         # Continue on log-and-continue
 
         if self.options.transfer_foreign_keys:
+            all_fks: list[ForeignKeyDefinition] = []
             for table in source_schema.tables:
-                for fk in table.foreign_keys:
-                    try:
-                        self.sink.create_foreign_key(fk)
-                    except Exception:
-                        if self.options.on_error == ErrorHandlingStrategy.ABORT:
-                            raise
-                        # Continue on log-and-continue
+                all_fks.extend(table.foreign_keys)
+
+            if all_fks:
+                try:
+                    self.sink.create_foreign_keys(tuple(all_fks))
+                except Exception:
+                    if self.options.on_error == ErrorHandlingStrategy.ABORT:
+                        raise
+                    # Continue on log-and-continue
 
             # Also create deferred FKs
-            for fk in deferred_fks:
+            if deferred_fks:
                 try:
-                    self.sink.create_foreign_key(fk)
+                    self.sink.create_foreign_keys(deferred_fks)
                 except Exception:
                     if self.options.on_error == ErrorHandlingStrategy.ABORT:
                         raise

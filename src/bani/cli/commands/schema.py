@@ -4,15 +4,17 @@ from __future__ import annotations
 
 import json
 import os
-from typing import Any
+from typing import Any, cast
 
 import click
 import typer
 from rich.console import Console
 
 from bani.cli.formatters import format_error, format_schema_table
+from bani.connectors.base import SourceConnector
 from bani.connectors.registry import ConnectorRegistry
 from bani.domain.errors import BaniError
+from bani.domain.project import ConnectionConfig
 
 schema = typer.Typer(help="Schema inspection commands")
 
@@ -75,16 +77,17 @@ def inspect(
 
     # Create and connect to source
     try:
-        registry = ConnectorRegistry()
-        source_connector = registry.create_source_connector(
-            connector,
+        connector_class = ConnectorRegistry.get(connector)
+        source_connector = cast(type[SourceConnector], connector_class)()
+        config = ConnectionConfig(
+            dialect=connector,
             host=host,
             port=port,
             database=database,
             username_env=username_env,
             password_env=password_env,
         )
-        source_connector.connect()
+        source_connector.connect(config)
 
         try:
             schema_obj = source_connector.introspect_schema()
@@ -145,7 +148,7 @@ def inspect(
                 format_schema_table(console, schema_obj)  # type: ignore[arg-type,unused-ignore]
 
         finally:
-            source_connector.close()
+            source_connector.disconnect()
 
     except BaniError as e:
         format_error(console, e)

@@ -6,7 +6,6 @@ from tempfile import NamedTemporaryFile
 from unittest.mock import MagicMock, patch
 
 from bani.application.orchestrator import MigrationResult
-from bani.domain.pipeline import TableTransferResult, TransferStatus
 from bani.domain.project import ConnectionConfig, ProjectModel
 from bani.domain.schema import ColumnDefinition, DatabaseSchema, TableDefinition
 from bani.sdk.bani import Bani, BaniProject
@@ -119,43 +118,42 @@ class TestBaniProject:
         bani_project = BaniProject(project)
 
         # Mock connectors and orchestrator
+        mock_source_class = MagicMock()
         mock_source = MagicMock()
+        mock_source_class.return_value = mock_source
+
+        mock_sink_class = MagicMock()
         mock_sink = MagicMock()
+        mock_sink_class.return_value = mock_sink
+
         mock_orchestrator = MagicMock()
 
         mock_result = MigrationResult(
-            tables_succeeded=1,
+            project_name="test",
+            tables_completed=1,
             tables_failed=0,
-            total_rows=100,
-            total_duration_seconds=1.5,
-            table_results=(
-                TableTransferResult(
-                    table_name="public.users",
-                    status=TransferStatus.COMPLETED,
-                    total_rows_written=100,
-                ),
-            ),
+            total_rows_read=100,
+            total_rows_written=100,
+            duration_seconds=1.5,
         )
 
         with (
-            patch("bani.sdk.bani.ConnectorRegistry.get_source") as mock_get_source,
-            patch("bani.sdk.bani.ConnectorRegistry.get_sink") as mock_get_sink,
+            patch("bani.sdk.bani.ConnectorRegistry.get") as mock_get,
             patch("bani.sdk.bani.MigrationOrchestrator") as mock_orch_class,
         ):
-            mock_get_source.return_value = mock_source
-            mock_get_sink.return_value = mock_sink
+            mock_get.side_effect = [mock_source_class, mock_sink_class]
             mock_orch_class.return_value = mock_orchestrator
-            mock_orchestrator.run.return_value = mock_result
+            mock_orchestrator.execute.return_value = mock_result
 
             result = bani_project.run()
 
-            assert result.tables_succeeded == 1
+            assert result.tables_completed == 1
             assert result.tables_failed == 0
-            assert result.total_rows == 100
+            assert result.total_rows_read == 100
             mock_source.connect.assert_called_once()
             mock_sink.connect.assert_called_once()
-            mock_source.close.assert_called_once()
-            mock_sink.close.assert_called_once()
+            mock_source.disconnect.assert_called_once()
+            mock_sink.disconnect.assert_called_once()
 
     def test_preview_with_mock_connector(self) -> None:
         """Test preview with mocked connector."""
@@ -190,7 +188,10 @@ class TestBaniProject:
         )
 
         # Mock the source connector
+        mock_source_class = MagicMock()
         mock_source = MagicMock()
+        mock_source_class.return_value = mock_source
+
         mock_schema = DatabaseSchema(
             tables=(table_def,),
             source_dialect="postgresql",
@@ -206,10 +207,10 @@ class TestBaniProject:
                 "name": ["Alice", "Bob"],
             }
         )
-        mock_source.read_batches.return_value = [mock_batch]
+        mock_source.read_table.return_value = iter([mock_batch])
 
-        with patch("bani.sdk.bani.ConnectorRegistry.get_source") as mock_get:
-            mock_get.return_value = mock_source
+        with patch("bani.sdk.bani.ConnectorRegistry.get") as mock_get:
+            mock_get.return_value = mock_source_class
 
             preview = bani_project.preview(sample_size=10)
 
@@ -219,7 +220,7 @@ class TestBaniProject:
             assert preview["public.users"][0]["name"] == "Alice"
             mock_source.connect.assert_called_once()
             mock_source.introspect_schema.assert_called_once()
-            mock_source.close.assert_called_once()
+            mock_source.disconnect.assert_called_once()
 
 
 class TestBani:

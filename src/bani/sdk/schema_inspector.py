@@ -2,9 +2,11 @@
 
 from __future__ import annotations
 
-from typing import Any
+from typing import Any, cast
 
+from bani.connectors.base import SourceConnector
 from bani.connectors.registry import ConnectorRegistry
+from bani.domain.project import ConnectionConfig
 from bani.domain.schema import DatabaseSchema
 
 
@@ -39,18 +41,23 @@ class SchemaInspector:
             KeyError: If no connector is registered for the dialect.
             Exception: If connection or introspection fails.
         """
-        connector_kwargs = {
-            "host": host,
-            "port": port,
-            "database": database,
-            "username_env": username_env,
-            "password_env": password_env,
-        }
-        connector_kwargs.update(kwargs)
+        extra_config: tuple[tuple[str, str], ...] = tuple(
+            (k, str(v)) for k, v in kwargs.items()
+        )
+        config = ConnectionConfig(
+            dialect=dialect,
+            host=host,
+            port=port,
+            database=database,
+            username_env=username_env,
+            password_env=password_env,
+            extra=extra_config,
+        )
 
-        source = ConnectorRegistry.get_source(dialect, **connector_kwargs)
+        connector_class = ConnectorRegistry.get(dialect)
+        source = cast(type[SourceConnector], connector_class)()
         try:
-            source.connect(**connector_kwargs)
+            source.connect(config)
             return source.introspect_schema()
         finally:
-            source.close()
+            source.disconnect()

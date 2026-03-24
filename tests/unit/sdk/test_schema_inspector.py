@@ -13,8 +13,9 @@ class TestSchemaInspector:
 
     def test_inspect_with_mock_connector(self) -> None:
         """Test introspection with a mocked connector."""
-        # Create mock connector
+        # Create mock connector instance and class
         mock_connector = MagicMock()
+        mock_connector_class = MagicMock(return_value=mock_connector)
 
         # Create a sample schema to return
         sample_schema = DatabaseSchema(
@@ -43,11 +44,9 @@ class TestSchemaInspector:
 
         mock_connector.introspect_schema.return_value = sample_schema
 
-        # Patch the registry to return our mock connector
-        with patch(
-            "bani.sdk.schema_inspector.ConnectorRegistry.get_source"
-        ) as mock_get:
-            mock_get.return_value = mock_connector
+        # Patch the registry to return our mock connector class
+        with patch("bani.sdk.schema_inspector.ConnectorRegistry.get") as mock_get:
+            mock_get.return_value = mock_connector_class
 
             result = SchemaInspector.inspect(
                 "postgresql",
@@ -66,40 +65,38 @@ class TestSchemaInspector:
             assert len(result.tables[0].columns) == 2
 
             # Verify connector was called
-            mock_get.assert_called_once()
+            mock_get.assert_called_once_with("postgresql")
             mock_connector.connect.assert_called_once()
             mock_connector.introspect_schema.assert_called_once()
-            mock_connector.close.assert_called_once()
+            mock_connector.disconnect.assert_called_once()
 
     def test_inspect_closes_on_error(self) -> None:
         """Test that connector is closed even on error."""
         mock_connector = MagicMock()
         mock_connector.introspect_schema.side_effect = RuntimeError("Connection failed")
+        mock_connector_class = MagicMock(return_value=mock_connector)
 
-        with patch(
-            "bani.sdk.schema_inspector.ConnectorRegistry.get_source"
-        ) as mock_get:
-            mock_get.return_value = mock_connector
+        with patch("bani.sdk.schema_inspector.ConnectorRegistry.get") as mock_get:
+            mock_get.return_value = mock_connector_class
 
             try:
                 SchemaInspector.inspect("postgresql", host="localhost")
             except RuntimeError:
                 pass
 
-            # Verify close was called despite the error
-            mock_connector.close.assert_called_once()
+            # Verify disconnect was called despite the error
+            mock_connector.disconnect.assert_called_once()
 
     def test_inspect_passes_kwargs(self) -> None:
         """Test that additional kwargs are passed to connector."""
         mock_connector = MagicMock()
+        mock_connector_class = MagicMock(return_value=mock_connector)
         mock_connector.introspect_schema.return_value = DatabaseSchema(
             tables=(), source_dialect="postgresql"
         )
 
-        with patch(
-            "bani.sdk.schema_inspector.ConnectorRegistry.get_source"
-        ) as mock_get:
-            mock_get.return_value = mock_connector
+        with patch("bani.sdk.schema_inspector.ConnectorRegistry.get") as mock_get:
+            mock_get.return_value = mock_connector_class
 
             SchemaInspector.inspect(
                 "postgresql",
@@ -112,20 +109,21 @@ class TestSchemaInspector:
                 application_name="bani",
             )
 
-            # Verify kwargs were passed
-            call_kwargs = mock_get.call_args[1]
-            assert call_kwargs["ssl_mode"] == "require"
-            assert call_kwargs["application_name"] == "bani"
+            # Verify config was passed to connect with kwargs
+            call_args = mock_connector.connect.call_args
+            assert call_args is not None
+            config = call_args[0][0]
+            # Check that extra config contains the kwargs
+            assert ("ssl_mode", "require") in config.extra
+            assert ("application_name", "bani") in config.extra
 
     def test_inspect_no_connector_raises_error(self) -> None:
-        """Test that KeyError is raised when connector not found."""
-        with patch(
-            "bani.sdk.schema_inspector.ConnectorRegistry.get_source"
-        ) as mock_get:
-            mock_get.side_effect = KeyError("No source connector for dialect 'unknown'")
+        """Test that ValueError is raised when connector not found."""
+        with patch("bani.sdk.schema_inspector.ConnectorRegistry.get") as mock_get:
+            mock_get.side_effect = ValueError("Connector 'unknown' not found")
 
             try:
                 SchemaInspector.inspect("unknown")
-                raise AssertionError("Should have raised KeyError")
-            except KeyError:
+                raise AssertionError("Should have raised ValueError")
+            except ValueError:
                 pass

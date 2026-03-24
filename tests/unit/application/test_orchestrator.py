@@ -23,31 +23,36 @@ class MockSourceConnector(SourceConnector):
         self._schema = schema
         self._connected = False
 
-    def connect(self, **kwargs: Any) -> None:
+    def connect(self, config: ConnectionConfig) -> None:
         """Mark as connected."""
         self._connected = True
 
-    def close(self) -> None:
-        """Mark as closed."""
+    def disconnect(self) -> None:
+        """Mark as disconnected."""
         self._connected = False
 
     def introspect_schema(self) -> DatabaseSchema:
         """Return the fixed schema."""
         return self._schema
 
-    def read_batches(
+    def read_table(
         self,
-        table: TableDefinition,
-        batch_size: int = 100_000,
+        table_name: str,
+        schema_name: str,
+        columns: list[str] | None = None,
         filter_sql: str | None = None,
+        batch_size: int = 100_000,
     ) -> Iterator[pa.RecordBatch]:
         """Yield empty batches (no actual data)."""
         # For testing, we'll just not yield anything
         return iter([])
 
-    def estimate_row_count(self, table: TableDefinition) -> int | None:
-        """Return the row count estimate from the table."""
-        return table.row_count_estimate
+    def estimate_row_count(self, table_name: str, schema_name: str) -> int:
+        """Return the row count estimate from the schema."""
+        for table in self._schema.tables:
+            if table.table_name == table_name and table.schema_name == schema_name:
+                return table.row_count_estimate
+        return 0
 
 
 class MockSinkConnector(SinkConnector):
@@ -57,40 +62,44 @@ class MockSinkConnector(SinkConnector):
         """Initialize the mock."""
         self._connected = False
         self.created_tables: list[str] = []
-        self.created_indexes: list[tuple[str, Any]] = []
-        self.created_fks: list[Any] = []
-        self.dropped_tables: list[str] = []
+        self.created_indexes: list[tuple[str, tuple[Any, ...]]] = []
+        self.created_fks: list[tuple[Any, ...]] = []
+        self.executed_sql: list[str] = []
         self.batches_written: list[tuple[str, int]] = []
 
-    def connect(self, **kwargs: Any) -> None:
+    def connect(self, config: ConnectionConfig) -> None:
         """Mark as connected."""
         self._connected = True
 
-    def close(self) -> None:
-        """Mark as closed."""
+    def disconnect(self) -> None:
+        """Mark as disconnected."""
         self._connected = False
 
-    def create_table(self, table: TableDefinition) -> None:
+    def create_table(self, table_def: TableDefinition) -> None:
         """Record table creation."""
-        self.created_tables.append(table.fully_qualified_name)
+        self.created_tables.append(table_def.fully_qualified_name)
 
-    def create_index(self, table_name: str, index: Any) -> None:
+    def create_indexes(
+        self, table_name: str, schema_name: str, indexes: tuple[Any, ...]
+    ) -> None:
         """Record index creation."""
-        self.created_indexes.append((table_name, index))
+        self.created_indexes.append((table_name, indexes))
 
-    def create_foreign_key(self, fk: Any) -> None:
+    def create_foreign_keys(self, fks: tuple[Any, ...]) -> None:
         """Record FK creation."""
-        self.created_fks.append(fk)
+        self.created_fks.append(fks)
 
-    def write_batch(self, table_name: str, batch: pa.RecordBatch) -> int:
+    def write_batch(
+        self, table_name: str, schema_name: str, batch: pa.RecordBatch
+    ) -> int:
         """Record batch write."""
         rows = len(batch)
         self.batches_written.append((table_name, rows))
         return rows
 
-    def drop_table(self, table_name: str) -> None:
-        """Record table drop."""
-        self.dropped_tables.append(table_name)
+    def execute_sql(self, sql: str) -> None:
+        """Record SQL execution."""
+        self.executed_sql.append(sql)
 
 
 def create_test_schema() -> DatabaseSchema:
@@ -189,8 +198,8 @@ def test_orchestrator_drops_tables_if_requested() -> None:
     orch = MigrationOrchestrator(project, source, sink)
     orch.execute()
 
-    # Should have dropped before creating
-    assert "public.users" in sink.dropped_tables
+    # Should have executed drop SQL and then created the table
+    assert any("DROP TABLE" in sql for sql in sink.executed_sql)
     assert "public.users" in sink.created_tables
 
 

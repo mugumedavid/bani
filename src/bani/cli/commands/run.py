@@ -3,18 +3,20 @@
 from __future__ import annotations
 
 import json
-from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any
+from typing import cast
 
 import click
 import typer
 from rich.console import Console
 
 from bani.application.orchestrator import MigrationOrchestrator
+from bani.application.progress import ProgressTracker
 from bani.bdl.parser import parse
 from bani.bdl.validator import validate_json, validate_xml
-from bani.cli.formatters import format_error, format_migration_progress
+from bani.cli.formatters import format_error
+from bani.connectors.base import SinkConnector, SourceConnector
+from bani.connectors.registry import ConnectorRegistry
 from bani.domain.errors import BaniError
 
 
@@ -84,41 +86,49 @@ def run(
         console.print("[bold green]✓ Dry run passed (validation only)[/bold green]")
         raise typer.Exit(0)
 
-    # Set up progress callback
-    def progress_callback(event: str, data: dict[str, Any]) -> None:
-        """Emit progress to JSON or human output."""
-        if output_format == "json":
-            # JSON-lines streaming (Section 18.2)
-            event_obj: dict[str, Any] = {
-                "event": event,
-                "timestamp": datetime.now(timezone.utc).isoformat(),  # noqa: UP017
-                **data,
-            }
-            console.print(json.dumps(event_obj))
-        elif not quiet:
-            format_migration_progress(console, event, data)
+    # Set up progress tracker
+    tracker = ProgressTracker()
 
     # Run migration
     try:
-        orchestrator = MigrationOrchestrator(
-            project, progress_callback=progress_callback
-        )
-        result = orchestrator.run(dry_run=False)
+        source_cfg = project.source
+        target_cfg = project.target
 
-        if output_format == "json":
-            # Final result as JSON
-            result_obj = {
-                "status": result.status.name,
-                "total_tables": result.total_tables,
-                "succeeded_tables": result.succeeded_tables,
-                "failed_tables": result.failed_tables,
-                "total_rows": result.total_rows,
-                "error_message": result.error_message,
-            }
-            console.print(json.dumps(result_obj))
+        assert source_cfg is not None
+        assert target_cfg is not None
 
-        exit_code = 0 if result.failed_tables == 0 else 1
-        raise typer.Exit(exit_code)
+        # Create source connector
+        source_connector_class = ConnectorRegistry.get(source_cfg.dialect)
+        source = cast(type[SourceConnector], source_connector_class)()
+        source.connect(source_cfg)
+
+        # Create sink connector
+        sink_connector_class = ConnectorRegistry.get(target_cfg.dialect)
+        sink = cast(type[SinkConnector], sink_connector_class)()
+        sink.connect(target_cfg)
+
+        try:
+            orchestrator = MigrationOrchestrator(project, source, sink, tracker=tracker)
+            result = orchestrator.execute()
+
+            if output_format == "json":
+                # Final result as JSON
+                result_obj = {
+                    "project_name": result.project_name,
+                    "tables_completed": result.tables_completed,
+                    "tables_failed": result.tables_failed,
+                    "total_rows_read": result.total_rows_read,
+                    "total_rows_written": result.total_rows_written,
+                    "duration_seconds": result.duration_seconds,
+                    "errors": result.errors,
+                }
+                console.print(json.dumps(result_obj))
+
+            exit_code = 0 if result.tables_failed == 0 else 1
+            raise typer.Exit(exit_code)
+        finally:
+            source.disconnect()
+            sink.disconnect()
 
     except BaniError as e:
         format_error(console, e)

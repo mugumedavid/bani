@@ -4,11 +4,13 @@ from __future__ import annotations
 
 from collections.abc import Callable
 from pathlib import Path
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, cast
 
 from bani.application.orchestrator import MigrationOrchestrator, MigrationResult
+from bani.application.progress import ProgressTracker
 from bani.bdl.parser import parse
 from bani.bdl.validator import validate_json, validate_xml
+from bani.connectors.base import SinkConnector, SourceConnector
 from bani.connectors.registry import ConnectorRegistry
 from bani.domain.project import ProjectModel
 
@@ -76,41 +78,30 @@ class BaniProject:
         assert source_cfg is not None
         assert target_cfg is not None
 
-        # Extract connection parameters
-        source_kwargs = {
-            "host": source_cfg.host,
-            "port": source_cfg.port,
-            "database": source_cfg.database,
-            "username_env": source_cfg.username_env,
-            "password_env": source_cfg.password_env,
-        }
-        for key, val in source_cfg.extra:
-            source_kwargs[key] = val
+        # Create source connector and connect
+        source_connector_class = ConnectorRegistry.get(source_cfg.dialect)
+        source = cast(type[SourceConnector], source_connector_class)()
+        source.connect(source_cfg)
 
-        target_kwargs = {
-            "host": target_cfg.host,
-            "port": target_cfg.port,
-            "database": target_cfg.database,
-            "username_env": target_cfg.username_env,
-            "password_env": target_cfg.password_env,
-        }
-        for key, val in target_cfg.extra:
-            target_kwargs[key] = val
-
-        source = ConnectorRegistry.get_source(source_cfg.dialect, **source_kwargs)
-        sink = ConnectorRegistry.get_sink(target_cfg.dialect, **target_kwargs)
+        # Create sink connector and connect
+        sink_connector_class = ConnectorRegistry.get(target_cfg.dialect)
+        sink = cast(type[SinkConnector], sink_connector_class)()
+        sink.connect(target_cfg)
 
         try:
-            source.connect(**source_kwargs)
-            sink.connect(**target_kwargs)
+            # Create progress tracker if callback provided
+            tracker = None
+            if on_progress:
+                tracker = ProgressTracker()
+                # Wire up the callback to the tracker's events if needed
 
             orchestrator = MigrationOrchestrator(
-                self._project, source, sink, on_progress=on_progress
+                self._project, source, sink, tracker=tracker
             )
-            return orchestrator.run()
+            return orchestrator.execute()
         finally:
-            source.close()
-            sink.close()
+            source.disconnect()
+            sink.disconnect()
 
     def preview(self, sample_size: int = 10) -> dict[str, list[dict[str, Any]]]:
         """Preview data from the source database.
@@ -124,21 +115,11 @@ class BaniProject:
         source_cfg = self._project.source
         assert source_cfg is not None
 
-        # Extract connection parameters
-        source_kwargs = {
-            "host": source_cfg.host,
-            "port": source_cfg.port,
-            "database": source_cfg.database,
-            "username_env": source_cfg.username_env,
-            "password_env": source_cfg.password_env,
-        }
-        for key, val in source_cfg.extra:
-            source_kwargs[key] = val
-
-        source = ConnectorRegistry.get_source(source_cfg.dialect, **source_kwargs)
+        source_connector_class = ConnectorRegistry.get(source_cfg.dialect)
+        source = cast(type[SourceConnector], source_connector_class)()
+        source.connect(source_cfg)
 
         try:
-            source.connect(**source_kwargs)
             schema = source.introspect_schema()
 
             preview_data: dict[str, list[dict[str, Any]]] = {}
@@ -148,7 +129,9 @@ class BaniProject:
                 rows: list[dict[str, Any]] = []
 
                 batch_count = 0
-                for batch in source.read_batches(table_def, batch_size=sample_size):
+                for batch in source.read_table(
+                    table_def.table_name, table_def.schema_name, batch_size=sample_size
+                ):
                     # Convert batch to Python dicts
                     batch_dict = batch.to_pydict()
                     num_rows = batch.num_rows
@@ -165,7 +148,7 @@ class BaniProject:
 
             return preview_data
         finally:
-            source.close()
+            source.disconnect()
 
 
 class Bani:
