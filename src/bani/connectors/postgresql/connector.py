@@ -16,6 +16,7 @@ from bani.connectors.base import SinkConnector, SourceConnector
 from bani.connectors.postgresql.data_reader import PostgreSQLDataReader
 from bani.connectors.postgresql.data_writer import PostgreSQLDataWriter
 from bani.connectors.postgresql.schema_reader import PostgreSQLSchemaReader
+from bani.connectors.postgresql.type_mapper import PostgreSQLTypeMapper
 from bani.domain.project import ConnectionConfig
 from bani.domain.schema import (
     DatabaseSchema,
@@ -74,7 +75,7 @@ class PostgreSQLConnector(SourceConnector, SinkConnector):
         conninfo_parts = [
             f"host={config.host}",
             f"port={port}",
-            f"database={config.database}",
+            f"dbname={config.database}",
         ]
 
         if username:
@@ -85,7 +86,7 @@ class PostgreSQLConnector(SourceConnector, SinkConnector):
 
         # Handle TLS configuration
         if config.encrypt:
-            conninfo_parts.append("sslmode=require")
+            conninfo_parts.append("sslmode=prefer")
         else:
             conninfo_parts.append("sslmode=disable")
 
@@ -203,13 +204,34 @@ class PostgreSQLConnector(SourceConnector, SinkConnector):
         # Build column definitions
         col_defs = []
         for col in table_def.columns:
-            col_def = f'"{col.name}" {col.data_type}'
+            is_auto = col.is_auto_increment or (
+                "auto_increment" in col.data_type.lower()
+            )
 
-            if not col.nullable:
-                col_def += " NOT NULL"
+            # Resolve target type via the canonical Arrow mapping layer
+            # when arrow_type_str is available; fall back to raw data_type.
+            if col.arrow_type_str:
+                pg_type = PostgreSQLTypeMapper.from_arrow_type(
+                    col.arrow_type_str
+                )
+            else:
+                pg_type = col.data_type
 
-            if col.default_value:
-                col_def += f" DEFAULT {col.default_value}"
+            # serial/bigserial implies NOT NULL and a sequence default
+            if is_auto and pg_type not in ("serial", "bigserial"):
+                pg_type = "serial"
+
+            col_def = f'"{col.name}" {pg_type}'
+
+            if pg_type not in ("serial", "bigserial"):
+                if not col.nullable:
+                    col_def += " NOT NULL"
+
+                if col.default_value:
+                    default = self._normalize_default(
+                        col.default_value, pg_type
+                    )
+                    col_def += f" DEFAULT {default}"
 
             col_defs.append(col_def)
 
@@ -345,6 +367,72 @@ class PostgreSQLConnector(SourceConnector, SinkConnector):
             cur.execute(sql_str)
 
     @staticmethod
+    def _normalize_default(raw_default: str, pg_type: str) -> str:
+        """Normalize a column default value for PostgreSQL DDL.
+
+        MySQL's INFORMATION_SCHEMA returns bare string literals
+        (e.g. ``pending``) while PostgreSQL requires them quoted
+        (``'pending'``).  Numeric literals, SQL functions, and
+        already-quoted values are passed through unchanged.
+
+        Args:
+            raw_default: The raw default expression from introspection.
+            pg_type: The resolved PostgreSQL column type.
+
+        Returns:
+            A PostgreSQL-safe default expression.
+        """
+        val = raw_default.strip()
+        upper = val.upper()
+
+        # MySQL CURRENT_TIMESTAMP → PG NOW()
+        if upper in ("CURRENT_TIMESTAMP", "CURRENT_TIMESTAMP()"):
+            return "NOW()"
+
+        # NULL literal
+        if upper == "NULL":
+            return "NULL"
+
+        # Already a quoted string
+        if val.startswith("'") and val.endswith("'"):
+            return val
+
+        # Numeric literal (int, float, negative)
+        stripped = val.lstrip("-")
+        if stripped.replace(".", "", 1).isdigit():
+            return val
+
+        # Boolean literals for boolean columns
+        if pg_type == "boolean" and upper in (
+            "TRUE",
+            "FALSE",
+            "0",
+            "1",
+        ):
+            return "TRUE" if upper in ("TRUE", "1") else "FALSE"
+
+        # SQL function call (contains parens) — pass through
+        if "(" in val and ")" in val:
+            return val
+
+        # SQL keyword expressions (e.g. CURRENT_DATE, TRUE, FALSE)
+        _SQL_KEYWORDS = {
+            "CURRENT_DATE",
+            "CURRENT_TIME",
+            "CURRENT_USER",
+            "LOCALTIME",
+            "LOCALTIMESTAMP",
+            "TRUE",
+            "FALSE",
+        }
+        if upper in _SQL_KEYWORDS:
+            return val
+
+        # Everything else: treat as a string literal, quote it
+        escaped = val.replace("'", "''")
+        return f"'{escaped}'"
+
+    @staticmethod
     def _resolve_env_var(env_ref: str) -> str | None:
         """Resolve an environment variable reference.
 
@@ -366,3 +454,4 @@ class PostgreSQLConnector(SourceConnector, SinkConnector):
             var_name = env_ref
 
         return os.environ.get(var_name)
+

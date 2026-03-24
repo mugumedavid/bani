@@ -296,7 +296,7 @@ class TestConnectWithCredentials:
             assert "port=5433" in call_args
 
     def test_connect_includes_ssl_when_encrypt_true(self) -> None:
-        """Should include sslmode=require when encrypt is True."""
+        """Should include sslmode=prefer when encrypt is True."""
         connector = PostgreSQLConnector()
         config = ConnectionConfig(
             dialect="postgresql",
@@ -313,7 +313,7 @@ class TestConnectWithCredentials:
             connector.connect(config)
 
             call_args = mock_connect.call_args[0][0]
-            assert "sslmode=require" in call_args
+            assert "sslmode=prefer" in call_args
 
     def test_connect_includes_ssl_disable_when_encrypt_false(
         self,
