@@ -74,14 +74,17 @@ class TestParseXML:
         assert len(result.table_mappings) == 4
         assert len(result.type_overrides) == 4
         assert len(result.hooks) == 3
+        assert result.schedule is not None
         assert result.schedule.enabled is True
         assert result.schedule.cron == "0 2 * * *"
+        assert result.sync is not None
         assert result.sync.enabled is False
 
     def test_parse_incremental_sync_xml(self) -> None:
         """Test parsing with sync configuration."""
         with open(FIXTURES_DIR / "incremental-sync.bdl") as f:
             result = parse_xml(f.read())
+        assert result.sync is not None
         assert result.sync.enabled is True
         assert result.sync.strategy == SyncStrategy.TIMESTAMP
         assert len(result.sync.tracking_columns) == 2
@@ -97,6 +100,7 @@ class TestParseXML:
         with open(FIXTURES_DIR / "hooks-and-schedule.bdl") as f:
             result = parse_xml(f.read())
         assert len(result.hooks) == 2
+        assert result.schedule is not None
         assert result.schedule.enabled is True
         assert result.schedule.max_retries == 2
 
@@ -220,6 +224,7 @@ class TestParseOptions:
             '<bani schemaVersion="1.0"><project name="test"/></bani>'
         )
         result = parse_xml(content)
+        assert result.options is not None
         assert result.options.batch_size == 100000
         assert result.options.parallel_workers == 4
 
@@ -227,5 +232,6 @@ class TestParseOptions:
         """Test custom options are parsed."""
         with open(FIXTURES_DIR / "multi-table.bdl") as f:
             result = parse_xml(f.read())
+        assert result.options is not None
         assert result.options.batch_size == 50000
         assert result.options.parallel_workers == 8

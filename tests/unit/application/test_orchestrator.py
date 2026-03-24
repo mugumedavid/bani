@@ -51,7 +51,7 @@ class MockSourceConnector(SourceConnector):
         """Return the row count estimate from the schema."""
         for table in self._schema.tables:
             if table.table_name == table_name and table.schema_name == schema_name:
-                return table.row_count_estimate
+                return table.row_count_estimate or 0
         return 0
 
 

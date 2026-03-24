@@ -2,9 +2,255 @@
 
 from __future__ import annotations
 
+from typing import Any
+from unittest.mock import MagicMock
+
 import pyarrow as pa
 
+from bani.connectors.postgresql.data_reader import PostgreSQLDataReader
 from bani.connectors.postgresql.type_mapper import PostgreSQLTypeMapper
+
+
+class TestPostgreSQLDataReaderInit:
+    """Tests for data reader initialization."""
+
+    def test_init_stores_connection(self) -> None:
+        """Reader should store the connection and initialize mapper."""
+        mock_conn = MagicMock()
+        reader = PostgreSQLDataReader(mock_conn)
+        assert reader.connection is mock_conn
+        assert reader.type_mapper is not None
+
+
+class TestPostgreSQLDataReaderReadTable:
+    """Tests for read_table method."""
+
+    def test_read_table_with_no_columns(self) -> None:
+        """Should handle cursor with no description gracefully."""
+        mock_conn = MagicMock()
+        mock_cursor = MagicMock()
+        mock_cursor.__enter__ = MagicMock(return_value=mock_cursor)
+        mock_cursor.__exit__ = MagicMock(return_value=None)
+        mock_cursor.description = None
+        mock_conn.cursor.return_value = mock_cursor
+
+        reader = PostgreSQLDataReader(mock_conn)
+        result = list(reader.read_table("test_table", "public"))
+
+        assert result == []
+
+    def test_read_table_single_batch(self) -> None:
+        """Should read data in a single batch."""
+        mock_conn = MagicMock()
+        mock_cursor = MagicMock()
+        mock_cursor.__enter__ = MagicMock(return_value=mock_cursor)
+        mock_cursor.__exit__ = MagicMock(return_value=None)
+
+        # Simulate two columns: id (int32 OID 23), name (text OID 25)
+        mock_cursor.description = [("id", 23), ("name", 25)]
+        mock_cursor.fetchmany.side_effect = [
+            [(1, "Alice"), (2, "Bob")],
+            [],
+        ]
+        mock_conn.cursor.return_value = mock_cursor
+
+        reader = PostgreSQLDataReader(mock_conn)
+        batches = list(reader.read_table("test_table", "public", batch_size=100))
+
+        assert len(batches) == 1
+        assert batches[0].num_rows == 2
+        assert batches[0].num_columns == 2
+
+    def test_read_table_multiple_batches(self) -> None:
+        """Should split data into multiple batches."""
+        mock_conn = MagicMock()
+        mock_cursor = MagicMock()
+        mock_cursor.__enter__ = MagicMock(return_value=mock_cursor)
+        mock_cursor.__exit__ = MagicMock(return_value=None)
+
+        mock_cursor.description = [("id", 23)]
+        # First batch with 100 rows, second with 50, third empty
+        mock_cursor.fetchmany.side_effect = [
+            [(i,) for i in range(100)],
+            [(i,) for i in range(100, 150)],
+            [],
+        ]
+        mock_conn.cursor.return_value = mock_cursor
+
+        reader = PostgreSQLDataReader(mock_conn)
+        batches = list(reader.read_table("test_table", "public", batch_size=100))
+
+        assert len(batches) == 2
+        assert batches[0].num_rows == 100
+        assert batches[1].num_rows == 50
+
+    def test_read_table_with_filter(self) -> None:
+        """Should apply filter expression to query."""
+        mock_conn = MagicMock()
+        mock_cursor = MagicMock()
+        mock_cursor.__enter__ = MagicMock(return_value=mock_cursor)
+        mock_cursor.__exit__ = MagicMock(return_value=None)
+
+        mock_cursor.description = [("id", 23)]
+        mock_cursor.fetchmany.return_value = []
+        mock_conn.cursor.return_value = mock_cursor
+
+        reader = PostgreSQLDataReader(mock_conn)
+        list(
+            reader.read_table(
+                "test_table",
+                "public",
+                filter_sql="id > 5",
+            )
+        )
+
+        # Verify execute was called with WHERE clause
+        call_args = mock_cursor.execute.call_args[0][0]
+        assert "WHERE id > 5" in call_args
+
+    def test_read_table_with_specific_columns(self) -> None:
+        """Should select specific columns."""
+        mock_conn = MagicMock()
+        mock_cursor = MagicMock()
+        mock_cursor.__enter__ = MagicMock(return_value=mock_cursor)
+        mock_cursor.__exit__ = MagicMock(return_value=None)
+
+        mock_cursor.description = [("name", 25)]
+        mock_cursor.fetchmany.return_value = []
+        mock_conn.cursor.return_value = mock_cursor
+
+        reader = PostgreSQLDataReader(mock_conn)
+        list(
+            reader.read_table(
+                "test_table",
+                "public",
+                columns=["name"],
+            )
+        )
+
+        call_args = mock_cursor.execute.call_args[0][0]
+        assert '"name"' in call_args
+        assert "FROM" in call_args
+
+
+class TestPostgreSQLDataReaderMakeBatch:
+    """Tests for _make_record_batch method."""
+
+    def test_make_record_batch_valid_data(self) -> None:
+        """Should create valid batch from rows."""
+        mock_conn = MagicMock()
+        reader = PostgreSQLDataReader(mock_conn)
+
+        rows: list[tuple[Any, ...]] = [(1, "Alice"), (2, "Bob")]
+        col_names = ["id", "name"]
+        col_types = [23, 25]  # int32, text
+
+        batch = reader._make_record_batch(rows, col_names, col_types)
+
+        assert isinstance(batch, pa.RecordBatch)
+        assert batch.num_rows == 2
+        assert batch.num_columns == 2
+        assert batch.schema.names == ["id", "name"]
+
+    def test_make_record_batch_with_nulls(self) -> None:
+        """Should handle None values in data."""
+        mock_conn = MagicMock()
+        reader = PostgreSQLDataReader(mock_conn)
+
+        rows: list[tuple[Any, ...]] = [(1, None), (2, "Bob")]
+        col_names = ["id", "name"]
+        col_types = [23, 25]
+
+        batch = reader._make_record_batch(rows, col_names, col_types)
+
+        assert batch.num_rows == 2
+        assert batch[1][0].as_py() is None
+
+    def test_make_record_batch_various_types(self) -> None:
+        """Should handle various PostgreSQL types."""
+        mock_conn = MagicMock()
+        reader = PostgreSQLDataReader(mock_conn)
+
+        rows: list[tuple[Any, ...]] = [
+            (1, True, 3.14, "text"),
+            (2, False, 2.71, "data"),
+        ]
+        col_names = ["id", "active", "price", "label"]
+        col_types = [23, 16, 701, 25]  # int, bool, float64, text
+
+        batch = reader._make_record_batch(rows, col_names, col_types)
+
+        assert batch.num_rows == 2
+        assert batch.num_columns == 4
+
+
+class TestPostgreSQLDataReaderEstimate:
+    """Tests for estimate_row_count method."""
+
+    def test_estimate_row_count_from_explain(self) -> None:
+        """Should extract row count from EXPLAIN output."""
+        mock_conn = MagicMock()
+        mock_cursor = MagicMock()
+        mock_cursor.__enter__ = MagicMock(return_value=mock_cursor)
+        mock_cursor.__exit__ = MagicMock(return_value=None)
+        # Simulate EXPLAIN output with rows= indicator
+        mock_cursor.fetchall.return_value = [
+            ("Seq Scan on test_table (rows=12345 width=0)",)
+        ]
+        mock_conn.cursor.return_value = mock_cursor
+
+        reader = PostgreSQLDataReader(mock_conn)
+        result = reader.estimate_row_count("test_table", "public")
+
+        assert result == 12345
+
+    def test_estimate_row_count_fallback_to_count(self) -> None:
+        """Should fall back to COUNT(*) if EXPLAIN lacks rows=."""
+        mock_conn = MagicMock()
+        mock_cursor = MagicMock()
+        mock_cursor.__enter__ = MagicMock(return_value=mock_cursor)
+        mock_cursor.__exit__ = MagicMock(return_value=None)
+        # First call: EXPLAIN without rows=, second: COUNT(*)
+        mock_cursor.fetchall.side_effect = [
+            [("Index Scan",)],
+            [(5000,)],
+        ]
+        mock_conn.cursor.return_value = mock_cursor
+
+        reader = PostgreSQLDataReader(mock_conn)
+        result = reader.estimate_row_count("test_table", "public")
+
+        assert result == 5000
+
+    def test_estimate_row_count_empty_table(self) -> None:
+        """Should return 0 for empty result set."""
+        mock_conn = MagicMock()
+        mock_cursor = MagicMock()
+        mock_cursor.__enter__ = MagicMock(return_value=mock_cursor)
+        mock_cursor.__exit__ = MagicMock(return_value=None)
+        mock_cursor.fetchall.return_value = []
+        mock_conn.cursor.return_value = mock_cursor
+
+        reader = PostgreSQLDataReader(mock_conn)
+        result = reader.estimate_row_count("test_table", "public")
+
+        assert result == 0
+
+    def test_estimate_row_count_with_spaces_in_explain(self) -> None:
+        """Should handle EXPLAIN output with spaces."""
+        mock_conn = MagicMock()
+        mock_cursor = MagicMock()
+        mock_cursor.__enter__ = MagicMock(return_value=mock_cursor)
+        mock_cursor.__exit__ = MagicMock(return_value=None)
+        mock_cursor.fetchall.return_value = [
+            ("  ->  Seq Scan on users (rows=999 width=100)",)
+        ]
+        mock_conn.cursor.return_value = mock_cursor
+
+        reader = PostgreSQLDataReader(mock_conn)
+        result = reader.estimate_row_count("users", "public")
+
+        assert result == 999
 
 
 class TestPostgreSQLTypeMapper:

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import os
+from collections.abc import Generator
 
 import pytest
 
@@ -18,7 +19,7 @@ pytestmark = pytest.mark.integration
 
 
 @pytest.fixture
-def pg_connection() -> psycopg.Connection[tuple[str, ...]]:
+def pg_connection() -> Generator[psycopg.Connection[tuple[str, ...]], None, None]:
     """Connect to the test PostgreSQL instance.
 
     Yields:
@@ -41,7 +42,9 @@ def pg_connection() -> psycopg.Connection[tuple[str, ...]]:
 
 
 @pytest.fixture
-def test_schema(pg_connection: psycopg.Connection[tuple[str, ...]]) -> str:
+def test_schema(
+    pg_connection: psycopg.Connection[tuple[str, ...]],
+) -> Generator[str, None, None]:
     """Create a test schema and return its name.
 
     Args:

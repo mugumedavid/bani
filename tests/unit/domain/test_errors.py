@@ -88,7 +88,7 @@ class TestConnectionErrors:
 
     def test_no_shadow_builtin(self) -> None:
         # BaniConnectionError should NOT shadow built-in ConnectionError
-        assert BaniConnectionError is not ConnectionError
+        assert id(BaniConnectionError) != id(ConnectionError)
 
 
 class TestSchemaErrors:

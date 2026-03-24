@@ -132,8 +132,8 @@ def test_json_formatter_includes_extra_fields() -> None:
         exc_info=None,
     )
     # Add custom field
-    record.user_id = 123  # type: ignore[attr-defined]
-    record.action = "login"  # type: ignore[attr-defined]
+    record.user_id = 123
+    record.action = "login"
 
     output = formatter.format(record)
     obj = json.loads(output)

@@ -317,7 +317,10 @@ def pg_source(
     os.environ.setdefault("PG_PASS", "bani_test")
 
     connector = PostgreSQLConnector()
-    connector.connect(pg_config)
+    try:
+        connector.connect(pg_config)
+    except Exception as exc:
+        pytest.skip(f"PostgreSQL not available: {exc}")
 
     # Create schema and insert fixture data
     assert connector.connection is not None
@@ -345,7 +348,10 @@ def mysql_source(
     os.environ.setdefault("MYSQL_PASS", "bani_test")
 
     connector = MySQLConnector()
-    connector.connect(mysql_config)
+    try:
+        connector.connect(mysql_config)
+    except Exception as exc:
+        pytest.skip(f"MySQL not available: {exc}")
 
     # Create schema and insert fixture data
     assert connector.connection is not None
@@ -371,7 +377,10 @@ def pg_sink(pg_config: ConnectionConfig) -> Generator[PostgreSQLConnector, None,
     os.environ.setdefault("PG_PASS", "bani_test")
 
     connector = PostgreSQLConnector()
-    connector.connect(pg_config)
+    try:
+        connector.connect(pg_config)
+    except Exception as exc:
+        pytest.skip(f"PostgreSQL not available: {exc}")
     yield connector
     connector.disconnect()
 
@@ -383,7 +392,10 @@ def mysql_sink(mysql_config: ConnectionConfig) -> Generator[MySQLConnector, None
     os.environ.setdefault("MYSQL_PASS", "bani_test")
 
     connector = MySQLConnector()
-    connector.connect(mysql_config)
+    try:
+        connector.connect(mysql_config)
+    except Exception as exc:
+        pytest.skip(f"MySQL not available: {exc}")
     yield connector
     connector.disconnect()
 
@@ -397,7 +409,10 @@ def mysql55_source(
     os.environ.setdefault("MYSQL55_PASS", "bani_test")
 
     connector = MySQLConnector()
-    connector.connect(mysql55_config)
+    try:
+        connector.connect(mysql55_config)
+    except Exception as exc:
+        pytest.skip(f"MySQL 5.7 not available: {exc}")
 
     # Create schema and insert fixture data
     assert connector.connection is not None

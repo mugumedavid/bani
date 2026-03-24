@@ -71,7 +71,7 @@ class ConnectorRegistry:
             try:
                 import bani.connectors.mysql
 
-                ConnectorRegistry._cache["mysql"] = bani.connectors.mysql.MySQLConnector  # type: ignore[attr-defined]
+                ConnectorRegistry._cache["mysql"] = bani.connectors.mysql.MySQLConnector
             except (ImportError, AttributeError):
                 pass
 

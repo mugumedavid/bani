@@ -49,6 +49,8 @@ class TestSerialize:
 
         assert reparsed.name == original.name
         assert len(reparsed.table_mappings) == len(original.table_mappings)
+        assert reparsed.options is not None
+        assert original.options is not None
         assert reparsed.options.batch_size == original.options.batch_size
 
     def test_serialize_includes_xml_declaration(self) -> None:
@@ -84,6 +86,8 @@ class TestSerialize:
         serialized = serialize(original)
         reparsed = parse_xml(serialized)
 
+        assert reparsed.schedule is not None
+        assert original.schedule is not None
         assert reparsed.schedule.enabled == original.schedule.enabled
         assert reparsed.schedule.cron == original.schedule.cron
         assert reparsed.schedule.max_retries == original.schedule.max_retries
