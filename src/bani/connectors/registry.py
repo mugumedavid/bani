@@ -45,7 +45,7 @@ class ConnectorRegistry:
                 connector_eps = eps.select(group="bani.connectors")
             else:
                 # Fallback for older versions
-                connector_eps = eps.get("bani.connectors", [])  # type: ignore[attr-defined]
+                connector_eps = eps.get("bani.connectors", [])  # type: ignore[union-attr,arg-type]
 
             for ep in connector_eps:
                 try:
