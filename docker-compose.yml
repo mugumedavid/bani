@@ -16,3 +16,43 @@ services:
       interval: 10s
       timeout: 5s
       retries: 5
+
+  mysql:
+    image: mysql:8.4
+    environment:
+      MYSQL_ROOT_PASSWORD: bani_test
+      MYSQL_DATABASE: bani_test
+      MYSQL_USER: bani_test
+      MYSQL_PASSWORD: bani_test
+    ports:
+      - "3306:3306"
+    tmpfs:
+      - /var/lib/mysql
+    command: --default-authentication-plugin=mysql_native_password --character-set-server=utf8mb4 --collation-server=utf8mb4_unicode_ci
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "localhost", "-u", "bani_test", "-pbani_test"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+
+  mysql55:
+    image: mysql:5.7
+    environment:
+      MYSQL_ROOT_PASSWORD: bani_test
+      MYSQL_DATABASE: bani_test
+      MYSQL_USER: bani_test
+      MYSQL_PASSWORD: bani_test
+    ports:
+      - "3307:3306"
+    tmpfs:
+      - /var/lib/mysql
+    command: --character-set-server=utf8mb4 --collation-server=utf8mb4_unicode_ci
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "localhost", "-u", "bani_test", "-pbani_test"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+
+networks:
+  default:
+    name: bani-test-net
