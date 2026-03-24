@@ -233,3 +233,304 @@ class TestValueCoercion:
         d = datetime.date(2024, 1, 15)
         result = self.mapper.coerce_value(d, pa.date32())
         assert result == d
+
+
+class TestFromArrowType:
+    """Tests for Arrow-to-MySQL DDL type mapping."""
+
+    def test_bool_to_tinyint1(self) -> None:
+        """bool → TINYINT(1)."""
+        result = MySQLTypeMapper.from_arrow_type("bool")
+        assert result == "TINYINT(1)"
+
+    def test_int8_to_tinyint(self) -> None:
+        """int8 → TINYINT."""
+        result = MySQLTypeMapper.from_arrow_type("int8")
+        assert result == "TINYINT"
+
+    def test_int16_to_smallint(self) -> None:
+        """int16 → SMALLINT."""
+        result = MySQLTypeMapper.from_arrow_type("int16")
+        assert result == "SMALLINT"
+
+    def test_int32_to_int(self) -> None:
+        """int32 → INT."""
+        result = MySQLTypeMapper.from_arrow_type("int32")
+        assert result == "INT"
+
+    def test_int64_to_bigint(self) -> None:
+        """int64 → BIGINT."""
+        result = MySQLTypeMapper.from_arrow_type("int64")
+        assert result == "BIGINT"
+
+    def test_uint8_to_smallint_unsigned(self) -> None:
+        """uint8 → SMALLINT UNSIGNED."""
+        result = MySQLTypeMapper.from_arrow_type("uint8")
+        assert result == "SMALLINT UNSIGNED"
+
+    def test_uint16_to_int_unsigned(self) -> None:
+        """uint16 → INT UNSIGNED."""
+        result = MySQLTypeMapper.from_arrow_type("uint16")
+        assert result == "INT UNSIGNED"
+
+    def test_uint32_to_bigint_unsigned(self) -> None:
+        """uint32 → BIGINT UNSIGNED."""
+        result = MySQLTypeMapper.from_arrow_type("uint32")
+        assert result == "BIGINT UNSIGNED"
+
+    def test_uint64_to_decimal20_unsigned(self) -> None:
+        """uint64 → DECIMAL(20,0) UNSIGNED."""
+        result = MySQLTypeMapper.from_arrow_type("uint64")
+        assert result == "DECIMAL(20,0) UNSIGNED"
+
+    def test_float16_to_float(self) -> None:
+        """float16 → FLOAT."""
+        result = MySQLTypeMapper.from_arrow_type("float16")
+        assert result == "FLOAT"
+
+    def test_float32_to_float(self) -> None:
+        """float32 → FLOAT."""
+        result = MySQLTypeMapper.from_arrow_type("float32")
+        assert result == "FLOAT"
+
+    def test_float64_to_double(self) -> None:
+        """float64 → DOUBLE."""
+        result = MySQLTypeMapper.from_arrow_type("float64")
+        assert result == "DOUBLE"
+
+    def test_halffloat_to_float(self) -> None:
+        """halffloat → FLOAT."""
+        result = MySQLTypeMapper.from_arrow_type("halffloat")
+        assert result == "FLOAT"
+
+    def test_string_to_text(self) -> None:
+        """string → TEXT."""
+        result = MySQLTypeMapper.from_arrow_type("string")
+        assert result == "TEXT"
+
+    def test_utf8_to_text(self) -> None:
+        """utf8 → TEXT."""
+        result = MySQLTypeMapper.from_arrow_type("utf8")
+        assert result == "TEXT"
+
+    def test_large_string_to_longtext(self) -> None:
+        """large_string → LONGTEXT."""
+        result = MySQLTypeMapper.from_arrow_type("large_string")
+        assert result == "LONGTEXT"
+
+    def test_large_utf8_to_longtext(self) -> None:
+        """large_utf8 → LONGTEXT."""
+        result = MySQLTypeMapper.from_arrow_type("large_utf8")
+        assert result == "LONGTEXT"
+
+    def test_binary_to_blob(self) -> None:
+        """binary → BLOB."""
+        result = MySQLTypeMapper.from_arrow_type("binary")
+        assert result == "BLOB"
+
+    def test_large_binary_to_longblob(self) -> None:
+        """large_binary → LONGBLOB."""
+        result = MySQLTypeMapper.from_arrow_type("large_binary")
+        assert result == "LONGBLOB"
+
+    def test_date32_to_date(self) -> None:
+        """date32 → DATE."""
+        result = MySQLTypeMapper.from_arrow_type("date32")
+        assert result == "DATE"
+
+    def test_date64_to_date(self) -> None:
+        """date64 → DATE."""
+        result = MySQLTypeMapper.from_arrow_type("date64")
+        assert result == "DATE"
+
+    def test_null_to_text(self) -> None:
+        """null → TEXT (fallback)."""
+        result = MySQLTypeMapper.from_arrow_type("null")
+        assert result == "TEXT"
+
+    def test_timestamp_with_tz_to_timestamp(self) -> None:
+        """timestamp[us, tz=UTC] → TIMESTAMP."""
+        result = MySQLTypeMapper.from_arrow_type("timestamp[us, tz=UTC]")
+        assert result == "TIMESTAMP"
+
+    def test_timestamp_with_different_tz_to_timestamp(self) -> None:
+        """timestamp[us, tz=US/Eastern] → TIMESTAMP."""
+        result = MySQLTypeMapper.from_arrow_type("timestamp[us, tz=US/Eastern]")
+        assert result == "TIMESTAMP"
+
+    def test_timestamp_without_tz_to_datetime(self) -> None:
+        """timestamp[us] (no tz) → DATETIME."""
+        result = MySQLTypeMapper.from_arrow_type("timestamp[us]")
+        assert result == "DATETIME"
+
+    def test_timestamp_with_ns_no_tz_to_datetime(self) -> None:
+        """timestamp[ns] (no tz) → DATETIME."""
+        result = MySQLTypeMapper.from_arrow_type("timestamp[ns]")
+        assert result == "DATETIME"
+
+    def test_timestamp_with_ms_and_tz_to_timestamp(self) -> None:
+        """timestamp[ms, tz=UTC] → TIMESTAMP."""
+        result = MySQLTypeMapper.from_arrow_type("timestamp[ms, tz=UTC]")
+        assert result == "TIMESTAMP"
+
+    def test_time32_ms_to_time(self) -> None:
+        """time32[ms] → TIME."""
+        result = MySQLTypeMapper.from_arrow_type("time32[ms]")
+        assert result == "TIME"
+
+    def test_time32_s_to_time(self) -> None:
+        """time32[s] → TIME."""
+        result = MySQLTypeMapper.from_arrow_type("time32[s]")
+        assert result == "TIME"
+
+    def test_time64_us_to_time(self) -> None:
+        """time64[us] → TIME."""
+        result = MySQLTypeMapper.from_arrow_type("time64[us]")
+        assert result == "TIME"
+
+    def test_time64_ns_to_time(self) -> None:
+        """time64[ns] → TIME."""
+        result = MySQLTypeMapper.from_arrow_type("time64[ns]")
+        assert result == "TIME"
+
+    def test_duration_s_to_time(self) -> None:
+        """duration[s] → TIME."""
+        result = MySQLTypeMapper.from_arrow_type("duration[s]")
+        assert result == "TIME"
+
+    def test_duration_ms_to_time(self) -> None:
+        """duration[ms] → TIME."""
+        result = MySQLTypeMapper.from_arrow_type("duration[ms]")
+        assert result == "TIME"
+
+    def test_duration_us_to_time(self) -> None:
+        """duration[us] → TIME."""
+        result = MySQLTypeMapper.from_arrow_type("duration[us]")
+        assert result == "TIME"
+
+    def test_duration_ns_to_time(self) -> None:
+        """duration[ns] → TIME."""
+        result = MySQLTypeMapper.from_arrow_type("duration[ns]")
+        assert result == "TIME"
+
+    def test_decimal128_with_params(self) -> None:
+        """decimal128(38, 10) → DECIMAL(38, 10)."""
+        result = MySQLTypeMapper.from_arrow_type("decimal128(38, 10)")
+        assert result == "DECIMAL(38, 10)"
+
+    def test_decimal128_with_different_params(self) -> None:
+        """decimal128(20, 5) → DECIMAL(20, 5)."""
+        result = MySQLTypeMapper.from_arrow_type("decimal128(20, 5)")
+        assert result == "DECIMAL(20, 5)"
+
+    def test_decimal128_with_no_scale(self) -> None:
+        """decimal128(10, 0) → DECIMAL(10, 0)."""
+        result = MySQLTypeMapper.from_arrow_type("decimal128(10, 0)")
+        assert result == "DECIMAL(10, 0)"
+
+    def test_whitespace_stripping_leading(self) -> None:
+        """Leading whitespace should be stripped."""
+        result = MySQLTypeMapper.from_arrow_type("  int32")
+        assert result == "INT"
+
+    def test_whitespace_stripping_trailing(self) -> None:
+        """Trailing whitespace should be stripped."""
+        result = MySQLTypeMapper.from_arrow_type("int32  ")
+        assert result == "INT"
+
+    def test_whitespace_stripping_both(self) -> None:
+        """Leading and trailing whitespace should be stripped."""
+        result = MySQLTypeMapper.from_arrow_type("  string  ")
+        assert result == "TEXT"
+
+    def test_unknown_type_fallback_passthrough(self) -> None:
+        """Unknown types should pass through unchanged."""
+        result = MySQLTypeMapper.from_arrow_type("custom_type")
+        assert result == "custom_type"
+
+    def test_unknown_type_with_whitespace_fallback(self) -> None:
+        """Unknown types with whitespace should pass through as-is."""
+        result = MySQLTypeMapper.from_arrow_type("  my_custom_type  ")
+        assert result == "  my_custom_type  "
+
+
+class TestFromArrowTypeRoundTrip:
+    """Round-trip consistency tests: MySQL → Arrow → MySQL DDL."""
+
+    def setup_method(self) -> None:
+        """Set up test fixtures."""
+        self.mapper = MySQLTypeMapper()
+
+    def test_int_roundtrip(self) -> None:
+        """INT → int32 → INT."""
+        arrow_type = self.mapper.map_mysql_type_name("INT")
+        arrow_str = str(arrow_type)
+        mysql_ddl = MySQLTypeMapper.from_arrow_type(arrow_str)
+        assert mysql_ddl == "INT"
+
+    def test_varchar_roundtrip(self) -> None:
+        """VARCHAR(255) → string → TEXT."""
+        arrow_type = self.mapper.map_mysql_type_name("VARCHAR(255)")
+        arrow_str = str(arrow_type)
+        mysql_ddl = MySQLTypeMapper.from_arrow_type(arrow_str)
+        assert mysql_ddl == "TEXT"
+
+    def test_datetime_roundtrip(self) -> None:
+        """DATETIME → timestamp[us] → DATETIME."""
+        arrow_type = self.mapper.map_mysql_type_name("DATETIME")
+        arrow_str = str(arrow_type)
+        mysql_ddl = MySQLTypeMapper.from_arrow_type(arrow_str)
+        assert mysql_ddl == "DATETIME"
+
+    def test_timestamp_roundtrip(self) -> None:
+        """TIMESTAMP → timestamp[us, tz=UTC] → TIMESTAMP."""
+        arrow_type = self.mapper.map_mysql_type_name("TIMESTAMP")
+        arrow_str = str(arrow_type)
+        mysql_ddl = MySQLTypeMapper.from_arrow_type(arrow_str)
+        assert mysql_ddl == "TIMESTAMP"
+
+    def test_bigint_unsigned_roundtrip(self) -> None:
+        """BIGINT UNSIGNED → decimal128(20,0) → DECIMAL(20,0) UNSIGNED."""
+        arrow_type = self.mapper.map_mysql_type_name("BIGINT UNSIGNED")
+        arrow_str = str(arrow_type)
+        mysql_ddl = MySQLTypeMapper.from_arrow_type(arrow_str)
+        # The DDL type should be DECIMAL with precision/scale
+        assert "DECIMAL" in mysql_ddl
+
+    def test_date_roundtrip(self) -> None:
+        """DATE -> date32[day] -> DATE."""
+        arrow_type = self.mapper.map_mysql_type_name("DATE")
+        arrow_str = str(arrow_type)
+        assert arrow_str == "date32[day]"
+        mysql_ddl = MySQLTypeMapper.from_arrow_type(arrow_str)
+        assert mysql_ddl == "DATE"
+
+    def test_blob_roundtrip(self) -> None:
+        """BLOB → binary → BLOB."""
+        arrow_type = self.mapper.map_mysql_type_name("BLOB")
+        arrow_str = str(arrow_type)
+        mysql_ddl = MySQLTypeMapper.from_arrow_type(arrow_str)
+        assert mysql_ddl == "BLOB"
+
+    def test_text_roundtrip(self) -> None:
+        """TEXT → string → TEXT."""
+        arrow_type = self.mapper.map_mysql_type_name("TEXT")
+        arrow_str = str(arrow_type)
+        mysql_ddl = MySQLTypeMapper.from_arrow_type(arrow_str)
+        assert mysql_ddl == "TEXT"
+
+    def test_float_roundtrip(self) -> None:
+        """FLOAT -> float (PyArrow str) -> FLOAT."""
+        arrow_type = self.mapper.map_mysql_type_name("FLOAT")
+        arrow_str = str(arrow_type)
+        assert arrow_str == "float"
+        mysql_ddl = MySQLTypeMapper.from_arrow_type(arrow_str)
+        assert mysql_ddl == "FLOAT"
+
+    def test_double_roundtrip(self) -> None:
+        """DOUBLE -> double (PyArrow str) -> DOUBLE."""
+        arrow_type = self.mapper.map_mysql_type_name("DOUBLE")
+        arrow_str = str(arrow_type)
+        assert arrow_str == "double"
+        mysql_ddl = MySQLTypeMapper.from_arrow_type(arrow_str)
+        assert mysql_ddl == "DOUBLE"
