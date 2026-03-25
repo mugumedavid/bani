@@ -8,17 +8,21 @@ Container environment variables:
   PG_HOST, PG_PORT, PG_USER, PG_PASS, PG_DB
   MYSQL_HOST, MYSQL_PORT, MYSQL_USER, MYSQL_PASS, MYSQL_DB
   MYSQL55_HOST, MYSQL55_PORT, MYSQL55_USER, MYSQL55_PASS, MYSQL55_DB
+  MSSQL_HOST, MSSQL_PORT, MSSQL_USER, MSSQL_PASS, MSSQL_DB
+  ORACLE_HOST, ORACLE_PORT, ORACLE_USER, ORACLE_PASS, ORACLE_SERVICE
 """
 
 from __future__ import annotations
 
 import os
+import tempfile
 from collections.abc import Generator
 from typing import TYPE_CHECKING
 
 import pytest
 
 from bani.connectors.postgresql.connector import PostgreSQLConnector
+from bani.connectors.sqlite.connector import SQLiteConnector
 from bani.domain.project import ConnectionConfig
 
 try:
@@ -29,6 +33,24 @@ except ImportError:
     _HAS_MYSQL = False
     if TYPE_CHECKING:
         from bani.connectors.mysql.connector import MySQLConnector
+
+try:
+    from bani.connectors.mssql.connector import MSSQLConnector
+
+    _HAS_MSSQL = True
+except ImportError:
+    _HAS_MSSQL = False
+    if TYPE_CHECKING:
+        from bani.connectors.mssql.connector import MSSQLConnector
+
+try:
+    from bani.connectors.oracle.connector import OracleConnector
+
+    _HAS_ORACLE = True
+except ImportError:
+    _HAS_ORACLE = False
+    if TYPE_CHECKING:
+        from bani.connectors.oracle.connector import OracleConnector
 
 # ---------------------------------------------------------------------------
 # Environment-based connection configs (defaults match docker-compose.yml)
@@ -71,6 +93,38 @@ def _mysql55_config() -> ConnectionConfig:
         database=os.environ.get("MYSQL55_DB", "bani_test"),
         username_env="MYSQL55_USER",
         password_env="MYSQL55_PASS",
+    )
+
+
+def _mssql_config() -> ConnectionConfig:
+    """Build an MSSQL ConnectionConfig from environment."""
+    return ConnectionConfig(
+        dialect="mssql",
+        host=os.environ.get("MSSQL_HOST", "localhost"),
+        port=int(os.environ.get("MSSQL_PORT", "1433")),
+        database=os.environ.get("MSSQL_DB", "bani_test"),
+        username_env="MSSQL_USER",
+        password_env="MSSQL_PASS",
+    )
+
+
+def _oracle_config() -> ConnectionConfig:
+    """Build an Oracle ConnectionConfig from environment."""
+    return ConnectionConfig(
+        dialect="oracle",
+        host=os.environ.get("ORACLE_HOST", "localhost"),
+        port=int(os.environ.get("ORACLE_PORT", "1521")),
+        service_name=os.environ.get("ORACLE_SERVICE", "FREE"),
+        username_env="ORACLE_USER",
+        password_env="ORACLE_PASS",
+    )
+
+
+def _sqlite_config(db_path: str) -> ConnectionConfig:
+    """Build a SQLite ConnectionConfig from a file path."""
+    return ConnectionConfig(
+        dialect="sqlite",
+        database=db_path,
     )
 
 
@@ -426,6 +480,150 @@ def mysql55_source(
             stmt = stmt.strip()
             if stmt:
                 cur.execute(stmt)
+
+    yield connector
+    connector.disconnect()
+
+
+@pytest.fixture()
+def mssql_config() -> ConnectionConfig:
+    """MSSQL connection config from env vars."""
+    return _mssql_config()
+
+
+@pytest.fixture()
+def oracle_config() -> ConnectionConfig:
+    """Oracle connection config from env vars."""
+    return _oracle_config()
+
+
+@pytest.fixture()
+def sqlite_temp_path() -> Generator[str, None, None]:
+    """Create a temporary directory for SQLite databases."""
+    tmp_dir = tempfile.mkdtemp()
+    yield tmp_dir
+    # Cleanup is automatic with mkdtemp
+
+
+@pytest.fixture()
+def mssql_source(
+    mssql_config: ConnectionConfig,
+) -> Generator[MSSQLConnector, None, None]:
+    """A connected MSSQL connector with test schema and data."""
+    if not _HAS_MSSQL:
+        pytest.skip("MSSQL connector not available")
+
+    os.environ.setdefault("MSSQL_USER", "sa")
+    os.environ.setdefault("MSSQL_PASS", "BaniTest123!")
+
+    connector = MSSQLConnector()
+    try:
+        connector.connect(mssql_config)
+    except Exception as exc:
+        pytest.skip(f"MSSQL not available: {exc}")
+
+    yield connector
+    connector.disconnect()
+
+
+@pytest.fixture()
+def mssql_sink(
+    mssql_config: ConnectionConfig,
+) -> Generator[MSSQLConnector, None, None]:
+    """A connected MSSQL connector for use as a sink (clean DB)."""
+    if not _HAS_MSSQL:
+        pytest.skip("MSSQL connector not available")
+
+    os.environ.setdefault("MSSQL_USER", "sa")
+    os.environ.setdefault("MSSQL_PASS", "BaniTest123!")
+
+    connector = MSSQLConnector()
+    try:
+        connector.connect(mssql_config)
+    except Exception as exc:
+        pytest.skip(f"MSSQL not available: {exc}")
+
+    yield connector
+    connector.disconnect()
+
+
+@pytest.fixture()
+def oracle_source(
+    oracle_config: ConnectionConfig,
+) -> Generator[OracleConnector, None, None]:
+    """A connected Oracle connector with test schema and data."""
+    if not _HAS_ORACLE:
+        pytest.skip("Oracle connector not available")
+
+    os.environ.setdefault("ORACLE_USER", "system")
+    os.environ.setdefault("ORACLE_PASS", "bani_test")
+
+    connector = OracleConnector()
+    try:
+        connector.connect(oracle_config)
+    except Exception as exc:
+        pytest.skip(f"Oracle not available: {exc}")
+
+    yield connector
+    connector.disconnect()
+
+
+@pytest.fixture()
+def oracle_sink(
+    oracle_config: ConnectionConfig,
+) -> Generator[OracleConnector, None, None]:
+    """A connected Oracle connector for use as a sink (clean DB)."""
+    if not _HAS_ORACLE:
+        pytest.skip("Oracle connector not available")
+
+    os.environ.setdefault("ORACLE_USER", "system")
+    os.environ.setdefault("ORACLE_PASS", "bani_test")
+
+    connector = OracleConnector()
+    try:
+        connector.connect(oracle_config)
+    except Exception as exc:
+        pytest.skip(f"Oracle not available: {exc}")
+
+    yield connector
+    connector.disconnect()
+
+
+@pytest.fixture()
+def sqlite_source(
+    sqlite_temp_path: str,
+) -> Generator[SQLiteConnector, None, None]:
+    """A connected SQLite connector with test schema and data."""
+    import os as os_module
+
+    db_file = os_module.path.join(sqlite_temp_path, "source.db")
+    config = _sqlite_config(db_file)
+
+    connector = SQLiteConnector()
+    try:
+        connector.connect(config)
+    except Exception as exc:
+        pytest.skip(f"SQLite not available: {exc}")
+
+    yield connector
+    connector.disconnect()
+
+
+@pytest.fixture()
+def sqlite_sink(
+    sqlite_temp_path: str,
+) -> Generator[SQLiteConnector, None, None]:
+    """A connected SQLite connector for use as a sink (clean DB)."""
+    import os as os_module
+
+    db_file = os_module.path.join(sqlite_temp_path, "sink.db")
+    config = _sqlite_config(db_file)
+
+    connector = SQLiteConnector()
+    try:
+        connector.connect(config)
+    except Exception as exc:
+        pytest.skip(f"SQLite not available: {exc}")
 
     yield connector
     connector.disconnect()
