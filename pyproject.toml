@@ -37,6 +37,9 @@ dependencies = [
     "tomli>=2.0; python_version < '3.11'",
 ]
 
+[project.optional-dependencies]
+sqlite-extras = ["apsw>=3.40"]
+
 [project.urls]
 Homepage = "https://bani.dev"
 Documentation = "https://docs.bani.dev"
