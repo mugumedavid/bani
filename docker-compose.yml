@@ -53,6 +53,24 @@ services:
       timeout: 5s
       retries: 10
 
+  oracle:
+    image: gvenzl/oracle-free:23-slim
+    environment:
+      ORACLE_PASSWORD: bani_test
+      ORACLE_RANDOM_PASSWORD: "false"
+    ports:
+      - "1521:1521"
+    volumes:
+      - oracle_data:/opt/oracle/oradata
+    healthcheck:
+      test: ["CMD", "healthcheck.sh"]
+      interval: 10s
+      timeout: 5s
+      retries: 30
+
+volumes:
+  oracle_data:
+
 networks:
   default:
     name: bani-test-net

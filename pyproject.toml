@@ -28,6 +28,7 @@ dependencies = [
     "pyarrow>=14.0",
     "psycopg[binary]>=3.1",
     "pymysql>=1.0",
+    "oracledb>=2.0",
     "typer>=0.9",
     "rich>=13.0",
     "lxml>=4.9",
