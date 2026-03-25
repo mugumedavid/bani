@@ -1,0 +1,9 @@
+name: sqlite
+version: 1.0.0
+driver: sqlite3
+driver_versions:
+  - version: "stdlib"
+    supported_db: ["SQLite 3.35+"]
+  - version: "apsw-3.45.x"
+    supported_db: ["SQLite 3.35", "SQLite 3.40", "SQLite 3.45"]
+default_driver_version: "stdlib"

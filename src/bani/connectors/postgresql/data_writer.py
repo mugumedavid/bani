@@ -89,7 +89,7 @@ class PostgreSQLDataWriter:
             with cur.copy(copy_sql) as copy:
                 copy.write(csv_data)
 
-        return batch.num_rows
+        return int(batch.num_rows)
 
     def _batch_to_csv(self, batch: pa.RecordBatch) -> bytes:
         """Convert Arrow batch to CSV format for COPY.

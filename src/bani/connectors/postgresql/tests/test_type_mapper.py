@@ -267,8 +267,7 @@ class TestFromArrowType:
     def test_invalid_but_passthrough(self) -> None:
         """Test that invalid Arrow type strings are passed through."""
         assert (
-            PostgreSQLTypeMapper.from_arrow_type("not_a_real_type")
-            == "not_a_real_type"
+            PostgreSQLTypeMapper.from_arrow_type("not_a_real_type") == "not_a_real_type"
         )
 
 

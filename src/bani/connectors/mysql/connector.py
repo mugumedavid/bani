@@ -208,9 +208,7 @@ class MySQLConnector(SourceConnector, SinkConnector):
             # Resolve target type via the canonical Arrow mapping layer
             # when arrow_type_str is available; fall back to raw data_type.
             if col.arrow_type_str:
-                mysql_type = MySQLTypeMapper.from_arrow_type(
-                    col.arrow_type_str
-                )
+                mysql_type = MySQLTypeMapper.from_arrow_type(col.arrow_type_str)
             else:
                 mysql_type = col.data_type
 

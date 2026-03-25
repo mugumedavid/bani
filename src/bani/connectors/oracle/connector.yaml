@@ -1,0 +1,9 @@
+name: oracle
+version: 1.0.0
+driver: python-oracledb
+driver_versions:
+  - version: "2.x"
+    supported_db: ["Oracle 19c", "Oracle 21c", "Oracle 23ai"]
+  - version: "1.x"
+    supported_db: ["Oracle 12c", "Oracle 18c", "Oracle 19c", "Oracle 21c"]
+default_driver_version: "2.x"

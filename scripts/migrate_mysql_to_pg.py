@@ -93,8 +93,7 @@ def main() -> None:
         schema = source.introspect_schema()
         for t in schema.tables:
             print(
-                f"  {t.table_name}: {len(t.columns)} cols, "
-                f"~{t.row_count_estimate} rows"
+                f"  {t.table_name}: {len(t.columns)} cols, ~{t.row_count_estimate} rows"
             )
 
         # ---- Step 2: Remap schema and create tables on PG ----
@@ -110,12 +109,8 @@ def main() -> None:
         print("\nTransferring data...")
         for table in remapped_tables:
             row_count = 0
-            for batch in source.read_table(
-                table.table_name, mysql_db
-            ):
-                sink.write_batch(
-                    table.table_name, table.schema_name, batch
-                )
+            for batch in source.read_table(table.table_name, mysql_db):
+                sink.write_batch(table.table_name, table.schema_name, batch)
                 row_count += batch.num_rows
             print(f"  {table.table_name}: {row_count} rows")
 
@@ -128,27 +123,19 @@ def main() -> None:
                     table.schema_name,
                     table.indexes,
                 )
-                print(
-                    f"  {table.table_name}: "
-                    f"{len(table.indexes)} indexes"
-                )
+                print(f"  {table.table_name}: {len(table.indexes)} indexes")
 
         # ---- Step 5: Create foreign keys ----
         print("\nCreating foreign keys...")
         for table in remapped_tables:
             if table.foreign_keys:
                 sink.create_foreign_keys(table.foreign_keys)
-                print(
-                    f"  {table.table_name}: "
-                    f"{len(table.foreign_keys)} FKs"
-                )
+                print(f"  {table.table_name}: {len(table.foreign_keys)} FKs")
 
         # ---- Verify ----
         print("\n--- Verification ---")
         for table in remapped_tables:
-            count = sink.estimate_row_count(
-                table.table_name, table.schema_name
-            )
+            count = sink.estimate_row_count(table.table_name, table.schema_name)
             print(f"  {table.table_name}: {count} rows in PostgreSQL")
 
         print("\nDone! MySQL -> PostgreSQL migration complete.")

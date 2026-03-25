@@ -215,7 +215,7 @@ class PostgreSQLTypeMapper:
 
         # decimal128(p, s) -> numeric(p, s)
         if ts.startswith("decimal128"):
-            params = ts[len("decimal128"):]  # e.g. "(38, 10)"
+            params = ts[len("decimal128") :]  # e.g. "(38, 10)"
             return f"numeric{params}"
 
         # Fallback: pass through (might already be a PG type)

@@ -31,9 +31,7 @@ class TestColumnDefinitionArrowTypeStr:
 
     def test_arrow_type_str_can_be_set(self) -> None:
         """arrow_type_str can be set during construction."""
-        col = ColumnDefinition(
-            name="test_col", data_type="INT", arrow_type_str="int32"
-        )
+        col = ColumnDefinition(name="test_col", data_type="INT", arrow_type_str="int32")
         assert col.arrow_type_str == "int32"
 
     def test_arrow_type_str_with_complex_arrow_type(self) -> None:
@@ -47,9 +45,7 @@ class TestColumnDefinitionArrowTypeStr:
 
     def test_column_definition_is_frozen(self) -> None:
         """ColumnDefinition should be frozen (immutable)."""
-        col = ColumnDefinition(
-            name="test_col", data_type="INT", arrow_type_str="int32"
-        )
+        col = ColumnDefinition(name="test_col", data_type="INT", arrow_type_str="int32")
         with pytest.raises(AttributeError):
             col.arrow_type_str = "int64"  # type: ignore[misc]
 
@@ -111,10 +107,7 @@ class TestMySQLToArrowToPGRoundTrip:
     def test_mysql_datetime_to_pg_timestamp(self) -> None:
         col = _mysql_introspect("DATETIME")
         assert col.arrow_type_str == "timestamp[us]"
-        assert (
-            PostgreSQLTypeMapper.from_arrow_type("timestamp[us]")
-            == "timestamp"
-        )
+        assert PostgreSQLTypeMapper.from_arrow_type("timestamp[us]") == "timestamp"
 
     def test_mysql_timestamp_to_pg_timestamptz(self) -> None:
         col = _mysql_introspect("TIMESTAMP")
@@ -128,10 +121,7 @@ class TestMySQLToArrowToPGRoundTrip:
         col = _mysql_introspect("DOUBLE")
         # PyArrow str(pa.float64()) == "double"
         assert col.arrow_type_str == "double"
-        assert (
-            PostgreSQLTypeMapper.from_arrow_type("double")
-            == "double precision"
-        )
+        assert PostgreSQLTypeMapper.from_arrow_type("double") == "double precision"
 
     def test_mysql_float_to_pg_real(self) -> None:
         col = _mysql_introspect("FLOAT")
@@ -153,9 +143,7 @@ class TestMySQLToArrowToPGRoundTrip:
         col = _mysql_introspect("DATE")
         # PyArrow str(pa.date32()) == "date32[day]"
         assert col.arrow_type_str == "date32[day]"
-        assert (
-            PostgreSQLTypeMapper.from_arrow_type("date32[day]") == "date"
-        )
+        assert PostgreSQLTypeMapper.from_arrow_type("date32[day]") == "date"
 
     def test_mysql_decimal_to_pg_numeric(self) -> None:
         col = _mysql_introspect("DECIMAL(10,2)")
@@ -184,9 +172,7 @@ class TestMySQLToArrowToPGRoundTrip:
         col = _mysql_introspect("TIME")
         # PyArrow str(pa.time64("us")) == "time64[us]"
         assert col.arrow_type_str == "time64[us]"
-        assert (
-            PostgreSQLTypeMapper.from_arrow_type("time64[us]") == "time"
-        )
+        assert PostgreSQLTypeMapper.from_arrow_type("time64[us]") == "time"
 
 
 class TestPostgresToArrowToMySQLRoundTrip:
@@ -205,17 +191,12 @@ class TestPostgresToArrowToMySQLRoundTrip:
     def test_pg_timestamp_to_mysql_datetime(self) -> None:
         col = _pg_introspect("timestamp")
         assert col.arrow_type_str == "timestamp[us]"
-        assert (
-            MySQLTypeMapper.from_arrow_type("timestamp[us]") == "DATETIME"
-        )
+        assert MySQLTypeMapper.from_arrow_type("timestamp[us]") == "DATETIME"
 
     def test_pg_timestamptz_to_mysql_timestamp(self) -> None:
         col = _pg_introspect("timestamp with time zone")
         assert col.arrow_type_str == "timestamp[us, tz=UTC]"
-        assert (
-            MySQLTypeMapper.from_arrow_type("timestamp[us, tz=UTC]")
-            == "TIMESTAMP"
-        )
+        assert MySQLTypeMapper.from_arrow_type("timestamp[us, tz=UTC]") == "TIMESTAMP"
 
     def test_pg_boolean_to_mysql_tinyint1(self) -> None:
         col = _pg_introspect("boolean")
@@ -272,18 +253,14 @@ class TestFallbackWhenArrowTypeStrIsNone:
     """Test fallback behavior when arrow_type_str is None."""
 
     def test_column_with_none_arrow_type_str(self) -> None:
-        col = ColumnDefinition(
-            name="test_col", data_type="INT", arrow_type_str=None
-        )
+        col = ColumnDefinition(name="test_col", data_type="INT", arrow_type_str=None)
         assert col.arrow_type_str is None
         assert col.data_type == "INT"
 
     def test_hand_built_table_def_without_arrow_types(self) -> None:
         """Hand-built TableDefinition can omit arrow_type_str."""
         columns = (
-            ColumnDefinition(
-                name="id", data_type="INT", arrow_type_str=None
-            ),
+            ColumnDefinition(name="id", data_type="INT", arrow_type_str=None),
             ColumnDefinition(
                 name="name",
                 data_type="VARCHAR(255)",
@@ -301,33 +278,24 @@ class TestFallbackWhenArrowTypeStrIsNone:
     def test_mixed_arrow_types_and_none(self) -> None:
         """Some columns can have arrow_type_str while others don't."""
         columns = (
-            ColumnDefinition(
-                name="id", data_type="INT", arrow_type_str="int32"
-            ),
+            ColumnDefinition(name="id", data_type="INT", arrow_type_str="int32"),
             ColumnDefinition(
                 name="unknown",
                 data_type="CUSTOM_TYPE",
                 arrow_type_str=None,
             ),
         )
-        table = TableDefinition(
-            schema_name="s", table_name="t", columns=columns
-        )
+        table = TableDefinition(schema_name="s", table_name="t", columns=columns)
         assert table.columns[0].arrow_type_str == "int32"
         assert table.columns[1].arrow_type_str is None
 
     def test_mappers_handle_none_gracefully(self) -> None:
         """With arrow_type_str, we convert via Arrow; without, raw data_type is used."""
-        col_with = ColumnDefinition(
-            name="c1", data_type="INT", arrow_type_str="int32"
-        )
-        col_without = ColumnDefinition(
-            name="c2", data_type="INT", arrow_type_str=None
-        )
+        col_with = ColumnDefinition(name="c1", data_type="INT", arrow_type_str="int32")
+        col_without = ColumnDefinition(name="c2", data_type="INT", arrow_type_str=None)
         assert col_with.arrow_type_str is not None
         assert (
-            PostgreSQLTypeMapper.from_arrow_type(col_with.arrow_type_str)
-            == "integer"
+            PostgreSQLTypeMapper.from_arrow_type(col_with.arrow_type_str) == "integer"
         )
         assert col_without.arrow_type_str is None
         assert col_without.data_type == "INT"
@@ -366,10 +334,7 @@ class TestFromArrowTypeWithRealPyArrowStrings:
         self, pa_type: pa.DataType, expected_pg: str
     ) -> None:
         """PG from_arrow_type handles str(pa_type) correctly."""
-        assert (
-            PostgreSQLTypeMapper.from_arrow_type(str(pa_type))
-            == expected_pg
-        )
+        assert PostgreSQLTypeMapper.from_arrow_type(str(pa_type)) == expected_pg
 
     @pytest.mark.parametrize(
         ("pa_type", "expected_mysql"),
@@ -396,9 +361,7 @@ class TestFromArrowTypeWithRealPyArrowStrings:
         self, pa_type: pa.DataType, expected_mysql: str
     ) -> None:
         """MySQL from_arrow_type handles str(pa_type) correctly."""
-        assert (
-            MySQLTypeMapper.from_arrow_type(str(pa_type)) == expected_mysql
-        )
+        assert MySQLTypeMapper.from_arrow_type(str(pa_type)) == expected_mysql
 
 
 class TestTableDefinitionWithArrowTypes:
@@ -467,8 +430,6 @@ class TestTableDefinitionWithArrowTypes:
         # Every column should convert to valid PG DDL
         for col in table.columns:
             assert col.arrow_type_str is not None
-            pg = PostgreSQLTypeMapper.from_arrow_type(
-                col.arrow_type_str
-            )
+            pg = PostgreSQLTypeMapper.from_arrow_type(col.arrow_type_str)
             assert isinstance(pg, str)
             assert len(pg) > 0

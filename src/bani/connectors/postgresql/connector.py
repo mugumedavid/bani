@@ -211,9 +211,7 @@ class PostgreSQLConnector(SourceConnector, SinkConnector):
             # Resolve target type via the canonical Arrow mapping layer
             # when arrow_type_str is available; fall back to raw data_type.
             if col.arrow_type_str:
-                pg_type = PostgreSQLTypeMapper.from_arrow_type(
-                    col.arrow_type_str
-                )
+                pg_type = PostgreSQLTypeMapper.from_arrow_type(col.arrow_type_str)
             else:
                 pg_type = col.data_type
 
@@ -228,9 +226,7 @@ class PostgreSQLConnector(SourceConnector, SinkConnector):
                     col_def += " NOT NULL"
 
                 if col.default_value:
-                    default = self._normalize_default(
-                        col.default_value, pg_type
-                    )
+                    default = self._normalize_default(col.default_value, pg_type)
                     col_def += f" DEFAULT {default}"
 
             col_defs.append(col_def)
@@ -454,4 +450,3 @@ class PostgreSQLConnector(SourceConnector, SinkConnector):
             var_name = env_ref
 
         return os.environ.get(var_name)
-

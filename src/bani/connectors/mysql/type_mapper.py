@@ -310,7 +310,7 @@ class MySQLTypeMapper:
 
         # decimal128(p, s) -> DECIMAL(p, s)
         if ts.startswith("decimal128"):
-            params = ts[len("decimal128"):]
+            params = ts[len("decimal128") :]
             return f"DECIMAL{params}"
 
         # Fallback: pass through
