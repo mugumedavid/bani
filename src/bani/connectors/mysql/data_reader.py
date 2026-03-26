@@ -78,14 +78,25 @@ class MySQLDataReader:
 
             col_names = [str(desc[0]) for desc in cursor.description]
             col_type_codes = [int(desc[1]) for desc in cursor.description]
-            col_flags = [
-                int(desc[7]) if len(desc) > 7 else 0 for desc in cursor.description
-            ]
+            # PyMySQL's cursor.description is 7-element (DB-API 2.0)
+            # and does NOT include column flags. Read them from the
+            # internal _result.fields which carries the full wire info.
+            result_fields = getattr(
+                getattr(cursor, "_result", None), "fields", None
+            )
+            if result_fields and len(result_fields) == len(col_names):
+                col_flags = [int(f.flags) for f in result_fields]
+                col_charsets = [int(f.charsetnr) for f in result_fields]
+            else:
+                col_flags = [0] * len(col_names)
+                col_charsets = [0] * len(col_names)
 
             # Determine Arrow types for each column
             arrow_types = [
-                self.type_mapper.map_mysql_type_code(tc, fl)
-                for tc, fl in zip(col_type_codes, col_flags, strict=True)
+                self.type_mapper.map_mysql_type_code(tc, fl, cs)
+                for tc, fl, cs in zip(
+                    col_type_codes, col_flags, col_charsets, strict=True
+                )
             ]
 
             batch_rows: list[tuple[Any, ...]] = []

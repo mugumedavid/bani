@@ -61,12 +61,13 @@ class MSSQLSchemaReader:
         with self.connection.cursor() as cur:
             query = """
                 SELECT
-                    t.table_schema,
-                    t.table_name
-                FROM information_schema.tables t
-                WHERE t.table_catalog = DB_NAME()
-                AND t.table_type = 'BASE TABLE'
-                ORDER BY t.table_schema, t.table_name
+                    s.name AS table_schema,
+                    o.name AS table_name
+                FROM sys.objects o
+                JOIN sys.schemas s ON o.schema_id = s.schema_id
+                WHERE o.type = 'U'
+                AND o.is_ms_shipped = 0
+                ORDER BY s.name, o.name
             """
             cur.execute(query)
             tables_list: list[tuple[Any, ...]] = list(cur.fetchall())
@@ -111,7 +112,10 @@ class MSSQLSchemaReader:
                     c.data_type,
                     c.is_nullable,
                     c.column_default,
-                    c.ordinal_position
+                    c.ordinal_position,
+                    c.character_maximum_length,
+                    c.numeric_precision,
+                    c.numeric_scale
                 FROM information_schema.columns c
                 WHERE c.table_schema = %s AND c.table_name = %s
                 ORDER BY c.ordinal_position
@@ -128,17 +132,36 @@ class MSSQLSchemaReader:
             is_nullable,
             column_default,
             ordinal_pos,
+            char_max_len,
+            numeric_prec,
+            numeric_scale,
         ) in columns_list:
             arrow_type = self._type_mapper.map_mssql_type_name(data_type)
             arrow_type_str = str(arrow_type)
 
+            # Build a full type string with length/precision so that
+            # downstream sinks can recover the original constraint.
+            full_type = self._build_full_type(
+                data_type, char_max_len, numeric_prec, numeric_scale
+            )
+
             is_auto = col_name in identity_cols
+
+            # MSSQL wraps defaults in parentheses: (getdate()), ('pending').
+            # Strip the outer parens so the shared translate_default engine
+            # can recognise the expression.
+            clean_default = column_default
+            if clean_default is not None:
+                cd = clean_default.strip()
+                while cd.startswith("(") and cd.endswith(")"):
+                    cd = cd[1:-1].strip()
+                clean_default = cd if cd else None
 
             col_def = ColumnDefinition(
                 name=col_name,
-                data_type=data_type,
+                data_type=full_type,
                 nullable=(is_nullable == "YES"),
-                default_value=column_default,
+                default_value=clean_default,
                 is_auto_increment=is_auto,
                 ordinal_position=int(ordinal_pos) - 1,
                 arrow_type_str=arrow_type_str,
@@ -146,6 +169,38 @@ class MSSQLSchemaReader:
             columns.append(col_def)
 
         return columns
+
+    @staticmethod
+    def _build_full_type(
+        base_type: str,
+        char_max_len: int | None,
+        numeric_prec: int | None,
+        numeric_scale: int | None,
+    ) -> str:
+        """Build a full type string like ``nvarchar(255)`` or ``decimal(10,2)``.
+
+        MSSQL's ``information_schema.columns.data_type`` returns only the
+        base name.  This combines it with length / precision so that
+        downstream sinks can recover the constraint.
+        """
+        bt = base_type.lower()
+
+        # Character / binary types with a length
+        if bt in (
+            "char", "nchar", "varchar", "nvarchar", "binary", "varbinary",
+        ):
+            if char_max_len is not None and char_max_len > 0:
+                return f"{base_type}({char_max_len})"
+            if char_max_len == -1:  # -1 means MAX
+                return f"{base_type}(MAX)"
+            return base_type
+
+        # Numeric types with precision / scale
+        if bt in ("decimal", "numeric") and numeric_prec is not None:
+            scale = numeric_scale if numeric_scale is not None else 0
+            return f"{base_type}({numeric_prec},{scale})"
+
+        return base_type
 
     def _get_identity_columns(self, schema_name: str, table_name: str) -> set[str]:
         """Get the set of identity columns for a table.

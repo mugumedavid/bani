@@ -13,12 +13,24 @@ SQLite-specific notes:
 
 from __future__ import annotations
 
+import re
 import sqlite3
 from collections.abc import Iterator
 
 import pyarrow as pa
 
 from bani.connectors.base import SinkConnector, SourceConnector
+from bani.connectors.default_translation import (
+    DialectDefaultConfig,
+    register_dialect_defaults,
+    translate_default,
+)
+
+register_dialect_defaults("sqlite", DialectDefaultConfig(
+    timestamp_expression="CURRENT_TIMESTAMP",
+    temporal_keywords=("date", "datetime", "timestamp", "time"),
+    reject_function_calls=True,  # SQLite only accepts constant expressions
+))
 from bani.connectors.sqlite.data_reader import SQLiteDataReader
 from bani.connectors.sqlite.data_writer import SQLiteDataWriter
 from bani.connectors.sqlite.schema_reader import SQLiteSchemaReader
@@ -203,8 +215,16 @@ class SQLiteConnector(SourceConnector, SinkConnector):
             if not col.nullable:
                 col_def += " NOT NULL"
 
-            if col.default_value:
-                col_def += f" DEFAULT {col.default_value}"
+            if col.is_auto_increment:
+                # SQLite AUTOINCREMENT only works with INTEGER PRIMARY KEY;
+                # handled via PRIMARY KEY below, so skip default here.
+                pass
+            elif col.default_value:
+                translated = translate_default(
+                    col.default_value, "sqlite", sqlite_type
+                )
+                if translated is not None:
+                    col_def += f" DEFAULT {translated}"
 
             col_defs.append(col_def)
 
@@ -213,17 +233,44 @@ class SQLiteConnector(SourceConnector, SinkConnector):
             pk_cols = ", ".join(f'"{col}"' for col in table_def.primary_key)
             col_defs.append(f"PRIMARY KEY ({pk_cols})")
 
-        # Add check constraints if present
+        # Add check constraints — skip any with source-specific syntax
         for constraint in table_def.check_constraints:
-            col_defs.append(f"CHECK {constraint}")
+            c = str(constraint)
+            # Skip constraints with PG casts (::), ARRAY expressions, or
+            # other source-specific syntax that won't parse in SQLite
+            if "::" in c or "ARRAY[" in c or "ANY (" in c:
+                continue
+            col_defs.append(f"CHECK {c}")
+
+        # SQLite foreign keys must be in CREATE TABLE (not ALTER TABLE)
+        for fk in table_def.foreign_keys:
+            ref_table = fk.referenced_table.split(".")[-1]  # strip schema
+            src_cols = ", ".join(f'"{c}"' for c in fk.source_columns)
+            ref_cols = ", ".join(f'"{c}"' for c in fk.referenced_columns)
+            fk_clause = (
+                f"FOREIGN KEY ({src_cols}) REFERENCES \"{ref_table}\" ({ref_cols})"
+            )
+            if fk.on_delete and fk.on_delete != "NO ACTION":
+                fk_clause += f" ON DELETE {fk.on_delete}"
+            if fk.on_update and fk.on_update != "NO ACTION":
+                fk_clause += f" ON UPDATE {fk.on_update}"
+            col_defs.append(fk_clause)
 
         col_list = ", ".join(col_defs)
 
+        # Disable FK checks so we can drop tables referenced by others
+        cursor = self.connection.cursor()
+        cursor.execute("PRAGMA foreign_keys = OFF")
+
+        drop_sql = f'DROP TABLE IF EXISTS "{table_def.table_name}"'
         create_sql = f'CREATE TABLE "{table_def.table_name}" ({col_list})'
 
-        cursor = self.connection.cursor()
+        cursor.execute(drop_sql)
         cursor.execute(create_sql)
         self.connection.commit()
+
+        # Re-enable FK checks
+        cursor.execute("PRAGMA foreign_keys = ON")
 
     def write_batch(
         self, table_name: str, schema_name: str, batch: pa.RecordBatch

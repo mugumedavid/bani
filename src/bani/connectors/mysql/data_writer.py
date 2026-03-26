@@ -11,6 +11,20 @@ from typing import TYPE_CHECKING, Any
 
 import pyarrow as pa
 
+from bani.connectors.value_coercion import (
+    DriverProfile,
+    coerce_for_binding,
+    register_driver_profile,
+)
+
+register_driver_profile("pymysql", DriverProfile(
+    decimal=False,   # PyMySQL chokes on Decimal in executemany
+    uuid=False,
+    timedelta=False, # PyMySQL sends timedelta raw; MySQL TIME needs HH:MM:SS
+    list_ok=False,
+    dict_ok=False,
+))
+
 if TYPE_CHECKING:
     import pymysql
 
@@ -91,7 +105,9 @@ class MySQLDataWriter:
                 if not value.is_valid:
                     row_values.append(None)
                 else:
-                    row_values.append(value.as_py())
+                    row_values.append(
+                        coerce_for_binding(value.as_py(), "pymysql")
+                    )
 
             all_values.append(tuple(row_values))
 

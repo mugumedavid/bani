@@ -14,6 +14,15 @@ if TYPE_CHECKING:
 
 import pyarrow as pa
 
+from bani.connectors.value_coercion import (
+    DriverProfile,
+    register_driver_profile,
+)
+
+# psycopg3 handles all common Python types natively — register a
+# permissive profile so the test suite and any future callers work.
+register_driver_profile("psycopg", DriverProfile())
+
 
 class PostgreSQLDataWriter:
     """Writes Arrow batches to PostgreSQL tables.

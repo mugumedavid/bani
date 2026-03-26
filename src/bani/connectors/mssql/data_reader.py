@@ -71,9 +71,12 @@ class MSSQLDataReader:
                 return
 
             col_names = [str(desc[0]) for desc in cursor.description]
-            col_types = [str(desc[1]) for desc in cursor.description]
 
-            arrow_types = [self.type_mapper.map_mssql_type_name(ct) for ct in col_types]
+            # pymssql's cursor.description[i][1] is a Python type
+            # object (int, str, bytes…), not a SQL type name.  Query
+            # INFORMATION_SCHEMA for the real MSSQL type names.
+            mssql_types = self._get_column_types(schema_name, table_name, col_names)
+            arrow_types = [self.type_mapper.map_mssql_type_name(t) for t in mssql_types]
 
             batch_rows: list[tuple[Any, ...]] = []
 
@@ -127,6 +130,29 @@ class MSSQLDataReader:
 
         schema = pa.schema(fields)
         return pa.RecordBatch.from_arrays(arrays, schema=schema)
+
+    def _get_column_types(
+        self,
+        schema_name: str,
+        table_name: str,
+        col_names: list[str],
+    ) -> list[str]:
+        """Look up MSSQL data types for columns via INFORMATION_SCHEMA.
+
+        Returns types in the same order as *col_names*.  Falls back to
+        ``"nvarchar"`` for any column not found (safe default).
+        """
+        with self.connection.cursor() as cur:
+            cur.execute(
+                "SELECT COLUMN_NAME, DATA_TYPE "
+                "FROM INFORMATION_SCHEMA.COLUMNS "
+                "WHERE TABLE_SCHEMA = %s AND TABLE_NAME = %s",
+                (schema_name, table_name),
+            )
+            rows: list[tuple[Any, ...]] = list(cur.fetchall())
+
+        type_map = {str(name): str(dtype) for name, dtype in rows}
+        return [type_map.get(cn, "nvarchar") for cn in col_names]
 
     def estimate_row_count(self, table_name: str, schema_name: str) -> int:
         """Get an estimated row count for a table.

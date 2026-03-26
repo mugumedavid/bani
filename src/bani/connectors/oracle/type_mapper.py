@@ -85,10 +85,22 @@ class OracleTypeMapper:
                     if len(parts) == 2:
                         precision = int(parts[0])
                         scale = int(parts[1])
-                        return pa.decimal128(precision, scale)
                     elif len(parts) == 1:
                         precision = int(parts[0])
-                        return pa.decimal128(precision, 0)
+                        scale = 0
+                    else:
+                        return pa.decimal128(38, 10)
+
+                    # Scale 0 means integer — use a native int type
+                    # to stay compatible with serial/identity PKs.
+                    if scale == 0:
+                        if precision <= 4:
+                            return pa.int16()
+                        if precision <= 9:
+                            return pa.int32()
+                        if precision <= 18:
+                            return pa.int64()
+                    return pa.decimal128(precision, scale)
             except (ValueError, IndexError):
                 pass
             # Default for NUMBER without params

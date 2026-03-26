@@ -15,6 +15,16 @@ import pyarrow as pa
 import pymysql
 
 from bani.connectors.base import SinkConnector, SourceConnector
+from bani.connectors.default_translation import (
+    DialectDefaultConfig,
+    register_dialect_defaults,
+    translate_default,
+)
+
+register_dialect_defaults("mysql", DialectDefaultConfig(
+    timestamp_expression="CURRENT_TIMESTAMP",
+    temporal_keywords=("datetime", "timestamp", "date", "time"),
+))
 from bani.connectors.mysql.data_reader import MySQLDataReader
 from bani.connectors.mysql.data_writer import MySQLDataWriter
 from bani.connectors.mysql.schema_reader import MySQLSchemaReader
@@ -26,6 +36,19 @@ from bani.domain.schema import (
     IndexDefinition,
     TableDefinition,
 )
+
+
+import re
+
+_CHAR_LENGTH_RE = re.compile(
+    r"(?:n?var)?char(?:acter)?(?:2)?(?:\s+varying)?\s*\(\s*(\d+)\s*\)", re.IGNORECASE
+)
+
+
+def _extract_char_length(source_type: str) -> int | None:
+    """Extract character length from a source type like varchar(255)."""
+    m = _CHAR_LENGTH_RE.search(source_type)
+    return int(m.group(1)) if m else None
 
 
 class MySQLConnector(SourceConnector, SinkConnector):
@@ -209,6 +232,13 @@ class MySQLConnector(SourceConnector, SinkConnector):
             # when arrow_type_str is available; fall back to raw data_type.
             if col.arrow_type_str:
                 mysql_type = MySQLTypeMapper.from_arrow_type(col.arrow_type_str)
+                # Arrow 'string' loses varchar length → TEXT.
+                # Recover length from the source data_type when available
+                # so that defaults and indexes remain possible.
+                if mysql_type == "TEXT" and col.data_type:
+                    length = _extract_char_length(col.data_type)
+                    if length is not None and length <= 1000:
+                        mysql_type = f"VARCHAR({length})"
             else:
                 mysql_type = col.data_type
 
@@ -220,7 +250,22 @@ class MySQLConnector(SourceConnector, SinkConnector):
             if col.is_auto_increment:
                 col_def += " AUTO_INCREMENT"
             elif col.default_value:
-                col_def += f" DEFAULT {col.default_value}"
+                # MySQL does not allow DEFAULT on TEXT, BLOB, JSON,
+                # or GEOMETRY columns — silently drop the default.
+                mu = mysql_type.upper()
+                is_lob = any(
+                    kw in mu
+                    for kw in ("TEXT", "BLOB", "JSON", "GEOMETRY")
+                )
+                if not is_lob:
+                    translated = translate_default(
+                        col.default_value, "mysql", mysql_type
+                    )
+                    if translated is not None:
+                        translated = self._normalize_default(
+                            translated, mysql_type
+                        )
+                        col_def += f" DEFAULT {translated}"
 
             col_defs.append(col_def)
 
@@ -229,21 +274,76 @@ class MySQLConnector(SourceConnector, SinkConnector):
             pk_cols = ", ".join(f"`{col}`" for col in table_def.primary_key)
             col_defs.append(f"PRIMARY KEY ({pk_cols})")
 
-        # Add check constraints if present (MySQL 8.0.16+)
+        # Add check constraints — skip any with source-specific syntax
         for constraint in table_def.check_constraints:
-            col_defs.append(f"CHECK {constraint}")
+            c = str(constraint)
+            if "::" in c or "ARRAY[" in c or "ANY (" in c:
+                continue
+            col_defs.append(f"CHECK {c}")
 
         col_list = ", ".join(col_defs)
 
-        # Build and execute CREATE TABLE with InnoDB + utf8mb4
-        create_sql = (
-            f"CREATE TABLE `{table_def.schema_name}`.`{table_def.table_name}` "
-            f"({col_list}) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 "
-            f"COLLATE=utf8mb4_unicode_ci"
-        )
-
+        # Drop FK constraints referencing this table, then drop + recreate
+        schema = table_def.schema_name
+        tname = table_def.table_name
         with self.connection.cursor() as cur:
+            cur.execute("SET FOREIGN_KEY_CHECKS=0")
+
+            # Find and drop all FK constraints that reference this table
+            cur.execute(
+                "SELECT TABLE_NAME, CONSTRAINT_NAME "
+                "FROM information_schema.KEY_COLUMN_USAGE "
+                "WHERE REFERENCED_TABLE_SCHEMA = %s "
+                "AND REFERENCED_TABLE_NAME = %s",
+                (schema, tname),
+            )
+            for ref_table, fk_name in cur.fetchall():
+                try:
+                    cur.execute(
+                        f"ALTER TABLE `{schema}`.`{ref_table}` "
+                        f"DROP FOREIGN KEY `{fk_name}`"
+                    )
+                except Exception:
+                    pass  # already dropped or table gone
+
+            cur.execute(
+                f"DROP TABLE IF EXISTS `{schema}`.`{tname}`"
+            )
+
+            create_sql = (
+                f"CREATE TABLE `{schema}`.`{tname}` "
+                f"({col_list}) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 "
+                f"COLLATE=utf8mb4_unicode_ci"
+            )
             cur.execute(create_sql)
+            cur.execute("SET FOREIGN_KEY_CHECKS=1")
+
+    @staticmethod
+    def _normalize_default(raw_default: str, mysql_type: str) -> str:
+        """Normalize a default value for MySQL DDL.
+
+        Source databases may return bare string literals (e.g. ``pending``)
+        that MySQL interprets as column names. This method quotes them.
+        """
+        val = raw_default.strip()
+        upper = val.upper()
+
+        if val.startswith("'") and val.endswith("'"):
+            return val
+        if upper == "NULL":
+            return val
+        stripped = val.lstrip("-")
+        if stripped.replace(".", "", 1).isdigit():
+            return val
+        if "(" in val and ")" in val:
+            return val
+        if upper in (
+            "CURRENT_TIMESTAMP", "TRUE", "FALSE",
+            "CURRENT_DATE", "CURRENT_TIME",
+        ):
+            return val
+        escaped = val.replace("'", "''")
+        return f"'{escaped}'"
 
     def write_batch(
         self, table_name: str, schema_name: str, batch: pa.RecordBatch
@@ -288,9 +388,30 @@ class MySQLConnector(SourceConnector, SinkConnector):
             raise RuntimeError("MySQL connector is not connected")
 
         with self.connection.cursor() as cur:
+            # Query column types so we can add prefix lengths for TEXT/BLOB
+            cur.execute(
+                "SELECT column_name, data_type "
+                "FROM information_schema.columns "
+                "WHERE table_schema = %s AND table_name = %s",
+                (schema_name, table_name),
+            )
+            col_type_map: dict[str, str] = {
+                row[0]: row[1].upper() for row in cur.fetchall()
+            }
+
+            text_types = {"TEXT", "TINYTEXT", "MEDIUMTEXT", "LONGTEXT",
+                          "BLOB", "TINYBLOB", "MEDIUMBLOB", "LONGBLOB"}
+
             for index in indexes:
                 unique_kw = "UNIQUE" if index.is_unique else ""
-                col_list = ", ".join(f"`{col}`" for col in index.columns)
+                col_parts = []
+                for col in index.columns:
+                    ctype = col_type_map.get(col, "")
+                    if ctype in text_types:
+                        col_parts.append(f"`{col}`(255)")
+                    else:
+                        col_parts.append(f"`{col}`")
+                col_list = ", ".join(col_parts)
 
                 create_idx_sql = (
                     f"CREATE {unique_kw} INDEX `{index.name}` "

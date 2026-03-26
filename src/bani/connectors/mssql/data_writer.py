@@ -10,6 +10,21 @@ from typing import TYPE_CHECKING, Any
 
 import pyarrow as pa  # type: ignore[import-untyped]
 
+from bani.connectors.value_coercion import (
+    DriverProfile,
+    coerce_for_binding,
+    register_driver_profile,
+)
+
+register_driver_profile("pymssql", DriverProfile(
+    decimal=False,   # pymssql doesn't adapt Decimal reliably
+    uuid=False,
+    time=False,      # pymssql time binding is unreliable
+    timedelta=False,
+    list_ok=False,
+    dict_ok=False,
+))
+
 if TYPE_CHECKING:
     pass  # pymssql typing not needed since we use Any in __init__
 
@@ -74,7 +89,18 @@ class MSSQLDataWriter:
         """
         col_names = batch.schema.names
         col_list = ", ".join(f"[{name}]" for name in col_names)
-        placeholders = ", ".join(["%s"] * len(col_names))
+
+        # Detect binary columns — pymssql cannot bind bytes reliably,
+        # so we use CONVERT(VARBINARY(MAX), %s, 1) with a hex string.
+        is_binary = [
+            pa.types.is_binary(batch.schema.field(i).type)
+            or pa.types.is_large_binary(batch.schema.field(i).type)
+            for i in range(len(col_names))
+        ]
+        placeholders = ", ".join(
+            "CONVERT(VARBINARY(MAX), %s, 1)" if b else "%s"
+            for b in is_binary
+        )
         total_rows = 0
 
         all_values: list[tuple[Any, ...]] = []
@@ -86,8 +112,14 @@ class MSSQLDataWriter:
 
                 if not value.is_valid:
                     row_values.append(None)
+                elif is_binary[col_idx]:
+                    # Pass as "0x..." hex string for CONVERT(..., 1)
+                    raw: bytes = value.as_py()
+                    row_values.append("0x" + raw.hex())
                 else:
-                    row_values.append(value.as_py())
+                    row_values.append(
+                        coerce_for_binding(value.as_py(), "pymssql")
+                    )
 
             all_values.append(tuple(row_values))
 

@@ -136,7 +136,7 @@ class MSSQLTypeMapper:
             # Boolean
             "bool": "BIT",
             # Integer types
-            "int8": "TINYINT",
+            "int8": "SMALLINT",  # MSSQL TINYINT is unsigned (0-255)
             "int16": "SMALLINT",
             "int32": "INT",
             "int64": "BIGINT",

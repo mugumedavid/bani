@@ -77,11 +77,13 @@ class OracleDataReader:
                 return
 
             col_names = [str(desc[0]) for desc in cursor.description]
-            col_oracle_types = [str(desc[1]) for desc in cursor.description]
 
-            # Determine Arrow types for each column
+            # oracledb's cursor.description[i][1] is a DB API type object
+            # (e.g. DB_TYPE_NUMBER), not a type name string.  Query
+            # ALL_TAB_COLUMNS for the real Oracle type names.
+            oracle_types = self._get_column_types(schema_name, table_name, col_names)
             arrow_types = [
-                self.type_mapper.map_oracle_type_name(t) for t in col_oracle_types
+                self.type_mapper.map_oracle_type_name(t) for t in oracle_types
             ]
 
             batch_rows: list[tuple[Any, ...]] = []
@@ -141,6 +143,42 @@ class OracleDataReader:
 
         schema = pa.schema(fields)
         return pa.RecordBatch.from_arrays(arrays, schema=schema)
+
+    def _get_column_types(
+        self,
+        schema_name: str,
+        table_name: str,
+        col_names: list[str],
+    ) -> list[str]:
+        """Look up Oracle data types for columns via ALL_TAB_COLUMNS.
+
+        Returns full type strings (e.g. ``NUMBER(10,2)``, ``VARCHAR2(255)``)
+        in the same order as *col_names*.
+        """
+        cursor = self.connection.cursor()
+        try:
+            cursor.execute(
+                "SELECT column_name, data_type, data_length, "
+                "data_precision, data_scale "
+                "FROM all_tab_columns "
+                "WHERE owner = :owner AND table_name = :tbl",
+                {"owner": schema_name, "tbl": table_name},
+            )
+            rows: list[tuple[Any, ...]] = list(cursor.fetchall())
+        finally:
+            cursor.close()
+
+        type_map: dict[str, str] = {}
+        for name, dtype, dlen, prec, scale in rows:
+            if dtype == "NUMBER" and prec is not None:
+                ts = f"NUMBER({prec},{scale})" if scale else f"NUMBER({prec})"
+            elif dtype in ("VARCHAR2", "NVARCHAR2", "CHAR", "NCHAR", "RAW") and dlen:
+                ts = f"{dtype}({dlen})"
+            else:
+                ts = dtype
+            type_map[str(name)] = ts
+
+        return [type_map.get(cn, "VARCHAR2") for cn in col_names]
 
     def estimate_row_count(self, table_name: str, schema_name: str) -> int:
         """Get an estimated row count for a table.

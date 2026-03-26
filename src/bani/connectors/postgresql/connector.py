@@ -13,6 +13,16 @@ if TYPE_CHECKING:
     import psycopg.abc
 
 from bani.connectors.base import SinkConnector, SourceConnector
+from bani.connectors.default_translation import (
+    DialectDefaultConfig,
+    register_dialect_defaults,
+    translate_default,
+)
+
+register_dialect_defaults("postgresql", DialectDefaultConfig(
+    timestamp_expression="NOW()",
+    temporal_keywords=("timestamp", "date", "time", "interval"),
+))
 from bani.connectors.postgresql.data_reader import PostgreSQLDataReader
 from bani.connectors.postgresql.data_writer import PostgreSQLDataWriter
 from bani.connectors.postgresql.schema_reader import PostgreSQLSchemaReader
@@ -215,9 +225,14 @@ class PostgreSQLConnector(SourceConnector, SinkConnector):
             else:
                 pg_type = col.data_type
 
-            # serial/bigserial implies NOT NULL and a sequence default
+            # serial/bigserial implies NOT NULL and a sequence default.
+            # Pick bigserial for int64 sources so FK columns (also bigint)
+            # stay type-compatible.
             if is_auto and pg_type not in ("serial", "bigserial"):
-                pg_type = "serial"
+                if col.arrow_type_str and "int64" in col.arrow_type_str:
+                    pg_type = "bigserial"
+                else:
+                    pg_type = "serial"
 
             col_def = f'"{col.name}" {pg_type}'
 
@@ -226,8 +241,14 @@ class PostgreSQLConnector(SourceConnector, SinkConnector):
                     col_def += " NOT NULL"
 
                 if col.default_value:
-                    default = self._normalize_default(col.default_value, pg_type)
-                    col_def += f" DEFAULT {default}"
+                    # First: shared cross-DB filter (drops non-portable defaults)
+                    translated = translate_default(
+                        col.default_value, "postgresql", pg_type
+                    )
+                    if translated is not None:
+                        # Then: PG-specific quoting of bare string literals
+                        default = self._normalize_default(translated, pg_type)
+                        col_def += f" DEFAULT {default}"
 
             col_defs.append(col_def)
 
@@ -242,13 +263,18 @@ class PostgreSQLConnector(SourceConnector, SinkConnector):
 
         col_list = ", ".join(col_defs)
 
-        # Build and execute CREATE TABLE
+        # Drop existing table if present, then create
+        drop_sql = (
+            f'DROP TABLE IF EXISTS '
+            f'"{table_def.schema_name}"."{table_def.table_name}" CASCADE'
+        )
         create_sql = (
             f'CREATE TABLE "{table_def.schema_name}"."{table_def.table_name}" '
             f"({col_list})"
         )
 
         with self.connection.cursor() as cur:
+            cur.execute(drop_sql)
             cur.execute(create_sql)
 
     def write_batch(

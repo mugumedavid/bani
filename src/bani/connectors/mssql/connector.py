@@ -15,6 +15,17 @@ import pyarrow as pa  # type: ignore[import-untyped]
 import pymssql as pymssql_module
 
 from bani.connectors.base import SinkConnector, SourceConnector
+from bani.connectors.default_translation import (
+    DialectDefaultConfig,
+    register_dialect_defaults,
+    translate_default,
+)
+
+register_dialect_defaults("mssql", DialectDefaultConfig(
+    timestamp_expression="GETDATE()",
+    temporal_keywords=("datetime", "date", "time", "smalldatetime",
+                       "datetime2", "datetimeoffset"),
+))
 from bani.connectors.mssql.data_reader import MSSQLDataReader
 from bani.connectors.mssql.data_writer import MSSQLDataWriter
 from bani.connectors.mssql.schema_reader import MSSQLSchemaReader
@@ -26,6 +37,23 @@ from bani.domain.schema import (
     IndexDefinition,
     TableDefinition,
 )
+
+
+import re
+
+_CHAR_LENGTH_RE = re.compile(
+    r"(?:n?var)?char(?:acter)?(?:2)?(?:\s+varying)?\s*\(\s*(\d+)\s*\)", re.IGNORECASE
+)
+
+
+def _extract_char_length(source_type: str) -> int | None:
+    """Extract character length from a source type like varchar(255).
+
+    Returns the length as an int, or None if the source type has no
+    explicit length (e.g. ``text``, ``varchar`` without parens).
+    """
+    m = _CHAR_LENGTH_RE.search(source_type)
+    return int(m.group(1)) if m else None
 
 
 class MSSQLConnector(SourceConnector, SinkConnector):
@@ -197,6 +225,13 @@ class MSSQLConnector(SourceConnector, SinkConnector):
         for col in table_def.columns:
             if col.arrow_type_str:
                 mssql_type = MSSQLTypeMapper.from_arrow_type(col.arrow_type_str)
+                # Arrow 'string' loses varchar length → NVARCHAR(MAX).
+                # Recover length from the source data_type when available
+                # so that indexes on the column remain possible.
+                if mssql_type == "NVARCHAR(MAX)" and col.data_type:
+                    length = _extract_char_length(col.data_type)
+                    if length is not None:
+                        mssql_type = f"NVARCHAR({length})"
             else:
                 mssql_type = col.data_type
 
@@ -208,7 +243,12 @@ class MSSQLConnector(SourceConnector, SinkConnector):
             if col.is_auto_increment:
                 col_def += " IDENTITY(1,1)"
             elif col.default_value:
-                col_def += f" DEFAULT {col.default_value}"
+                translated = translate_default(
+                    col.default_value, "mssql", mssql_type
+                )
+                if translated is not None:
+                    translated = self._normalize_default(translated, mssql_type)
+                    col_def += f" DEFAULT {translated}"
 
             col_defs.append(col_def)
 
@@ -217,16 +257,38 @@ class MSSQLConnector(SourceConnector, SinkConnector):
             col_defs.append(f"PRIMARY KEY ({pk_cols})")
 
         for constraint in table_def.check_constraints:
-            col_defs.append(f"CHECK {constraint}")
+            c = str(constraint)
+            if "::" in c or "ARRAY[" in c or "ANY (" in c:
+                continue
+            col_defs.append(f"CHECK {c}")
 
         col_list = ", ".join(col_defs)
 
+        # Drop FK constraints referencing this table, then drop the table
+        schema = table_def.schema_name
+        tname = table_def.table_name
+        drop_fks_sql = f"""
+            DECLARE @sql NVARCHAR(MAX) = N'';
+            SELECT @sql += 'ALTER TABLE ' +
+                QUOTENAME(OBJECT_SCHEMA_NAME(parent_object_id)) + '.' +
+                QUOTENAME(OBJECT_NAME(parent_object_id)) +
+                ' DROP CONSTRAINT ' + QUOTENAME(name) + ';'
+            FROM sys.foreign_keys
+            WHERE referenced_object_id = OBJECT_ID('[{schema}].[{tname}]');
+            EXEC sp_executesql @sql;
+        """
+        drop_sql = (
+            f"IF OBJECT_ID('[{schema}].[{tname}]', 'U') "
+            f"IS NOT NULL DROP TABLE [{schema}].[{tname}]"
+        )
         create_sql = (
-            f"CREATE TABLE [{table_def.schema_name}].[{table_def.table_name}] "
+            f"CREATE TABLE [{schema}].[{tname}] "
             f"({col_list})"
         )
 
         with self.connection.cursor() as cur:
+            cur.execute(drop_fks_sql)
+            cur.execute(drop_sql)
             cur.execute(create_sql)
 
     def write_batch(
@@ -251,6 +313,45 @@ class MSSQLConnector(SourceConnector, SinkConnector):
 
         return self._data_writer.write_batch(table_name, schema_name, batch)
 
+    @staticmethod
+    def _normalize_default(raw_default: str, mssql_type: str) -> str:
+        """Normalize a default value for MSSQL DDL.
+
+        MySQL's information_schema returns bare string literals
+        (e.g. ``pending``) that MSSQL interprets as column names.
+        This method quotes them as ``'pending'``.
+        """
+        val = raw_default.strip()
+        upper = val.upper()
+
+        # Already quoted
+        if val.startswith("'") and val.endswith("'"):
+            return val
+
+        # NULL
+        if upper == "NULL":
+            return val
+
+        # Numeric literal
+        stripped = val.lstrip("-")
+        if stripped.replace(".", "", 1).isdigit():
+            return val
+
+        # SQL function call
+        if "(" in val and ")" in val:
+            return val
+
+        # SQL keywords
+        if upper in (
+            "CURRENT_TIMESTAMP", "GETDATE", "NEWID",
+            "TRUE", "FALSE", "DEFAULT",
+        ):
+            return val
+
+        # Bare string → quote it
+        escaped = val.replace("'", "''")
+        return f"'{escaped}'"
+
     def create_indexes(
         self,
         table_name: str,
@@ -273,6 +374,12 @@ class MSSQLConnector(SourceConnector, SinkConnector):
 
         with self.connection.cursor() as cur:
             for index in indexes:
+                # MSSQL cannot index NVARCHAR(MAX) / VARBINARY(MAX).
+                # Narrow indexed MAX columns to a bounded length first.
+                self._narrow_max_columns_for_index(
+                    cur, schema_name, table_name, index.columns
+                )
+
                 unique_kw = "UNIQUE" if index.is_unique else ""
                 col_list = ", ".join(f"[{col}]" for col in index.columns)
 
@@ -282,6 +389,46 @@ class MSSQLConnector(SourceConnector, SinkConnector):
                 )
 
                 cur.execute(create_idx_sql)
+
+    def _narrow_max_columns_for_index(
+        self,
+        cur: Any,
+        schema_name: str,
+        table_name: str,
+        columns: tuple[str, ...],
+    ) -> None:
+        """Alter NVARCHAR(MAX)/VARBINARY(MAX) columns to bounded lengths.
+
+        MSSQL cannot use MAX-length columns as index keys.  When Arrow's
+        ``string`` type loses the original varchar length, the column is
+        created as NVARCHAR(MAX).  This method narrows only the columns
+        that participate in the given index to NVARCHAR(4000) (MSSQL's
+        largest indexable nvarchar length).
+        """
+        for col_name in columns:
+            cur.execute(
+                "SELECT DATA_TYPE, CHARACTER_MAXIMUM_LENGTH, IS_NULLABLE "
+                "FROM INFORMATION_SCHEMA.COLUMNS "
+                "WHERE TABLE_SCHEMA = %s AND TABLE_NAME = %s "
+                "AND COLUMN_NAME = %s",
+                (schema_name, table_name, col_name),
+            )
+            row = cur.fetchone()
+            if row is None:
+                continue
+            dtype, max_len, nullable = row
+            if dtype == "nvarchar" and max_len == -1:  # -1 means MAX
+                null_kw = "NULL" if nullable == "YES" else "NOT NULL"
+                cur.execute(
+                    f"ALTER TABLE [{schema_name}].[{table_name}] "
+                    f"ALTER COLUMN [{col_name}] NVARCHAR(4000) {null_kw}"
+                )
+            elif dtype == "varbinary" and max_len == -1:
+                null_kw = "NULL" if nullable == "YES" else "NOT NULL"
+                cur.execute(
+                    f"ALTER TABLE [{schema_name}].[{table_name}] "
+                    f"ALTER COLUMN [{col_name}] VARBINARY(900) {null_kw}"
+                )
 
     def create_foreign_keys(self, fks: tuple[ForeignKeyDefinition, ...]) -> None:
         """Create foreign key constraints.

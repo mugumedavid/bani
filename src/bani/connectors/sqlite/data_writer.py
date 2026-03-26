@@ -11,6 +11,23 @@ from typing import Any
 
 import pyarrow as pa
 
+from bani.connectors.value_coercion import (
+    DriverProfile,
+    coerce_for_binding,
+    register_driver_profile,
+)
+
+register_driver_profile("sqlite3", DriverProfile(
+    decimal=False,   # sqlite3 cannot bind Decimal
+    uuid=False,      # sqlite3 cannot bind UUID
+    date=False,      # sqlite3 stores as TEXT
+    time=False,      # sqlite3 stores as TEXT
+    timedelta=False,
+    list_ok=False,
+    dict_ok=False,
+    bytes=True,      # sqlite3 handles bytes as BLOB
+))
+
 
 class SQLiteDataWriter:
     """Writes Arrow batches to SQLite tables.
@@ -79,13 +96,14 @@ class SQLiteDataWriter:
                 if not value.is_valid:
                     row_values.append(None)
                 else:
-                    row_values.append(value.as_py())
+                    row_values.append(
+                        coerce_for_binding(value.as_py(), "sqlite3")
+                    )
 
             all_values.append(tuple(row_values))
 
-        # Execute in batches within an explicit transaction
+        # Execute in batches — sqlite3 auto-manages transactions
         cursor = self.connection.cursor()
-        cursor.execute("BEGIN TRANSACTION")
         try:
             for i in range(0, len(all_values), self.INSERT_BATCH_SIZE):
                 chunk = all_values[i : i + self.INSERT_BATCH_SIZE]

@@ -62,11 +62,17 @@ class OracleSchemaReader:
         try:
             query = """
                 SELECT table_name
-                FROM all_tables
-                WHERE owner = :owner
+                FROM user_tables
+                WHERE table_name NOT LIKE '%$%'
+                AND table_name NOT IN (
+                    'HELP', 'REDO_DB', 'REDO_LOG',
+                    'SQLPLUS_PRODUCT_PROFILE',
+                    'SCHEDULER_JOB_ARGS_TBL',
+                    'SCHEDULER_PROGRAM_ARGS_TBL'
+                )
                 ORDER BY table_name
             """
-            cursor.execute(query, {"owner": self.owner})
+            cursor.execute(query)
             tables_list: list[tuple[Any, ...]] = list(cursor.fetchall())
         finally:
             cursor.close()
@@ -147,12 +153,23 @@ class OracleSchemaReader:
             arrow_type = self._type_mapper.map_oracle_type_name(type_str)
             arrow_type_str = str(arrow_type)
 
+            # Detect identity / sequence-based auto-increment columns.
+            # Oracle GENERATED AS IDENTITY creates hidden sequences named
+            # ISEQ$$_nnn whose .nextval appears in data_default.
+            clean_default = data_default
+            is_auto = False
+            if data_default is not None:
+                dd = str(data_default).strip()
+                if "ISEQ$$" in dd or ".nextval" in dd.lower():
+                    is_auto = True
+                    clean_default = None
+
             col_def = ColumnDefinition(
                 name=col_name,
                 data_type=type_str,
                 nullable=(nullable == "Y"),
-                default_value=data_default,
-                is_auto_increment=False,  # Oracle uses IDENTITY or sequences
+                default_value=clean_default,
+                is_auto_increment=is_auto,
                 ordinal_position=int(column_id) - 1,  # Convert to 0-based
                 arrow_type_str=arrow_type_str,
             )

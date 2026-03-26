@@ -114,9 +114,9 @@ def _oracle_config() -> ConnectionConfig:
         dialect="oracle",
         host=os.environ.get("ORACLE_HOST", "localhost"),
         port=int(os.environ.get("ORACLE_PORT", "1521")),
-        service_name=os.environ.get("ORACLE_SERVICE", "FREE"),
         username_env="ORACLE_USER",
         password_env="ORACLE_PASS",
+        extra=(("service_name", os.environ.get("ORACLE_SERVICE", "FREE")),),
     )
 
 
@@ -555,7 +555,7 @@ def oracle_source(
     if not _HAS_ORACLE:
         pytest.skip("Oracle connector not available")
 
-    os.environ.setdefault("ORACLE_USER", "system")
+    os.environ.setdefault("ORACLE_USER", "bani_test")
     os.environ.setdefault("ORACLE_PASS", "bani_test")
 
     connector = OracleConnector()
@@ -576,7 +576,7 @@ def oracle_sink(
     if not _HAS_ORACLE:
         pytest.skip("Oracle connector not available")
 
-    os.environ.setdefault("ORACLE_USER", "system")
+    os.environ.setdefault("ORACLE_USER", "bani_test")
     os.environ.setdefault("ORACLE_PASS", "bani_test")
 
     connector = OracleConnector()

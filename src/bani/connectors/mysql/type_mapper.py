@@ -100,12 +100,20 @@ class MySQLTypeMapper:
         MySQLFieldType.LONGLONG: pa.decimal128(20, 0),  # unsigned bigint -> decimal
     }
 
-    def map_mysql_type_code(self, type_code: int, flags: int = 0) -> pa.DataType:
+    # MySQL charset number 63 means "binary" — used to disambiguate
+    # STRING/VAR_STRING/BLOB (text) from BINARY/VARBINARY/BLOB (bytes)
+    # since MySQL sends the same type codes for both on the wire.
+    _BINARY_CHARSET: ClassVar[int] = 63
+
+    def map_mysql_type_code(
+        self, type_code: int, flags: int = 0, charsetnr: int = 0
+    ) -> pa.DataType:
         """Map a MySQL field type code to an Arrow type.
 
         Args:
             type_code: MySQL field type code from cursor description.
             flags: MySQL column flags (used to detect UNSIGNED).
+            charsetnr: MySQL charset number (63 = binary).
 
         Returns:
             Corresponding Arrow data type. Defaults to string if unknown.
@@ -114,6 +122,21 @@ class MySQLTypeMapper:
 
         if is_unsigned and type_code in self._UNSIGNED_TYPE_MAP:
             return self._UNSIGNED_TYPE_MAP[type_code]
+
+        # STRING (254), VAR_STRING (253), and BLOB (252) are ambiguous:
+        # MySQL uses the same codes for text vs binary variants.
+        # Charset 63 = binary data; anything else = text.
+        if type_code in (
+            MySQLFieldType.STRING,
+            MySQLFieldType.VAR_STRING,
+            MySQLFieldType.BLOB,
+            MySQLFieldType.TINY_BLOB,
+            MySQLFieldType.MEDIUM_BLOB,
+            MySQLFieldType.LONG_BLOB,
+        ):
+            if charsetnr == self._BINARY_CHARSET:
+                return pa.binary()
+            return pa.string()
 
         return self._MYSQL_TYPE_MAP.get(type_code, pa.string())
 

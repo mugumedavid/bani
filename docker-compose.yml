@@ -55,6 +55,7 @@ services:
 
   mssql:
     image: mcr.microsoft.com/mssql/server:2022-latest
+    user: root 
     environment:
       ACCEPT_EULA: Y
       MSSQL_SA_PASSWORD: BaniTest123!
@@ -79,10 +80,9 @@ services:
       retries: 10
 
   oracle:
-    image: gvenzl/oracle-free:23-slim
+    image: gvenzl/oracle-free:23-slim-faststart
     environment:
       ORACLE_PASSWORD: bani_test
-      ORACLE_RANDOM_PASSWORD: "false"
     ports:
       - "1521:1521"
     volumes:

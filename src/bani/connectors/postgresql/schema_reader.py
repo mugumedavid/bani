@@ -121,18 +121,26 @@ class PostgreSQLSchemaReader:
                 schema_name, table_name, col_name, data_type
             )
 
-            # Check if column is auto-increment (serial/bigserial)
-            is_auto = self._is_auto_increment(full_type)
+            # Check if column is auto-increment (serial/bigserial or nextval default)
+            is_auto = self._is_auto_increment(full_type) or (
+                column_default is not None and "nextval(" in str(column_default)
+            )
 
             # Resolve canonical Arrow type for cross-database portability
             arrow_type = self._type_mapper.map_pg_type_name(full_type)
             arrow_type_str = str(arrow_type)
 
+            # Strip source-specific defaults that won't translate
+            # (e.g., nextval(...) for auto-increment columns)
+            clean_default = column_default
+            if is_auto and clean_default and "nextval(" in str(clean_default):
+                clean_default = None
+
             col_def = ColumnDefinition(
                 name=col_name,
                 data_type=full_type,
                 nullable=(is_nullable == "YES"),
-                default_value=column_default,
+                default_value=clean_default,
                 is_auto_increment=is_auto,
                 ordinal_position=int(ordinal_pos) - 1,  # Convert to 0-based
                 arrow_type_str=arrow_type_str,
@@ -191,6 +199,24 @@ class PostgreSQLSchemaReader:
             "serial",
             "bigserial",
         ) or col_lower.startswith(("smallserial", "serial", "bigserial"))
+
+    @staticmethod
+    def _parse_pg_array(value: object) -> tuple[str, ...]:
+        """Convert a PostgreSQL array result to a tuple of strings.
+
+        Handles both cases:
+        - psycopg returns a Python list (e.g. ['col1', 'col2'])
+        - psycopg returns a PG array literal string (e.g. '{col1,col2}')
+        """
+        if isinstance(value, (list, tuple)):
+            return tuple(str(v) for v in value)
+        # It's a string like '{col1,col2}'
+        s = str(value).strip()
+        if s.startswith("{") and s.endswith("}"):
+            s = s[1:-1]
+        if not s:
+            return ()
+        return tuple(c.strip().strip('"') for c in s.split(","))
 
     def _read_primary_key(self, schema_name: str, table_name: str) -> list[str]:
         """Read the primary key columns for a table.
@@ -315,11 +341,15 @@ class PostgreSQLSchemaReader:
                     rc.delete_rule
                 FROM information_schema.table_constraints c
                 JOIN information_schema.key_column_usage kcu1
-                USING (constraint_name, table_schema, table_name)
+                    ON kcu1.constraint_name = c.constraint_name
+                    AND kcu1.table_schema = c.table_schema
+                    AND kcu1.table_name = c.table_name
                 JOIN information_schema.referential_constraints rc
-                USING (constraint_name, constraint_schema)
+                    ON rc.constraint_name = c.constraint_name
+                    AND rc.constraint_schema = c.constraint_schema
                 JOIN information_schema.key_column_usage kcu2
-                USING (constraint_name)
+                    ON kcu2.constraint_name = rc.unique_constraint_name
+                    AND kcu2.constraint_schema = rc.unique_constraint_schema
                 WHERE c.constraint_type = 'FOREIGN KEY'
                 AND kcu1.table_schema = %s
                 AND kcu1.table_name = %s
@@ -352,9 +382,9 @@ class PostgreSQLSchemaReader:
             fk_def = ForeignKeyDefinition(
                 name=fk_name,
                 source_table=f"{src_schema}.{src_table}",
-                source_columns=tuple(src_cols),
+                source_columns=self._parse_pg_array(src_cols),
                 referenced_table=f"{ref_schema}.{ref_table}",
-                referenced_columns=tuple(ref_cols),
+                referenced_columns=self._parse_pg_array(ref_cols),
                 on_delete=delete_rule,
                 on_update=update_rule,
             )

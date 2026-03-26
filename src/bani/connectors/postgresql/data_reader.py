@@ -65,37 +65,40 @@ class PostgreSQLDataReader:
         if filter_sql:
             query += f" WHERE {filter_sql}"
 
-        # Use a named server-side cursor for efficient streaming
+        # Use a named server-side cursor for efficient streaming.
+        # Named cursors require a transaction block, so wrap in one
+        # (the connection may be in autocommit mode).
         cursor_name = f"read_cursor_{id(self)}"
 
-        with self.connection.cursor(name=cursor_name) as cur:
-            cur.execute(query)
+        with self.connection.transaction():
+            with self.connection.cursor(name=cursor_name) as cur:
+                cur.execute(query)
 
-            # Get column metadata from cursor description
-            if cur.description is None:
-                # No columns returned
-                return
+                # Get column metadata from cursor description
+                if cur.description is None:
+                    # No columns returned
+                    return
 
-            col_names = [desc[0] for desc in cur.description]
-            col_types = [desc[1] for desc in cur.description]
+                col_names = [desc[0] for desc in cur.description]
+                col_types = [desc[1] for desc in cur.description]
 
-            # Fetch and batch rows
-            batch_rows: list[tuple[Any, ...]] = []
+                # Fetch and batch rows
+                batch_rows: list[tuple[Any, ...]] = []
 
-            while True:
-                rows: list[tuple[Any, ...]] = cur.fetchmany(batch_size)
-                if not rows:
-                    # Yield final batch if any
-                    if batch_rows:
+                while True:
+                    rows: list[tuple[Any, ...]] = cur.fetchmany(batch_size)
+                    if not rows:
+                        # Yield final batch if any
+                        if batch_rows:
+                            yield self._make_record_batch(batch_rows, col_names, col_types)
+                        break
+
+                    batch_rows.extend(rows)
+
+                    if len(batch_rows) >= batch_size:
+                        # Yield full batch
                         yield self._make_record_batch(batch_rows, col_names, col_types)
-                    break
-
-                batch_rows.extend(rows)
-
-                if len(batch_rows) >= batch_size:
-                    # Yield full batch
-                    yield self._make_record_batch(batch_rows, col_names, col_types)
-                    batch_rows = []
+                        batch_rows = []
 
     def _make_record_batch(
         self,
