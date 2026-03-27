@@ -1,12 +1,16 @@
 """PostgreSQL schema introspection reader.
 
-Queries information_schema and pg_catalog to build a complete picture
-of the database schema, including tables, columns, indexes, constraints,
-and foreign keys.
+Queries pg_catalog to build a complete picture of the database schema,
+including tables, columns, indexes, constraints, and foreign keys.
+
+All metadata is fetched in bulk (7 queries total, regardless of table
+count) and then assembled in Python — eliminating the N+1 round-trips
+that made the previous implementation slow on large databases.
 """
 
 from __future__ import annotations
 
+from collections import defaultdict
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
@@ -21,12 +25,14 @@ from bani.domain.schema import (
     TableDefinition,
 )
 
+# Type alias for the (schema, table) key used to group rows in Python.
+_TableKey = tuple[str, str]
+
 
 class PostgreSQLSchemaReader:
-    """Introspects PostgreSQL schema using information_schema and pg_catalog.
+    """Introspects PostgreSQL schema using pg_catalog.
 
-    All queries use standard information_schema where possible for portability.
-    Queries return frozen dataclass instances matching the Bani domain model.
+    All metadata is fetched in bulk queries and assembled in Python.
     """
 
     def __init__(self, connection: psycopg.Connection[tuple[str, ...]]) -> None:
@@ -50,149 +56,316 @@ class PostgreSQLSchemaReader:
         tables = self._read_tables()
         return DatabaseSchema(tables=tuple(tables), source_dialect="postgresql")
 
+    # ------------------------------------------------------------------
+    # Bulk readers — one query each, across *all* user tables
+    # ------------------------------------------------------------------
+
     def _read_tables(self) -> list[TableDefinition]:
-        """Read all user tables and their metadata.
+        """Read all user tables and their metadata using bulk queries.
 
         Returns:
             List of TableDefinition objects.
         """
-        with self.connection.cursor() as cur:
-            # Query all user tables (excluding system schemas)
-            query = """
-                SELECT table_schema, table_name
-                FROM information_schema.tables
-                WHERE table_schema NOT IN ('pg_catalog', 'information_schema')
-                AND table_type = 'BASE TABLE'
-                ORDER BY table_schema, table_name
-            """
-            cur.execute(query)
-            tables_list: list[tuple[str, ...]] = cur.fetchall()
+        table_keys = self._fetch_table_list()
+        if not table_keys:
+            return []
 
-        tables = []
-        for schema_name, table_name in tables_list:
-            columns = self._read_columns(schema_name, table_name)
-            primary_key = self._read_primary_key(schema_name, table_name)
-            indexes = self._read_indexes(schema_name, table_name)
-            foreign_keys = self._read_foreign_keys(schema_name, table_name)
-            check_constraints = self._read_check_constraints(schema_name, table_name)
-            row_count = self._estimate_row_count(schema_name, table_name)
+        columns_map = self._fetch_all_columns()
+        pk_map = self._fetch_all_primary_keys()
+        idx_map = self._fetch_all_indexes()
+        fk_map = self._fetch_all_foreign_keys()
+        chk_map = self._fetch_all_check_constraints()
+        rowcount_map = self._fetch_all_row_counts()
 
-            table_def = TableDefinition(
-                schema_name=schema_name,
-                table_name=table_name,
-                columns=tuple(columns),
-                primary_key=tuple(primary_key),
-                indexes=tuple(indexes),
-                foreign_keys=tuple(foreign_keys),
-                check_constraints=tuple(check_constraints),
-                row_count_estimate=row_count,
+        tables: list[TableDefinition] = []
+        for key in table_keys:
+            schema_name, table_name = key
+            tables.append(
+                TableDefinition(
+                    schema_name=schema_name,
+                    table_name=table_name,
+                    columns=tuple(columns_map.get(key, [])),
+                    primary_key=tuple(pk_map.get(key, [])),
+                    indexes=tuple(idx_map.get(key, [])),
+                    foreign_keys=tuple(fk_map.get(key, [])),
+                    check_constraints=tuple(chk_map.get(key, [])),
+                    row_count_estimate=rowcount_map.get(key),
+                )
             )
-            tables.append(table_def)
-
         return tables
 
-    def _read_columns(
-        self, schema_name: str, table_name: str
-    ) -> list[ColumnDefinition]:
-        """Read all columns for a table.
+    # 1. Table list --------------------------------------------------------
 
-        Returns:
-            List of ColumnDefinition objects.
-        """
+    def _fetch_table_list(self) -> list[_TableKey]:
         with self.connection.cursor() as cur:
-            query = """
+            cur.execute("""
+                SELECT n.nspname, c.relname
+                FROM pg_class c
+                JOIN pg_namespace n ON n.oid = c.relnamespace
+                WHERE c.relkind = 'r'
+                  AND n.nspname NOT IN ('pg_catalog', 'information_schema')
+                ORDER BY n.nspname, c.relname
+            """)
+            return [(r[0], r[1]) for r in cur.fetchall()]
+
+    # 2. Columns (with full type via format_type) --------------------------
+
+    def _fetch_all_columns(self) -> dict[_TableKey, list[ColumnDefinition]]:
+        with self.connection.cursor() as cur:
+            cur.execute("""
                 SELECT
-                    column_name,
-                    data_type,
-                    is_nullable,
-                    column_default,
-                    ordinal_position
-                FROM information_schema.columns
-                WHERE table_schema = %s AND table_name = %s
-                ORDER BY ordinal_position
-            """
-            cur.execute(query, (schema_name, table_name))
-            rows: list[tuple[str, ...]] = cur.fetchall()
+                    n.nspname,
+                    c.relname,
+                    a.attname,
+                    format_type(a.atttypid, a.atttypmod) AS full_type,
+                    NOT a.attnotnull                      AS is_nullable,
+                    pg_get_expr(d.adbin, d.adrelid)       AS col_default,
+                    a.attnum
+                FROM pg_attribute a
+                JOIN pg_class c     ON c.oid = a.attrelid
+                JOIN pg_namespace n ON n.oid = c.relnamespace
+                LEFT JOIN pg_attrdef d ON d.adrelid = a.attrelid
+                                      AND d.adnum   = a.attnum
+                WHERE c.relkind = 'r'
+                  AND n.nspname NOT IN ('pg_catalog', 'information_schema')
+                  AND a.attnum > 0
+                  AND NOT a.attisdropped
+                ORDER BY n.nspname, c.relname, a.attnum
+            """)
+            rows = cur.fetchall()
 
-        columns = []
-        for col_name, data_type, is_nullable, column_default, ordinal_pos in rows:
-            # Handle type parameters (e.g., varchar(255))
-            full_type = self._get_full_column_type(
-                schema_name, table_name, col_name, data_type
-            )
-
-            # Check if column is auto-increment (serial/bigserial or nextval default)
+        result: dict[_TableKey, list[ColumnDefinition]] = defaultdict(list)
+        for (
+            schema_name,
+            table_name,
+            col_name,
+            full_type,
+            is_nullable,
+            column_default,
+            ordinal_pos,
+        ) in rows:
             is_auto = self._is_auto_increment(full_type) or (
                 column_default is not None and "nextval(" in str(column_default)
             )
 
-            # Resolve canonical Arrow type for cross-database portability
             arrow_type = self._type_mapper.map_pg_type_name(full_type)
             arrow_type_str = str(arrow_type)
 
-            # Strip source-specific defaults that won't translate
-            # (e.g., nextval(...) for auto-increment columns)
             clean_default = column_default
             if is_auto and clean_default and "nextval(" in str(clean_default):
                 clean_default = None
 
-            col_def = ColumnDefinition(
-                name=col_name,
-                data_type=full_type,
-                nullable=(is_nullable == "YES"),
-                default_value=clean_default,
-                is_auto_increment=is_auto,
-                ordinal_position=int(ordinal_pos) - 1,  # Convert to 0-based
-                arrow_type_str=arrow_type_str,
-            )
-            columns.append(col_def)
-
-        return columns
-
-    def _get_full_column_type(
-        self, schema_name: str, table_name: str, column_name: str, base_type: str
-    ) -> str:
-        """Get the full column type including parameters (e.g., varchar(255)).
-
-        Args:
-            schema_name: Schema name.
-            table_name: Table name.
-            column_name: Column name.
-            base_type: Base data type from information_schema.
-
-        Returns:
-            Full type string with parameters if applicable.
-        """
-        with self.connection.cursor() as cur:
-            # Use pg_catalog for complete type information
-            query = """
-                SELECT format_type(atttypid, atttypmod)
-                FROM pg_attribute
-                WHERE attname = %s
-                AND attrelid = (
-                    SELECT oid FROM pg_class
-                    WHERE relname = %s
-                    AND relnamespace = (
-                        SELECT oid FROM pg_namespace WHERE nspname = %s
-                    )
+            result[(schema_name, table_name)].append(
+                ColumnDefinition(
+                    name=col_name,
+                    data_type=full_type,
+                    nullable=bool(is_nullable),
+                    default_value=clean_default,
+                    is_auto_increment=is_auto,
+                    ordinal_position=int(ordinal_pos) - 1,
+                    arrow_type_str=arrow_type_str,
                 )
-            """
-            cur.execute(query, (column_name, table_name, schema_name))
-            result: list[tuple[str, ...]] = cur.fetchall()
+            )
+        return dict(result)
 
-        if result:
-            return result[0][0]
-        return base_type
+    # 3. Primary keys ------------------------------------------------------
 
-    def _is_auto_increment(self, column_type: str) -> bool:
-        """Check if a column type is auto-increment (serial/bigserial).
+    def _fetch_all_primary_keys(self) -> dict[_TableKey, list[str]]:
+        with self.connection.cursor() as cur:
+            cur.execute("""
+                SELECT n.nspname, t.relname, a.attname
+                FROM pg_index i
+                JOIN pg_class t     ON t.oid = i.indrelid
+                JOIN pg_namespace n ON n.oid = t.relnamespace
+                JOIN pg_attribute a ON a.attrelid = i.indrelid
+                                   AND a.attnum = ANY(i.indkey)
+                WHERE i.indisprimary
+                  AND t.relkind = 'r'
+                  AND n.nspname NOT IN ('pg_catalog', 'information_schema')
+                ORDER BY n.nspname, t.relname, a.attnum
+            """)
+            rows = cur.fetchall()
 
-        Args:
-            column_type: The column type string.
+        result: dict[_TableKey, list[str]] = defaultdict(list)
+        for schema_name, table_name, col_name in rows:
+            result[(schema_name, table_name)].append(col_name)
+        return dict(result)
 
-        Returns:
-            True if the column is serial or bigserial.
-        """
+    # 4. Indexes (with inline filter expressions) --------------------------
+
+    def _fetch_all_indexes(self) -> dict[_TableKey, list[IndexDefinition]]:
+        with self.connection.cursor() as cur:
+            cur.execute("""
+                SELECT
+                    n.nspname,
+                    t.relname,
+                    i.relname                            AS idx_name,
+                    ix.indisunique,
+                    ix.indisclustered,
+                    pg_get_expr(ix.indpred, ix.indrelid) AS filter_expr,
+                    array_agg(a.attname ORDER BY a.attnum)
+                FROM pg_index ix
+                JOIN pg_class i     ON i.oid = ix.indexrelid
+                JOIN pg_class t     ON t.oid = ix.indrelid
+                JOIN pg_namespace n ON n.oid = t.relnamespace
+                JOIN pg_attribute a ON a.attrelid = t.oid
+                                   AND a.attnum = ANY(ix.indkey)
+                WHERE NOT ix.indisprimary
+                  AND t.relkind = 'r'
+                  AND n.nspname NOT IN ('pg_catalog', 'information_schema')
+                GROUP BY n.nspname, t.relname, i.relname,
+                         ix.indisunique, ix.indisclustered, ix.indpred,
+                         ix.indrelid
+                ORDER BY n.nspname, t.relname, i.relname
+            """)
+            rows = cur.fetchall()
+
+        result: dict[_TableKey, list[IndexDefinition]] = defaultdict(list)
+        for (
+            schema_name,
+            table_name,
+            idx_name,
+            is_unique,
+            is_clustered,
+            filter_expr,
+            col_names,
+        ) in rows:
+            result[(schema_name, table_name)].append(
+                IndexDefinition(
+                    name=idx_name,
+                    columns=self._parse_pg_array(col_names),
+                    is_unique=bool(is_unique),
+                    is_clustered=bool(is_clustered),
+                    filter_expression=filter_expr,
+                )
+            )
+        return dict(result)
+
+    # 5. Foreign keys ------------------------------------------------------
+
+    def _fetch_all_foreign_keys(
+        self,
+    ) -> dict[_TableKey, list[ForeignKeyDefinition]]:
+        with self.connection.cursor() as cur:
+            cur.execute("""
+                SELECT
+                    sn.nspname  AS src_schema,
+                    sc.relname  AS src_table,
+                    con.conname AS fk_name,
+                    array_agg(sa.attname ORDER BY u.ord) AS src_cols,
+                    rn.nspname  AS ref_schema,
+                    rc.relname  AS ref_table,
+                    array_agg(ra.attname ORDER BY u.ord) AS ref_cols,
+                    CASE con.confupdtype
+                        WHEN 'a' THEN 'NO ACTION'
+                        WHEN 'r' THEN 'RESTRICT'
+                        WHEN 'c' THEN 'CASCADE'
+                        WHEN 'n' THEN 'SET NULL'
+                        WHEN 'd' THEN 'SET DEFAULT'
+                        ELSE 'NO ACTION'
+                    END AS update_rule,
+                    CASE con.confdeltype
+                        WHEN 'a' THEN 'NO ACTION'
+                        WHEN 'r' THEN 'RESTRICT'
+                        WHEN 'c' THEN 'CASCADE'
+                        WHEN 'n' THEN 'SET NULL'
+                        WHEN 'd' THEN 'SET DEFAULT'
+                        ELSE 'NO ACTION'
+                    END AS delete_rule
+                FROM pg_constraint con
+                JOIN pg_class sc       ON sc.oid = con.conrelid
+                JOIN pg_namespace sn   ON sn.oid = sc.relnamespace
+                JOIN pg_class rc       ON rc.oid = con.confrelid
+                JOIN pg_namespace rn   ON rn.oid = rc.relnamespace
+                CROSS JOIN LATERAL unnest(con.conkey, con.confkey)
+                    WITH ORDINALITY AS u(src_attnum, ref_attnum, ord)
+                JOIN pg_attribute sa   ON sa.attrelid = con.conrelid
+                                      AND sa.attnum   = u.src_attnum
+                JOIN pg_attribute ra   ON ra.attrelid = con.confrelid
+                                      AND ra.attnum   = u.ref_attnum
+                WHERE con.contype = 'f'
+                  AND sn.nspname NOT IN ('pg_catalog', 'information_schema')
+                GROUP BY sn.nspname, sc.relname, con.conname,
+                         rn.nspname, rc.relname,
+                         con.confupdtype, con.confdeltype
+                ORDER BY sn.nspname, sc.relname, con.conname
+            """)
+            rows = cur.fetchall()
+
+        result: dict[_TableKey, list[ForeignKeyDefinition]] = defaultdict(list)
+        for (
+            src_schema,
+            src_table,
+            fk_name,
+            src_cols,
+            ref_schema,
+            ref_table,
+            ref_cols,
+            update_rule,
+            delete_rule,
+        ) in rows:
+            result[(src_schema, src_table)].append(
+                ForeignKeyDefinition(
+                    name=fk_name,
+                    source_table=f"{src_schema}.{src_table}",
+                    source_columns=self._parse_pg_array(src_cols),
+                    referenced_table=f"{ref_schema}.{ref_table}",
+                    referenced_columns=self._parse_pg_array(ref_cols),
+                    on_delete=delete_rule,
+                    on_update=update_rule,
+                )
+            )
+        return dict(result)
+
+    # 6. Check constraints -------------------------------------------------
+
+    def _fetch_all_check_constraints(self) -> dict[_TableKey, list[str]]:
+        with self.connection.cursor() as cur:
+            cur.execute("""
+                SELECT
+                    n.nspname,
+                    c.relname,
+                    pg_get_constraintdef(con.oid) AS constraint_def
+                FROM pg_constraint con
+                JOIN pg_class c     ON c.oid = con.conrelid
+                JOIN pg_namespace n ON n.oid = c.relnamespace
+                WHERE con.contype = 'c'
+                  AND n.nspname NOT IN ('pg_catalog', 'information_schema')
+                ORDER BY n.nspname, c.relname, con.conname
+            """)
+            rows = cur.fetchall()
+
+        result: dict[_TableKey, list[str]] = defaultdict(list)
+        for schema_name, table_name, constraint_def in rows:
+            condition = constraint_def
+            if condition.startswith("CHECK "):
+                condition = condition[6:]
+            result[(schema_name, table_name)].append(condition)
+        return dict(result)
+
+    # 7. Row count estimates -----------------------------------------------
+
+    def _fetch_all_row_counts(self) -> dict[_TableKey, int | None]:
+        with self.connection.cursor() as cur:
+            cur.execute("""
+                SELECT schemaname, relname, n_live_tup
+                FROM pg_stat_user_tables
+                ORDER BY schemaname, relname
+            """)
+            rows = cur.fetchall()
+
+        return {
+            (r[0], r[1]): int(r[2]) if r[2] is not None else None
+            for r in rows
+        }
+
+    # ------------------------------------------------------------------
+    # Helpers
+    # ------------------------------------------------------------------
+
+    @staticmethod
+    def _is_auto_increment(column_type: str) -> bool:
+        """Check if a column type is auto-increment (serial/bigserial)."""
         col_lower = column_type.lower()
         return col_lower in (
             "smallserial",
@@ -210,243 +383,9 @@ class PostgreSQLSchemaReader:
         """
         if isinstance(value, (list, tuple)):
             return tuple(str(v) for v in value)
-        # It's a string like '{col1,col2}'
         s = str(value).strip()
         if s.startswith("{") and s.endswith("}"):
             s = s[1:-1]
         if not s:
             return ()
         return tuple(c.strip().strip('"') for c in s.split(","))
-
-    def _read_primary_key(self, schema_name: str, table_name: str) -> list[str]:
-        """Read the primary key columns for a table.
-
-        Returns:
-            List of column names in primary key order.
-        """
-        with self.connection.cursor() as cur:
-            query = """
-                SELECT a.attname
-                FROM pg_index i
-                JOIN pg_attribute a ON a.attrelid = i.indrelid
-                    AND a.attnum = ANY(i.indkey)
-                WHERE i.indisprimary
-                AND i.indrelid = (
-                    SELECT oid FROM pg_class
-                    WHERE relname = %s
-                    AND relnamespace = (
-                        SELECT oid FROM pg_namespace WHERE nspname = %s
-                    )
-                )
-                ORDER BY a.attnum
-            """
-            cur.execute(query, (table_name, schema_name))
-            rows: list[tuple[str, ...]] = cur.fetchall()
-
-        return [row[0] for row in rows]
-
-    def _read_indexes(self, schema_name: str, table_name: str) -> list[IndexDefinition]:
-        """Read all indexes on a table (excluding primary key).
-
-        Returns:
-            List of IndexDefinition objects.
-        """
-        with self.connection.cursor() as cur:
-            query = """
-                SELECT
-                    i.relname,
-                    ix.indisunique,
-                    ix.indisclustered,
-                    pg_get_indexdef(ix.indexrelid),
-                    array_agg(a.attname ORDER BY a.attnum)
-                FROM pg_index ix
-                JOIN pg_class i ON i.oid = ix.indexrelid
-                JOIN pg_class t ON t.oid = ix.indrelid
-                JOIN pg_namespace n ON n.oid = t.relnamespace
-                JOIN pg_attribute a ON a.attrelid = t.oid AND a.attnum = ANY(ix.indkey)
-                WHERE t.relname = %s
-                AND n.nspname = %s
-                AND NOT ix.indisprimary
-                GROUP BY i.relname, ix.indisunique, ix.indisclustered, ix.indexrelid
-                ORDER BY i.relname
-            """
-            cur.execute(query, (table_name, schema_name))
-            rows: list[tuple[str, ...]] = cur.fetchall()
-
-        indexes = []
-        for idx_name, is_unique, is_clustered, _, col_names in rows:
-            # Extract WHERE clause if present
-            filter_expr = self._extract_filter_expression(idx_name, schema_name)
-
-            idx_def = IndexDefinition(
-                name=idx_name,
-                columns=tuple(col_names),
-                is_unique=bool(is_unique),
-                is_clustered=bool(is_clustered),
-                filter_expression=filter_expr,
-            )
-            indexes.append(idx_def)
-
-        return indexes
-
-    def _extract_filter_expression(
-        self, index_name: str, schema_name: str
-    ) -> str | None:
-        """Extract the WHERE clause from a partial index definition.
-
-        Args:
-            index_name: Index name.
-            schema_name: Schema name.
-
-        Returns:
-            The WHERE clause without the WHERE keyword, or None.
-        """
-        with self.connection.cursor() as cur:
-            query = """
-                SELECT pg_get_expr(indpred, indrelid)
-                FROM pg_index
-                WHERE indexrelid = (
-                    SELECT oid FROM pg_class
-                    WHERE relname = %s
-                    AND relnamespace = (
-                        SELECT oid FROM pg_namespace WHERE nspname = %s
-                    )
-                )
-                AND indpred IS NOT NULL
-            """
-            cur.execute(query, (index_name, schema_name))
-            result: list[tuple[str, ...]] = cur.fetchall()
-
-        return result[0][0] if result else None
-
-    def _read_foreign_keys(
-        self, schema_name: str, table_name: str
-    ) -> list[ForeignKeyDefinition]:
-        """Read all foreign keys for a table.
-
-        Returns:
-            List of ForeignKeyDefinition objects.
-        """
-        with self.connection.cursor() as cur:
-            query = """
-                SELECT
-                    c.constraint_name,
-                    kcu1.table_schema,
-                    kcu1.table_name,
-                    array_agg(kcu1.column_name ORDER BY kcu1.ordinal_position),
-                    kcu2.table_schema,
-                    kcu2.table_name,
-                    array_agg(kcu2.column_name ORDER BY kcu2.ordinal_position),
-                    rc.update_rule,
-                    rc.delete_rule
-                FROM information_schema.table_constraints c
-                JOIN information_schema.key_column_usage kcu1
-                    ON kcu1.constraint_name = c.constraint_name
-                    AND kcu1.table_schema = c.table_schema
-                    AND kcu1.table_name = c.table_name
-                JOIN information_schema.referential_constraints rc
-                    ON rc.constraint_name = c.constraint_name
-                    AND rc.constraint_schema = c.constraint_schema
-                JOIN information_schema.key_column_usage kcu2
-                    ON kcu2.constraint_name = rc.unique_constraint_name
-                    AND kcu2.constraint_schema = rc.unique_constraint_schema
-                WHERE c.constraint_type = 'FOREIGN KEY'
-                AND kcu1.table_schema = %s
-                AND kcu1.table_name = %s
-                AND kcu2.ordinal_position = kcu1.ordinal_position
-                GROUP BY
-                    c.constraint_name,
-                    kcu1.table_schema,
-                    kcu1.table_name,
-                    kcu2.table_schema,
-                    kcu2.table_name,
-                    rc.update_rule,
-                    rc.delete_rule
-                ORDER BY c.constraint_name
-            """
-            cur.execute(query, (schema_name, table_name))
-            rows: list[tuple[str, ...]] = cur.fetchall()
-
-        fks = []
-        for (
-            fk_name,
-            src_schema,
-            src_table,
-            src_cols,
-            ref_schema,
-            ref_table,
-            ref_cols,
-            update_rule,
-            delete_rule,
-        ) in rows:
-            fk_def = ForeignKeyDefinition(
-                name=fk_name,
-                source_table=f"{src_schema}.{src_table}",
-                source_columns=self._parse_pg_array(src_cols),
-                referenced_table=f"{ref_schema}.{ref_table}",
-                referenced_columns=self._parse_pg_array(ref_cols),
-                on_delete=delete_rule,
-                on_update=update_rule,
-            )
-            fks.append(fk_def)
-
-        return fks
-
-    def _read_check_constraints(self, schema_name: str, table_name: str) -> list[str]:
-        """Read all CHECK constraints for a table.
-
-        Returns:
-            List of constraint expressions.
-        """
-        with self.connection.cursor() as cur:
-            query = """
-                SELECT pg_get_constraintdef(oid)
-                FROM pg_constraint
-                WHERE contype = 'c'
-                AND conrelid = (
-                    SELECT oid FROM pg_class
-                    WHERE relname = %s
-                    AND relnamespace = (
-                        SELECT oid FROM pg_namespace WHERE nspname = %s
-                    )
-                )
-                ORDER BY conname
-            """
-            cur.execute(query, (table_name, schema_name))
-            rows: list[tuple[str, ...]] = cur.fetchall()
-
-        # Extract just the condition part (after "CHECK")
-        constraints = []
-        for constraint_def in rows:
-            # pg_get_constraintdef returns "CHECK (condition)"
-            condition = constraint_def[0]
-            if condition.startswith("CHECK "):
-                condition = condition[6:]  # Remove "CHECK "
-            constraints.append(condition)
-
-        return constraints
-
-    def _estimate_row_count(self, schema_name: str, table_name: str) -> int | None:
-        """Estimate the row count using pg_stat_user_tables.
-
-        Args:
-            schema_name: Schema name.
-            table_name: Table name.
-
-        Returns:
-            Estimated row count, or None if unavailable.
-        """
-        try:
-            with self.connection.cursor() as cur:
-                query = """
-                    SELECT n_live_tup
-                    FROM pg_stat_user_tables
-                    WHERE schemaname = %s AND relname = %s
-                """
-                cur.execute(query, (schema_name, table_name))
-                result: list[tuple[str, ...]] = cur.fetchall()
-
-            return int(result[0][0]) if result else None
-        except Exception:
-            # If stats are unavailable, fall back to None
-            return None

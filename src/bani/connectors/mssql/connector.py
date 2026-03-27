@@ -220,6 +220,8 @@ class MSSQLConnector(SourceConnector, SinkConnector):
         """
         if self.connection is None:
             raise RuntimeError("MSSQL connector is not connected")
+        if not table_def.columns:
+            raise ValueError(f"Table {table_def.table_name} has no columns")
 
         col_defs = []
         for col in table_def.columns:
@@ -230,7 +232,8 @@ class MSSQLConnector(SourceConnector, SinkConnector):
                 # so that indexes on the column remain possible.
                 if mssql_type == "NVARCHAR(MAX)" and col.data_type:
                     length = _extract_char_length(col.data_type)
-                    if length is not None:
+                    # NVARCHAR max is 4000 chars; anything larger stays MAX
+                    if length is not None and length <= 4000:
                         mssql_type = f"NVARCHAR({length})"
             else:
                 mssql_type = col.data_type
@@ -341,10 +344,13 @@ class MSSQLConnector(SourceConnector, SinkConnector):
         if "(" in val and ")" in val:
             return val
 
+        # Boolean literals → MSSQL BIT uses 0/1
+        if upper in ("TRUE", "FALSE"):
+            return "1" if upper == "TRUE" else "0"
+
         # SQL keywords
         if upper in (
-            "CURRENT_TIMESTAMP", "GETDATE", "NEWID",
-            "TRUE", "FALSE", "DEFAULT",
+            "CURRENT_TIMESTAMP", "GETDATE", "NEWID", "DEFAULT",
         ):
             return val
 

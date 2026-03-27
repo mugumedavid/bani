@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from unittest.mock import MagicMock
+from unittest.mock import MagicMock, call
 
 from bani.connectors.postgresql.schema_reader import PostgreSQLSchemaReader
 from bani.domain.schema import ColumnDefinition, IndexDefinition, TableDefinition
@@ -31,86 +31,36 @@ class TestPostgreSQLSchemaReader:
 
     def test_is_auto_increment_detects_serial(self) -> None:
         """Should detect serial/bigserial types as auto-increment."""
-        mock_conn = self._make_mock_connection()
-        reader = PostgreSQLSchemaReader(mock_conn)
-
-        assert reader._is_auto_increment("serial") is True
-        assert reader._is_auto_increment("SERIAL") is True
-        assert reader._is_auto_increment("bigserial") is True
-        assert reader._is_auto_increment("smallserial") is True
-        assert reader._is_auto_increment("integer") is False
+        assert PostgreSQLSchemaReader._is_auto_increment("serial") is True
+        assert PostgreSQLSchemaReader._is_auto_increment("SERIAL") is True
+        assert PostgreSQLSchemaReader._is_auto_increment("bigserial") is True
+        assert PostgreSQLSchemaReader._is_auto_increment("smallserial") is True
+        assert PostgreSQLSchemaReader._is_auto_increment("integer") is False
 
     def test_is_auto_increment_with_params(self) -> None:
         """Should detect auto-increment even with type parameters."""
-        mock_conn = self._make_mock_connection()
-        reader = PostgreSQLSchemaReader(mock_conn)
+        assert PostgreSQLSchemaReader._is_auto_increment("serial NOT NULL") is True
+        assert (
+            PostgreSQLSchemaReader._is_auto_increment("BIGSERIAL PRIMARY KEY") is True
+        )
 
-        assert reader._is_auto_increment("serial NOT NULL") is True
-        assert reader._is_auto_increment("BIGSERIAL PRIMARY KEY") is True
+    def test_parse_pg_array_from_list(self) -> None:
+        """Should handle Python list input."""
+        result = PostgreSQLSchemaReader._parse_pg_array(["col1", "col2"])
+        assert result == ("col1", "col2")
 
-    def test_extract_filter_expression_with_null(self) -> None:
-        """Should return None when no filter expression exists."""
-        mock_conn = self._make_mock_connection()
-        mock_cursor = self._make_mock_cursor()
-        mock_cursor.fetchall.return_value = []
-        mock_conn.cursor.return_value.__enter__.return_value = mock_cursor
+    def test_parse_pg_array_from_string(self) -> None:
+        """Should handle PG array literal string."""
+        result = PostgreSQLSchemaReader._parse_pg_array("{col1,col2}")
+        assert result == ("col1", "col2")
 
-        reader = PostgreSQLSchemaReader(mock_conn)
-        result = reader._extract_filter_expression("test_idx", "public")
-
-        assert result is None
-
-    def test_extract_filter_expression_with_value(self) -> None:
-        """Should extract filter expression when present."""
-        mock_conn = self._make_mock_connection()
-        mock_cursor = self._make_mock_cursor()
-        mock_cursor.fetchall.return_value = [("active = true",)]
-        mock_conn.cursor.return_value.__enter__.return_value = mock_cursor
-
-        reader = PostgreSQLSchemaReader(mock_conn)
-        result = reader._extract_filter_expression("test_idx", "public")
-
-        assert result == "active = true"
-
-    def test_estimate_row_count_with_stats(self) -> None:
-        """Should return row count from pg_stat_user_tables."""
-        mock_conn = self._make_mock_connection()
-        mock_cursor = self._make_mock_cursor()
-        mock_cursor.fetchall.return_value = [("12345",)]
-        mock_conn.cursor.return_value.__enter__.return_value = mock_cursor
-
-        reader = PostgreSQLSchemaReader(mock_conn)
-        result = reader._estimate_row_count("test_table", "public")
-
-        assert result == 12345
-
-    def test_estimate_row_count_when_unavailable(self) -> None:
-        """Should return None when stats are unavailable."""
-        mock_conn = self._make_mock_connection()
-        mock_cursor = self._make_mock_cursor()
-        mock_cursor.fetchall.return_value = []
-        mock_conn.cursor.return_value.__enter__.return_value = mock_cursor
-
-        reader = PostgreSQLSchemaReader(mock_conn)
-        result = reader._estimate_row_count("test_table", "public")
-
-        assert result is None
-
-    def test_estimate_row_count_on_error(self) -> None:
-        """Should return None if query raises exception."""
-        mock_conn = self._make_mock_connection()
-        mock_cursor = self._make_mock_cursor()
-        mock_cursor.execute.side_effect = Exception("Connection error")
-        mock_conn.cursor.return_value.__enter__.return_value = mock_cursor
-
-        reader = PostgreSQLSchemaReader(mock_conn)
-        result = reader._estimate_row_count("test_table", "public")
-
-        assert result is None
+    def test_parse_pg_array_empty(self) -> None:
+        """Should handle empty array."""
+        result = PostgreSQLSchemaReader._parse_pg_array("{}")
+        assert result == ()
 
     def test_column_definition_creation(self) -> None:
         """Should create column definitions with proper attributes."""
-        # This is a basic integration test for the data structures
         col = ColumnDefinition(
             name="id",
             data_type="INTEGER",
@@ -193,225 +143,61 @@ class TestPostgreSQLSchemaReader:
             assert len(result.tables) == 1
             assert result.tables[0].table_name == "users"
 
-    def test_get_full_column_type_returns_formatted_type(self) -> None:
-        """Should retrieve full column type from pg_catalog."""
-        mock_conn = self._make_mock_connection()
-        mock_cursor = self._make_mock_cursor()
-        mock_cursor.fetchall.return_value = [("varchar(255)",)]
-        mock_conn.cursor.return_value.__enter__.return_value = mock_cursor
+    def test_read_tables_assembles_from_bulk_queries(self) -> None:
+        """Should issue 7 bulk queries and assemble TableDefinitions."""
+        from unittest.mock import patch as mock_patch
 
+        mock_conn = self._make_mock_connection()
         reader = PostgreSQLSchemaReader(mock_conn)
-        result = reader._get_full_column_type(
-            "public", "users", "email", "character varying"
+
+        table_key = ("public", "users")
+        col = ColumnDefinition(
+            name="id", data_type="integer", ordinal_position=0
         )
 
-        assert result == "varchar(255)"
-
-    def test_get_full_column_type_fallback_to_base(self) -> None:
-        """Should return base type if query returns no results."""
-        mock_conn = self._make_mock_connection()
-        mock_cursor = self._make_mock_cursor()
-        mock_cursor.fetchall.return_value = []
-        mock_conn.cursor.return_value.__enter__.return_value = mock_cursor
-
-        reader = PostgreSQLSchemaReader(mock_conn)
-        result = reader._get_full_column_type("public", "users", "email", "text")
-
-        assert result == "text"
-
-    def test_read_columns_builds_definitions(self) -> None:
-        """Should create column definitions from query results."""
-        from unittest.mock import patch as mock_patch
-
-        mock_conn = self._make_mock_connection()
-        mock_cursor = self._make_mock_cursor()
-        # Column name, data_type, is_nullable, default, ordinal
-        mock_cursor.fetchall.return_value = [
-            ("id", "integer", "NO", None, "1"),
-            ("email", "text", "YES", None, "2"),
-        ]
-        mock_conn.cursor.return_value.__enter__.return_value = mock_cursor
-
-        reader = PostgreSQLSchemaReader(mock_conn)
-
-        with mock_patch.object(
-            reader,
-            "_get_full_column_type",
-            side_effect=lambda s, t, c, b: b,
-        ):
-            columns = reader._read_columns("public", "users")
-
-            assert len(columns) == 2
-            assert columns[0].name == "id"
-            assert columns[0].nullable is False
-            assert columns[1].name == "email"
-            assert columns[1].nullable is True
-
-    def test_read_columns_detects_auto_increment(self) -> None:
-        """Should detect serial/bigserial as auto-increment."""
-        from unittest.mock import patch as mock_patch
-
-        mock_conn = self._make_mock_connection()
-        mock_cursor = self._make_mock_cursor()
-        mock_cursor.fetchall.return_value = [
-            ("id", "integer", "NO", None, "1"),
-        ]
-        mock_conn.cursor.return_value.__enter__.return_value = mock_cursor
-
-        reader = PostgreSQLSchemaReader(mock_conn)
-
-        with mock_patch.object(
-            reader, "_get_full_column_type", return_value="bigserial"
-        ):
-            columns = reader._read_columns("public", "users")
-
-            assert columns[0].is_auto_increment is True
-
-    def test_read_primary_key_returns_columns(self) -> None:
-        """Should read primary key columns in order."""
-        mock_conn = self._make_mock_connection()
-        mock_cursor = self._make_mock_cursor()
-        mock_cursor.fetchall.return_value = [
-            ("id",),
-            ("user_id",),
-        ]
-        mock_conn.cursor.return_value.__enter__.return_value = mock_cursor
-
-        reader = PostgreSQLSchemaReader(mock_conn)
-        result = reader._read_primary_key("public", "users")
-
-        assert result == ["id", "user_id"]
-
-    def test_read_primary_key_empty(self) -> None:
-        """Should return empty list if no primary key."""
-        mock_conn = self._make_mock_connection()
-        mock_cursor = self._make_mock_cursor()
-        mock_cursor.fetchall.return_value = []
-        mock_conn.cursor.return_value.__enter__.return_value = mock_cursor
-
-        reader = PostgreSQLSchemaReader(mock_conn)
-        result = reader._read_primary_key("public", "users")
-
-        assert result == []
-
-    def test_read_indexes_builds_definitions(self) -> None:
-        """Should create index definitions from query results."""
-        from unittest.mock import patch as mock_patch
-
-        mock_conn = self._make_mock_connection()
-        mock_cursor = self._make_mock_cursor()
-        # name, is_unique, is_clustered, indexdef, columns
-        mock_cursor.fetchall.return_value = [
-            ("idx_email", False, False, "CREATE INDEX idx_email...", ["email"]),
-        ]
-        mock_conn.cursor.return_value.__enter__.return_value = mock_cursor
-
-        reader = PostgreSQLSchemaReader(mock_conn)
-
-        with mock_patch.object(reader, "_extract_filter_expression", return_value=None):
-            indexes = reader._read_indexes("public", "users")
-
-            assert len(indexes) == 1
-            assert indexes[0].name == "idx_email"
-            assert indexes[0].columns == ("email",)
-            assert indexes[0].is_unique is False
-
-    def test_read_indexes_with_unique(self) -> None:
-        """Should detect unique indexes."""
-        from unittest.mock import patch as mock_patch
-
-        mock_conn = self._make_mock_connection()
-        mock_cursor = self._make_mock_cursor()
-        mock_cursor.fetchall.return_value = [
-            (
-                "idx_username",
-                True,
-                False,
-                "CREATE UNIQUE INDEX...",
-                ["username"],
+        with (
+            mock_patch.object(
+                reader, "_fetch_table_list", return_value=[table_key]
             ),
-        ]
-        mock_conn.cursor.return_value.__enter__.return_value = mock_cursor
-
-        reader = PostgreSQLSchemaReader(mock_conn)
-
-        with mock_patch.object(reader, "_extract_filter_expression", return_value=None):
-            indexes = reader._read_indexes("public", "users")
-
-            assert indexes[0].is_unique is True
-
-    def test_read_foreign_keys_builds_definitions(self) -> None:
-        """Should create foreign key definitions."""
-        mock_conn = self._make_mock_connection()
-        mock_cursor = self._make_mock_cursor()
-        # constraint_name, src_schema, src_table, src_cols, ref_schema,
-        # ref_table, ref_cols, update_rule, delete_rule
-        mock_cursor.fetchall.return_value = [
-            (
-                "fk_user_id",
-                "public",
-                "posts",
-                ["user_id"],
-                "public",
-                "users",
-                ["id"],
-                "NO ACTION",
-                "CASCADE",
+            mock_patch.object(
+                reader, "_fetch_all_columns", return_value={table_key: [col]}
             ),
-        ]
-        mock_conn.cursor.return_value.__enter__.return_value = mock_cursor
+            mock_patch.object(
+                reader, "_fetch_all_primary_keys", return_value={table_key: ["id"]}
+            ),
+            mock_patch.object(
+                reader, "_fetch_all_indexes", return_value={}
+            ),
+            mock_patch.object(
+                reader, "_fetch_all_foreign_keys", return_value={}
+            ),
+            mock_patch.object(
+                reader, "_fetch_all_check_constraints", return_value={}
+            ),
+            mock_patch.object(
+                reader, "_fetch_all_row_counts", return_value={table_key: 42}
+            ),
+        ):
+            tables = reader._read_tables()
 
-        reader = PostgreSQLSchemaReader(mock_conn)
-        fks = reader._read_foreign_keys("public", "posts")
+            assert len(tables) == 1
+            t = tables[0]
+            assert t.schema_name == "public"
+            assert t.table_name == "users"
+            assert t.columns == (col,)
+            assert t.primary_key == ("id",)
+            assert t.indexes == ()
+            assert t.foreign_keys == ()
+            assert t.check_constraints == ()
+            assert t.row_count_estimate == 42
 
-        assert len(fks) == 1
-        assert fks[0].name == "fk_user_id"
-        assert fks[0].source_table == "public.posts"
-        assert fks[0].referenced_table == "public.users"
-        assert fks[0].on_delete == "CASCADE"
-        assert fks[0].on_update == "NO ACTION"
+    def test_read_tables_empty_database(self) -> None:
+        """Should return empty list when no tables exist."""
+        from unittest.mock import patch as mock_patch
 
-    def test_read_check_constraints_extracts_conditions(self) -> None:
-        """Should extract check constraints without CHECK keyword."""
         mock_conn = self._make_mock_connection()
-        mock_cursor = self._make_mock_cursor()
-        mock_cursor.fetchall.return_value = [
-            ("CHECK (age >= 18)",),
-            ("CHECK (status IN ('active', 'inactive'))",),
-        ]
-        mock_conn.cursor.return_value.__enter__.return_value = mock_cursor
-
         reader = PostgreSQLSchemaReader(mock_conn)
-        constraints = reader._read_check_constraints("public", "users")
 
-        assert len(constraints) == 2
-        assert constraints[0] == "(age >= 18)"
-        assert constraints[1] == "(status IN ('active', 'inactive'))"
-
-    def test_read_check_constraints_empty(self) -> None:
-        """Should return empty list if no check constraints."""
-        mock_conn = self._make_mock_connection()
-        mock_cursor = self._make_mock_cursor()
-        mock_cursor.fetchall.return_value = []
-        mock_conn.cursor.return_value.__enter__.return_value = mock_cursor
-
-        reader = PostgreSQLSchemaReader(mock_conn)
-        constraints = reader._read_check_constraints("public", "users")
-
-        assert constraints == []
-
-    def test_read_check_constraints_without_check_prefix(self) -> None:
-        """Should handle constraints not prefixed with CHECK."""
-        mock_conn = self._make_mock_connection()
-        mock_cursor = self._make_mock_cursor()
-        # Some systems might return without CHECK prefix
-        mock_cursor.fetchall.return_value = [
-            ("(age >= 18)",),
-        ]
-        mock_conn.cursor.return_value.__enter__.return_value = mock_cursor
-
-        reader = PostgreSQLSchemaReader(mock_conn)
-        constraints = reader._read_check_constraints("public", "users")
-
-        assert len(constraints) == 1
-        assert constraints[0] == "(age >= 18)"
+        with mock_patch.object(reader, "_fetch_table_list", return_value=[]):
+            tables = reader._read_tables()
+            assert tables == []

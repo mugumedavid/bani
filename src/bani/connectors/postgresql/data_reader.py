@@ -131,7 +131,20 @@ class PostgreSQLDataReader:
             col_data = columns_data[col_name]
             arrow_type = self.type_mapper.map_pg_type_oid(col_type_oid)
 
-            # Convert data to proper Arrow type
+            # psycopg returns rich Python objects for many PG types
+            # (jsonb → dict/list, uuid → UUID, inet → IPv4Address, etc.)
+            # Arrow string columns need plain str values.
+            if arrow_type == pa.string():
+                import json as _json
+
+                col_data = [
+                    _json.dumps(v, default=str)
+                    if isinstance(v, (dict, list))
+                    else str(v) if v is not None and not isinstance(v, str)
+                    else v
+                    for v in col_data
+                ]
+
             arrow_array = pa.array(col_data, type=arrow_type)
             arrays.append(arrow_array)
             fields.append(pa.field(col_name, arrow_type))

@@ -200,6 +200,8 @@ class SQLiteConnector(SourceConnector, SinkConnector):
         """
         if self.connection is None:
             raise RuntimeError("SQLite connector is not connected")
+        if not table_def.columns:
+            raise ValueError(f"Table {table_def.table_name} has no columns")
 
         # Build column definitions
         col_defs: list[str] = []

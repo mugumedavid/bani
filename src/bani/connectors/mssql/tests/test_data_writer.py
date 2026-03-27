@@ -86,9 +86,9 @@ class TestMSSQLDataWriter:
         rows_written = writer.write_batch("test_table", "dbo", batch)
         assert rows_written == 3
 
-        # Verify executemany was called with None values
-        mock_cursor.executemany.assert_called_once()
-        call_args = mock_cursor.executemany.call_args
+        # Verify execute was called (multi-row INSERT, not executemany)
+        mock_cursor.execute.assert_called_once()
+        call_args = mock_cursor.execute.call_args
         assert call_args is not None
 
     def test_write_batch_calls_commit(self) -> None:

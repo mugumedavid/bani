@@ -3,10 +3,15 @@
 Queries Oracle data dictionary views (ALL_TAB_COLUMNS, ALL_CONSTRAINTS,
 ALL_IND_COLUMNS, etc.) to build a complete picture of the database schema,
 including tables, columns, indexes, constraints, and foreign keys.
+
+All metadata is fetched in bulk (6 queries total, regardless of table
+count) and then assembled in Python -- eliminating the N+1 round-trips
+that made the previous implementation slow on large databases.
 """
 
 from __future__ import annotations
 
+from collections import defaultdict
 from typing import TYPE_CHECKING, Any
 
 if TYPE_CHECKING:
@@ -27,6 +32,8 @@ class OracleSchemaReader:
 
     Handles Oracle-specific features like NUMBER without precision,
     VARCHAR2 vs NVARCHAR2, and schema-qualified identifiers.
+
+    All metadata is fetched in bulk queries and assembled in Python.
     """
 
     def __init__(self, connection: oracledb.Connection, owner: str) -> None:
@@ -52,11 +59,49 @@ class OracleSchemaReader:
         tables = self._read_tables()
         return DatabaseSchema(tables=tuple(tables), source_dialect="oracle")
 
+    # ------------------------------------------------------------------
+    # Bulk readers -- one query each, across *all* user tables
+    # ------------------------------------------------------------------
+
     def _read_tables(self) -> list[TableDefinition]:
-        """Read all user tables and their metadata.
+        """Read all user tables and their metadata using bulk queries.
 
         Returns:
             List of TableDefinition objects.
+        """
+        table_names = self._fetch_table_list()
+        if not table_names:
+            return []
+
+        columns_map = self._fetch_all_columns()
+        pk_map = self._fetch_all_primary_keys()
+        idx_map = self._fetch_all_indexes()
+        fk_map = self._fetch_all_foreign_keys()
+        rowcount_map = self._fetch_all_row_counts()
+
+        tables: list[TableDefinition] = []
+        for table_name in table_names:
+            tables.append(
+                TableDefinition(
+                    schema_name=self.owner,
+                    table_name=table_name,
+                    columns=tuple(columns_map.get(table_name, [])),
+                    primary_key=tuple(pk_map.get(table_name, [])),
+                    indexes=tuple(idx_map.get(table_name, [])),
+                    foreign_keys=tuple(fk_map.get(table_name, [])),
+                    check_constraints=(),  # Oracle check constraints not yet supported
+                    row_count_estimate=rowcount_map.get(table_name),
+                )
+            )
+        return tables
+
+    # 1. Table list --------------------------------------------------------
+
+    def _fetch_table_list(self) -> list[str]:
+        """Fetch all user table names in a single query.
+
+        Returns:
+            Sorted list of table names (excluding system tables).
         """
         cursor = self.connection.cursor()
         try:
@@ -73,42 +118,25 @@ class OracleSchemaReader:
                 ORDER BY table_name
             """
             cursor.execute(query)
-            tables_list: list[tuple[Any, ...]] = list(cursor.fetchall())
+            rows: list[tuple[Any, ...]] = list(cursor.fetchall())
         finally:
             cursor.close()
 
-        tables = []
-        for (table_name,) in tables_list:
-            columns = self._read_columns(table_name)
-            primary_key = self._read_primary_key(table_name)
-            indexes = self._read_indexes(table_name)
-            foreign_keys = self._read_foreign_keys(table_name)
-            row_estimate = self._estimate_row_count(table_name)
+        return [row[0] for row in rows]
 
-            table_def = TableDefinition(
-                schema_name=self.owner,
-                table_name=table_name,
-                columns=tuple(columns),
-                primary_key=tuple(primary_key),
-                indexes=tuple(indexes),
-                foreign_keys=tuple(foreign_keys),
-                check_constraints=(),  # Oracle check constraints could be added
-                row_count_estimate=row_estimate,
-            )
-            tables.append(table_def)
+    # 2. Columns (with full type) ------------------------------------------
 
-        return tables
-
-    def _read_columns(self, table_name: str) -> list[ColumnDefinition]:
-        """Read all columns for a table.
+    def _fetch_all_columns(self) -> dict[str, list[ColumnDefinition]]:
+        """Fetch all columns across all tables in a single query.
 
         Returns:
-            List of ColumnDefinition objects.
+            Dict mapping table_name to list of ColumnDefinition objects.
         """
         cursor = self.connection.cursor()
         try:
             query = """
                 SELECT
+                    table_name,
                     column_name,
                     data_type,
                     data_length,
@@ -118,16 +146,17 @@ class OracleSchemaReader:
                     column_id,
                     data_default
                 FROM all_tab_columns
-                WHERE owner = :owner AND table_name = :table_name
-                ORDER BY column_id
+                WHERE owner = :owner
+                ORDER BY table_name, column_id
             """
-            cursor.execute(query, {"owner": self.owner, "table_name": table_name})
+            cursor.execute(query, {"owner": self.owner})
             rows: list[tuple[Any, ...]] = list(cursor.fetchall())
         finally:
             cursor.close()
 
-        columns = []
+        result: dict[str, list[ColumnDefinition]] = defaultdict(list)
         for (
+            table_name,
             col_name,
             data_type,
             data_length,
@@ -164,230 +193,233 @@ class OracleSchemaReader:
                     is_auto = True
                     clean_default = None
 
-            col_def = ColumnDefinition(
-                name=col_name,
-                data_type=type_str,
-                nullable=(nullable == "Y"),
-                default_value=clean_default,
-                is_auto_increment=is_auto,
-                ordinal_position=int(column_id) - 1,  # Convert to 0-based
-                arrow_type_str=arrow_type_str,
+            result[table_name].append(
+                ColumnDefinition(
+                    name=col_name,
+                    data_type=type_str,
+                    nullable=(nullable == "Y"),
+                    default_value=clean_default,
+                    is_auto_increment=is_auto,
+                    ordinal_position=int(column_id) - 1,  # Convert to 0-based
+                    arrow_type_str=arrow_type_str,
+                )
             )
-            columns.append(col_def)
+        return dict(result)
 
-        return columns
+    # 3. Primary keys ------------------------------------------------------
 
-    def _read_primary_key(self, table_name: str) -> list[str]:
-        """Read the primary key columns for a table.
+    def _fetch_all_primary_keys(self) -> dict[str, list[str]]:
+        """Fetch all primary key columns across all tables in a single query.
 
         Returns:
-            List of column names in primary key order.
+            Dict mapping table_name to ordered list of PK column names.
         """
         cursor = self.connection.cursor()
         try:
             query = """
-                SELECT acc.column_name
+                SELECT ac.table_name, acc.column_name
                 FROM all_constraints ac
                 JOIN all_cons_columns acc
                     ON ac.owner = acc.owner
                     AND ac.constraint_name = acc.constraint_name
                 WHERE ac.owner = :owner
-                AND ac.table_name = :table_name
                 AND ac.constraint_type = 'P'
-                ORDER BY acc.position
+                ORDER BY ac.table_name, acc.position
             """
-            cursor.execute(query, {"owner": self.owner, "table_name": table_name})
+            cursor.execute(query, {"owner": self.owner})
             rows: list[tuple[Any, ...]] = list(cursor.fetchall())
         finally:
             cursor.close()
 
-        return [row[0] for row in rows]
+        result: dict[str, list[str]] = defaultdict(list)
+        for table_name, col_name in rows:
+            result[table_name].append(col_name)
+        return dict(result)
 
-    def _read_indexes(self, table_name: str) -> list[IndexDefinition]:
-        """Read all indexes on a table (excluding primary key).
+    # 4. Indexes (with inline columns) -------------------------------------
 
-        Returns:
-            List of IndexDefinition objects.
-        """
-        cursor = self.connection.cursor()
-        try:
-            query = """
-                SELECT ai.index_name, ai.uniqueness
-                FROM all_indexes ai
-                WHERE ai.table_owner = :owner
-                AND ai.table_name = :table_name
-                AND ai.index_type = 'NORMAL'
-                ORDER BY ai.index_name
-            """
-            cursor.execute(query, {"owner": self.owner, "table_name": table_name})
-            indexes_list: list[tuple[Any, ...]] = list(cursor.fetchall())
-        finally:
-            cursor.close()
+    def _fetch_all_indexes(self) -> dict[str, list[IndexDefinition]]:
+        """Fetch all indexes and their columns across all tables in a single query.
 
-        indexes = []
-        for index_name, uniqueness in indexes_list:
-            # Get columns in the index
-            cursor = self.connection.cursor()
-            try:
-                col_query = """
-                    SELECT column_name
-                    FROM all_ind_columns
-                    WHERE index_owner = :owner
-                    AND index_name = :index_name
-                    ORDER BY column_position
-                """
-                cursor.execute(
-                    col_query, {"owner": self.owner, "index_name": index_name}
-                )
-                col_rows: list[tuple[Any, ...]] = list(cursor.fetchall())
-            finally:
-                cursor.close()
-
-            col_names = [row[0] for row in col_rows]
-
-            idx_def = IndexDefinition(
-                name=index_name,
-                columns=tuple(col_names),
-                is_unique=(uniqueness == "UNIQUE"),
-                is_clustered=False,
-                filter_expression=None,
-            )
-            indexes.append(idx_def)
-
-        return indexes
-
-    def _read_foreign_keys(self, table_name: str) -> list[ForeignKeyDefinition]:
-        """Read all foreign keys for a table.
+        Excludes primary key indexes by filtering out indexes that back
+        a primary key constraint.
 
         Returns:
-            List of ForeignKeyDefinition objects.
+            Dict mapping table_name to list of IndexDefinition objects.
         """
         cursor = self.connection.cursor()
         try:
             query = """
                 SELECT
-                    ac.constraint_name,
-                    ac.owner,
-                    ac.table_name,
-                    ac.r_owner,
-                    ac.r_constraint_name,
-                    ac.delete_rule
-                FROM all_constraints ac
-                WHERE ac.owner = :owner
-                AND ac.table_name = :table_name
-                AND ac.constraint_type = 'R'
-                ORDER BY ac.constraint_name
+                    ai.table_name,
+                    ai.index_name,
+                    ai.uniqueness,
+                    aic.column_name,
+                    aic.column_position
+                FROM all_indexes ai
+                JOIN all_ind_columns aic
+                    ON ai.owner = aic.index_owner
+                    AND ai.index_name = aic.index_name
+                WHERE ai.table_owner = :owner
+                AND ai.index_type = 'NORMAL'
+                ORDER BY ai.table_name, ai.index_name, aic.column_position
             """
-            cursor.execute(query, {"owner": self.owner, "table_name": table_name})
-            fks_list: list[tuple[Any, ...]] = list(cursor.fetchall())
+            cursor.execute(query, {"owner": self.owner})
+            rows: list[tuple[Any, ...]] = list(cursor.fetchall())
         finally:
             cursor.close()
 
-        fks = []
-        for (
-            fk_name,
-            src_owner,
-            src_table,
-            ref_owner,
-            ref_constraint_name,
-            delete_rule,
-        ) in fks_list:
-            # Get source columns
-            cursor = self.connection.cursor()
-            try:
-                src_col_query = """
-                    SELECT column_name
-                    FROM all_cons_columns
-                    WHERE owner = :owner
-                    AND constraint_name = :fk_name
-                    ORDER BY position
-                """
-                cursor.execute(src_col_query, {"owner": src_owner, "fk_name": fk_name})
-                src_col_rows: list[tuple[Any, ...]] = list(cursor.fetchall())
-            finally:
-                cursor.close()
+        # Group columns by (table_name, index_name)
+        # Each entry: (uniqueness, [col_names])
+        index_cols: dict[tuple[str, str], tuple[str, list[str]]] = {}
+        for table_name, index_name, uniqueness, col_name, _col_pos in rows:
+            key = (table_name, index_name)
+            if key not in index_cols:
+                index_cols[key] = (uniqueness, [])
+            index_cols[key][1].append(col_name)
 
-            src_cols = [row[0] for row in src_col_rows]
-
-            # Get referenced table and columns
-            cursor = self.connection.cursor()
-            try:
-                ref_query = """
-                    SELECT table_name
-                    FROM all_constraints
-                    WHERE owner = :owner
-                    AND constraint_name = :ref_constraint_name
-                """
-                cursor.execute(
-                    ref_query,
-                    {"owner": ref_owner, "ref_constraint_name": ref_constraint_name},
+        result: dict[str, list[IndexDefinition]] = defaultdict(list)
+        for (table_name, index_name), (uniqueness, col_names) in index_cols.items():
+            result[table_name].append(
+                IndexDefinition(
+                    name=index_name,
+                    columns=tuple(col_names),
+                    is_unique=(uniqueness == "UNIQUE"),
+                    is_clustered=False,
+                    filter_expression=None,
                 )
-                ref_row: tuple[Any, ...] | None = cursor.fetchone()
-                ref_table = ref_row[0] if ref_row else "UNKNOWN"
-            finally:
-                cursor.close()
-
-            # Get referenced columns
-            cursor = self.connection.cursor()
-            try:
-                ref_col_query = """
-                    SELECT column_name
-                    FROM all_cons_columns
-                    WHERE owner = :owner
-                    AND constraint_name = :ref_constraint_name
-                    ORDER BY position
-                """
-                cursor.execute(
-                    ref_col_query,
-                    {"owner": ref_owner, "ref_constraint_name": ref_constraint_name},
-                )
-                ref_col_rows: list[tuple[Any, ...]] = list(cursor.fetchall())
-            finally:
-                cursor.close()
-
-            ref_cols = [row[0] for row in ref_col_rows]
-
-            fk_def = ForeignKeyDefinition(
-                name=fk_name,
-                source_table=f"{src_owner}.{src_table}",
-                source_columns=tuple(src_cols),
-                referenced_table=f"{ref_owner}.{ref_table}",
-                referenced_columns=tuple(ref_cols),
-                on_delete=self._normalize_delete_rule(delete_rule),
-                on_update="NO ACTION",  # Oracle doesn't support ON UPDATE
             )
-            fks.append(fk_def)
+        return dict(result)
 
-        return fks
+    # 5. Foreign keys ------------------------------------------------------
 
-    def _estimate_row_count(self, table_name: str) -> int | None:
-        """Get an estimated row count for a table.
+    def _fetch_all_foreign_keys(
+        self,
+    ) -> dict[str, list[ForeignKeyDefinition]]:
+        """Fetch all foreign keys across all tables in a single query.
 
-        Uses user_tables.num_rows if available, otherwise NULL.
-
-        Args:
-            table_name: Name of the table.
+        Uses a self-join on all_constraints (ac for FK, rc for referenced PK)
+        and joins all_cons_columns for both source and referenced columns,
+        eliminating the 3 sub-queries per FK that the old implementation used.
 
         Returns:
-            Estimated row count or None.
+            Dict mapping table_name to list of ForeignKeyDefinition objects.
         """
         cursor = self.connection.cursor()
         try:
             query = """
-                SELECT num_rows
-                FROM all_tables
-                WHERE owner = :owner
-                AND table_name = :table_name
+                SELECT
+                    ac.table_name   AS src_table,
+                    ac.constraint_name AS fk_name,
+                    ac.owner        AS src_owner,
+                    ac.delete_rule,
+                    src_cc.column_name AS src_col,
+                    src_cc.position    AS src_pos,
+                    rc.owner        AS ref_owner,
+                    rc.table_name   AS ref_table,
+                    ref_cc.column_name AS ref_col
+                FROM all_constraints ac
+                JOIN all_constraints rc
+                    ON ac.r_owner = rc.owner
+                    AND ac.r_constraint_name = rc.constraint_name
+                JOIN all_cons_columns src_cc
+                    ON ac.owner = src_cc.owner
+                    AND ac.constraint_name = src_cc.constraint_name
+                JOIN all_cons_columns ref_cc
+                    ON rc.owner = ref_cc.owner
+                    AND rc.constraint_name = ref_cc.constraint_name
+                    AND src_cc.position = ref_cc.position
+                WHERE ac.owner = :owner
+                AND ac.constraint_type = 'R'
+                ORDER BY ac.table_name, ac.constraint_name, src_cc.position
             """
-            cursor.execute(query, {"owner": self.owner, "table_name": table_name})
-            result: tuple[Any, ...] | None = cursor.fetchone()
-
-            if result and result[0] is not None:
-                return int(result[0])
+            cursor.execute(query, {"owner": self.owner})
+            rows: list[tuple[Any, ...]] = list(cursor.fetchall())
         finally:
             cursor.close()
 
-        return None
+        # Group by (src_table, fk_name) to collect all column pairs
+        # Value: (src_owner, delete_rule, ref_owner, ref_table, [src_cols], [ref_cols])
+        fk_groups: dict[
+            tuple[str, str],
+            tuple[str, str | None, str, str, list[str], list[str]],
+        ] = {}
+        for (
+            src_table,
+            fk_name,
+            src_owner,
+            delete_rule,
+            src_col,
+            _src_pos,
+            ref_owner,
+            ref_table,
+            ref_col,
+        ) in rows:
+            key = (src_table, fk_name)
+            if key not in fk_groups:
+                fk_groups[key] = (
+                    src_owner,
+                    delete_rule,
+                    ref_owner,
+                    ref_table,
+                    [],
+                    [],
+                )
+            fk_groups[key][4].append(src_col)
+            fk_groups[key][5].append(ref_col)
+
+        result: dict[str, list[ForeignKeyDefinition]] = defaultdict(list)
+        for (src_table, fk_name), (
+            src_owner,
+            delete_rule,
+            ref_owner,
+            ref_table,
+            src_cols,
+            ref_cols,
+        ) in fk_groups.items():
+            result[src_table].append(
+                ForeignKeyDefinition(
+                    name=fk_name,
+                    source_table=f"{src_owner}.{src_table}",
+                    source_columns=tuple(src_cols),
+                    referenced_table=f"{ref_owner}.{ref_table}",
+                    referenced_columns=tuple(ref_cols),
+                    on_delete=self._normalize_delete_rule(delete_rule),
+                    on_update="NO ACTION",  # Oracle doesn't support ON UPDATE
+                )
+            )
+        return dict(result)
+
+    # 6. Row count estimates -----------------------------------------------
+
+    def _fetch_all_row_counts(self) -> dict[str, int | None]:
+        """Fetch estimated row counts for all tables in a single query.
+
+        Uses all_tables.num_rows (populated by DBMS_STATS / ANALYZE).
+
+        Returns:
+            Dict mapping table_name to estimated row count (or None).
+        """
+        cursor = self.connection.cursor()
+        try:
+            query = """
+                SELECT table_name, num_rows
+                FROM all_tables
+                WHERE owner = :owner
+                ORDER BY table_name
+            """
+            cursor.execute(query, {"owner": self.owner})
+            rows: list[tuple[Any, ...]] = list(cursor.fetchall())
+        finally:
+            cursor.close()
+
+        return {
+            row[0]: int(row[1]) if row[1] is not None else None for row in rows
+        }
+
+    # ------------------------------------------------------------------
+    # Helpers
+    # ------------------------------------------------------------------
 
     @staticmethod
     def _normalize_delete_rule(rule: str | None) -> str:

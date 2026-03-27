@@ -1,12 +1,17 @@
 """MSSQL schema introspection reader.
 
-Queries INFORMATION_SCHEMA and sys.* catalog views to build a complete picture
-of the database schema, including tables, columns, types, PKs, indexes, FKs,
-check constraints, identity columns, and row count estimates.
+Queries sys.* catalog views to build a complete picture of the database
+schema, including tables, columns, types, PKs, indexes, FKs, check
+constraints, identity columns, and row count estimates.
+
+All metadata is fetched in bulk (7 queries total, regardless of table
+count) and then assembled in Python — eliminating the N+1 round-trips
+that made the previous implementation slow on large databases.
 """
 
 from __future__ import annotations
 
+from collections import defaultdict
 from typing import TYPE_CHECKING, Any
 
 if TYPE_CHECKING:
@@ -21,12 +26,17 @@ from bani.domain.schema import (
     TableDefinition,
 )
 
+# Type alias for the (schema, table) key used to group rows in Python.
+_TableKey = tuple[str, str]
+
 
 class MSSQLSchemaReader:
-    """Introspects MSSQL schema using INFORMATION_SCHEMA and sys views.
+    """Introspects MSSQL schema using sys views.
 
     Handles MSSQL-specific features like identity columns, nvarchar vs varchar,
     datetime2 vs datetime, SCOPE_IDENTITY, and schema-qualified names.
+
+    All metadata is fetched in bulk queries and assembled in Python.
     """
 
     def __init__(self, connection: Any, database: str) -> None:
@@ -52,14 +62,54 @@ class MSSQLSchemaReader:
         tables = self._read_tables()
         return DatabaseSchema(tables=tuple(tables), source_dialect="mssql")
 
+    # ------------------------------------------------------------------
+    # Bulk readers — one query each, across *all* user tables
+    # ------------------------------------------------------------------
+
     def _read_tables(self) -> list[TableDefinition]:
-        """Read all user tables and their metadata.
+        """Read all user tables and their metadata using bulk queries.
 
         Returns:
             List of TableDefinition objects.
         """
+        table_keys = self._fetch_table_list()
+        if not table_keys:
+            return []
+
+        columns_map = self._fetch_all_columns()
+        pk_map = self._fetch_all_primary_keys()
+        idx_map = self._fetch_all_indexes()
+        fk_map = self._fetch_all_foreign_keys()
+        chk_map = self._fetch_all_check_constraints()
+        rowcount_map = self._fetch_all_row_counts()
+
+        tables: list[TableDefinition] = []
+        for key in table_keys:
+            schema_name, table_name = key
+            tables.append(
+                TableDefinition(
+                    schema_name=schema_name,
+                    table_name=table_name,
+                    columns=tuple(columns_map.get(key, [])),
+                    primary_key=tuple(pk_map.get(key, [])),
+                    indexes=tuple(idx_map.get(key, [])),
+                    foreign_keys=tuple(fk_map.get(key, [])),
+                    check_constraints=tuple(chk_map.get(key, [])),
+                    row_count_estimate=rowcount_map.get(key),
+                )
+            )
+        return tables
+
+    # 1. Table list --------------------------------------------------------
+
+    def _fetch_table_list(self) -> list[_TableKey]:
+        """Fetch all user table names in one query.
+
+        Returns:
+            Ordered list of (schema_name, table_name) tuples.
+        """
         with self.connection.cursor() as cur:
-            query = """
+            cur.execute("""
                 SELECT
                     s.name AS table_schema,
                     o.name AS table_name
@@ -68,84 +118,87 @@ class MSSQLSchemaReader:
                 WHERE o.type = 'U'
                 AND o.is_ms_shipped = 0
                 ORDER BY s.name, o.name
-            """
-            cur.execute(query)
-            tables_list: list[tuple[Any, ...]] = list(cur.fetchall())
+            """)
+            return [(r[0], r[1]) for r in cur.fetchall()]
 
-        tables = []
-        for schema_name, table_name in tables_list:
-            columns = self._read_columns(schema_name, table_name)
-            primary_key = self._read_primary_key(schema_name, table_name)
-            indexes = self._read_indexes(schema_name, table_name)
-            foreign_keys = self._read_foreign_keys(schema_name, table_name)
-            check_constraints = self._read_check_constraints(schema_name, table_name)
-            row_estimate = self._estimate_row_count(schema_name, table_name)
+    # 2. Columns (with full type and identity detection) -------------------
 
-            table_def = TableDefinition(
-                schema_name=schema_name,
-                table_name=table_name,
-                columns=tuple(columns),
-                primary_key=tuple(primary_key),
-                indexes=tuple(indexes),
-                foreign_keys=tuple(foreign_keys),
-                check_constraints=tuple(check_constraints),
-                row_count_estimate=row_estimate,
-            )
-            tables.append(table_def)
+    def _fetch_all_columns(self) -> dict[_TableKey, list[ColumnDefinition]]:
+        """Fetch all columns across all user tables in one query.
 
-        return tables
-
-    def _read_columns(
-        self, schema_name: str, table_name: str
-    ) -> list[ColumnDefinition]:
-        """Read all columns for a table.
-
-        Handles MSSQL-specific column types and identity columns.
+        Uses sys.columns + sys.types + sys.schemas for full type info,
+        including identity detection inline via sys.columns.is_identity.
 
         Returns:
-            List of ColumnDefinition objects.
+            Dict mapping (schema, table) to ordered list of ColumnDefinitions.
         """
         with self.connection.cursor() as cur:
-            query = """
+            cur.execute("""
                 SELECT
-                    c.column_name,
-                    c.data_type,
+                    s.name            AS schema_name,
+                    o.name            AS table_name,
+                    c.name            AS column_name,
+                    tp.name           AS data_type,
                     c.is_nullable,
-                    c.column_default,
-                    c.ordinal_position,
-                    c.character_maximum_length,
-                    c.numeric_precision,
-                    c.numeric_scale
-                FROM information_schema.columns c
-                WHERE c.table_schema = %s AND c.table_name = %s
-                ORDER BY c.ordinal_position
-            """
-            cur.execute(query, (schema_name, table_name))
-            columns_list: list[tuple[Any, ...]] = list(cur.fetchall())
+                    dc.definition     AS column_default,
+                    c.column_id       AS ordinal_position,
+                    c.max_length,
+                    c.precision,
+                    c.scale,
+                    c.is_identity
+                FROM sys.columns c
+                JOIN sys.objects o   ON c.object_id = o.object_id
+                JOIN sys.schemas s   ON o.schema_id = s.schema_id
+                JOIN sys.types tp    ON c.user_type_id = tp.user_type_id
+                LEFT JOIN sys.default_constraints dc
+                    ON dc.parent_object_id = c.object_id
+                    AND dc.parent_column_id = c.column_id
+                WHERE o.type = 'U'
+                  AND o.is_ms_shipped = 0
+                ORDER BY s.name, o.name, c.column_id
+            """)
+            rows: list[tuple[Any, ...]] = list(cur.fetchall())
 
-        identity_cols = self._get_identity_columns(schema_name, table_name)
-
-        columns = []
+        result: dict[_TableKey, list[ColumnDefinition]] = defaultdict(list)
         for (
+            schema_name,
+            table_name,
             col_name,
             data_type,
             is_nullable,
             column_default,
             ordinal_pos,
-            char_max_len,
-            numeric_prec,
-            numeric_scale,
-        ) in columns_list:
-            arrow_type = self._type_mapper.map_mssql_type_name(data_type)
-            arrow_type_str = str(arrow_type)
+            max_length,
+            precision,
+            scale,
+            is_identity,
+        ) in rows:
+            # sys.columns.max_length is in bytes; nchar/nvarchar store 2
+            # bytes per character, so convert to character length.
+            char_max_len: int | None = None
+            bt = data_type.lower()
+            if bt in (
+                "char", "varchar", "binary", "varbinary",
+                "nchar", "nvarchar",
+            ):
+                if max_length == -1:
+                    char_max_len = -1  # MAX
+                elif bt in ("nchar", "nvarchar"):
+                    char_max_len = max_length // 2 if max_length else None
+                else:
+                    char_max_len = max_length if max_length else None
 
-            # Build a full type string with length/precision so that
-            # downstream sinks can recover the original constraint.
+            numeric_prec: int | None = None
+            numeric_scale: int | None = None
+            if bt in ("decimal", "numeric"):
+                numeric_prec = precision
+                numeric_scale = scale
+
             full_type = self._build_full_type(
                 data_type, char_max_len, numeric_prec, numeric_scale
             )
-
-            is_auto = col_name in identity_cols
+            arrow_type = self._type_mapper.map_mssql_type_name(data_type)
+            arrow_type_str = str(arrow_type)
 
             # MSSQL wraps defaults in parentheses: (getdate()), ('pending').
             # Strip the outer parens so the shared translate_default engine
@@ -157,18 +210,282 @@ class MSSQLSchemaReader:
                     cd = cd[1:-1].strip()
                 clean_default = cd if cd else None
 
-            col_def = ColumnDefinition(
-                name=col_name,
-                data_type=full_type,
-                nullable=(is_nullable == "YES"),
-                default_value=clean_default,
-                is_auto_increment=is_auto,
-                ordinal_position=int(ordinal_pos) - 1,
-                arrow_type_str=arrow_type_str,
+            result[(schema_name, table_name)].append(
+                ColumnDefinition(
+                    name=col_name,
+                    data_type=full_type,
+                    nullable=bool(is_nullable),
+                    default_value=clean_default,
+                    is_auto_increment=bool(is_identity),
+                    ordinal_position=int(ordinal_pos) - 1,
+                    arrow_type_str=arrow_type_str,
+                )
             )
-            columns.append(col_def)
+        return dict(result)
 
-        return columns
+    # 3. Primary keys ------------------------------------------------------
+
+    def _fetch_all_primary_keys(self) -> dict[_TableKey, list[str]]:
+        """Fetch all primary key columns across all user tables in one query.
+
+        Returns:
+            Dict mapping (schema, table) to ordered list of PK column names.
+        """
+        with self.connection.cursor() as cur:
+            cur.execute("""
+                SELECT
+                    s.name  AS schema_name,
+                    o.name  AS table_name,
+                    c.name  AS column_name
+                FROM sys.indexes i
+                JOIN sys.index_columns ic
+                    ON i.object_id = ic.object_id
+                    AND i.index_id = ic.index_id
+                JOIN sys.columns c
+                    ON ic.object_id = c.object_id
+                    AND ic.column_id = c.column_id
+                JOIN sys.objects o ON i.object_id = o.object_id
+                JOIN sys.schemas s ON o.schema_id = s.schema_id
+                WHERE i.is_primary_key = 1
+                  AND o.type = 'U'
+                  AND o.is_ms_shipped = 0
+                ORDER BY s.name, o.name, ic.key_ordinal
+            """)
+            rows: list[tuple[Any, ...]] = list(cur.fetchall())
+
+        result: dict[_TableKey, list[str]] = defaultdict(list)
+        for schema_name, table_name, col_name in rows:
+            result[(schema_name, table_name)].append(col_name)
+        return dict(result)
+
+    # 4. Indexes (with inline columns, excluding PKs) ----------------------
+
+    def _fetch_all_indexes(self) -> dict[_TableKey, list[IndexDefinition]]:
+        """Fetch all indexes and their columns across all user tables.
+
+        Excludes primary key indexes. Includes filter expressions.
+
+        Returns:
+            Dict mapping (schema, table) to list of IndexDefinitions.
+        """
+        with self.connection.cursor() as cur:
+            cur.execute("""
+                SELECT
+                    s.name            AS schema_name,
+                    o.name            AS table_name,
+                    i.name            AS index_name,
+                    i.is_unique,
+                    i.filter_definition,
+                    c.name            AS column_name,
+                    ic.key_ordinal
+                FROM sys.indexes i
+                JOIN sys.index_columns ic
+                    ON i.object_id = ic.object_id
+                    AND i.index_id = ic.index_id
+                JOIN sys.columns c
+                    ON ic.object_id = c.object_id
+                    AND ic.column_id = c.column_id
+                JOIN sys.objects o ON i.object_id = o.object_id
+                JOIN sys.schemas s ON o.schema_id = s.schema_id
+                WHERE i.is_primary_key = 0
+                  AND i.type > 0
+                  AND i.name IS NOT NULL
+                  AND o.type = 'U'
+                  AND o.is_ms_shipped = 0
+                  AND ic.is_included_column = 0
+                ORDER BY s.name, o.name, i.name, ic.key_ordinal
+            """)
+            rows: list[tuple[Any, ...]] = list(cur.fetchall())
+
+        # Group rows by (schema, table, index_name) to collect columns.
+        _IndexKey = tuple[str, str, str]
+        idx_cols: dict[_IndexKey, list[str]] = defaultdict(list)
+        idx_meta: dict[_IndexKey, tuple[bool, str | None]] = {}
+
+        for (
+            schema_name,
+            table_name,
+            index_name,
+            is_unique,
+            filter_def,
+            col_name,
+            _key_ordinal,
+        ) in rows:
+            idx_key: _IndexKey = (schema_name, table_name, index_name)
+            idx_cols[idx_key].append(col_name)
+            if idx_key not in idx_meta:
+                idx_meta[idx_key] = (bool(is_unique), filter_def)
+
+        result: dict[_TableKey, list[IndexDefinition]] = defaultdict(list)
+        for (schema_name, table_name, index_name), columns in idx_cols.items():
+            is_unique, filter_expr = idx_meta[(schema_name, table_name, index_name)]
+            result[(schema_name, table_name)].append(
+                IndexDefinition(
+                    name=index_name,
+                    columns=tuple(columns),
+                    is_unique=is_unique,
+                    is_clustered=False,
+                    filter_expression=filter_expr,
+                )
+            )
+        return dict(result)
+
+    # 5. Foreign keys ------------------------------------------------------
+
+    def _fetch_all_foreign_keys(
+        self,
+    ) -> dict[_TableKey, list[ForeignKeyDefinition]]:
+        """Fetch all foreign keys across all user tables in one query.
+
+        Uses sys.foreign_keys + sys.foreign_key_columns + sys.columns.
+
+        Returns:
+            Dict mapping (schema, table) to list of ForeignKeyDefinitions.
+        """
+        with self.connection.cursor() as cur:
+            cur.execute("""
+                SELECT
+                    ss.name  AS src_schema,
+                    so.name  AS src_table,
+                    fk.name  AS fk_name,
+                    sc.name  AS src_column,
+                    rs.name  AS ref_schema,
+                    ro.name  AS ref_table,
+                    rc.name  AS ref_column,
+                    fk.update_referential_action_desc,
+                    fk.delete_referential_action_desc,
+                    fkc.constraint_column_id
+                FROM sys.foreign_keys fk
+                JOIN sys.foreign_key_columns fkc
+                    ON fk.object_id = fkc.constraint_object_id
+                JOIN sys.objects so  ON fk.parent_object_id = so.object_id
+                JOIN sys.schemas ss  ON so.schema_id = ss.schema_id
+                JOIN sys.columns sc
+                    ON fkc.parent_object_id = sc.object_id
+                    AND fkc.parent_column_id = sc.column_id
+                JOIN sys.objects ro  ON fk.referenced_object_id = ro.object_id
+                JOIN sys.schemas rs  ON ro.schema_id = rs.schema_id
+                JOIN sys.columns rc
+                    ON fkc.referenced_object_id = rc.object_id
+                    AND fkc.referenced_column_id = rc.column_id
+                WHERE so.type = 'U'
+                  AND so.is_ms_shipped = 0
+                ORDER BY ss.name, so.name, fk.name, fkc.constraint_column_id
+            """)
+            rows: list[tuple[Any, ...]] = list(cur.fetchall())
+
+        # Group rows by FK name to collect multi-column FKs.
+        _FKKey = tuple[str, str, str]  # (src_schema, src_table, fk_name)
+        fk_data: dict[_FKKey, dict[str, Any]] = {}
+
+        for (
+            src_schema,
+            src_table,
+            fk_name,
+            src_col,
+            ref_schema,
+            ref_table,
+            ref_col,
+            update_action,
+            delete_action,
+            _col_id,
+        ) in rows:
+            fk_key: _FKKey = (src_schema, src_table, fk_name)
+            if fk_key not in fk_data:
+                # MSSQL returns action descriptions like "NO_ACTION",
+                # "CASCADE", "SET_NULL", "SET_DEFAULT".  Normalise to
+                # the INFORMATION_SCHEMA style with spaces.
+                fk_data[fk_key] = {
+                    "src_schema": src_schema,
+                    "src_table": src_table,
+                    "src_cols": [],
+                    "ref_schema": ref_schema,
+                    "ref_table": ref_table,
+                    "ref_cols": [],
+                    "update_rule": update_action.replace("_", " "),
+                    "delete_rule": delete_action.replace("_", " "),
+                }
+            fk_data[fk_key]["src_cols"].append(src_col)
+            fk_data[fk_key]["ref_cols"].append(ref_col)
+
+        result: dict[_TableKey, list[ForeignKeyDefinition]] = defaultdict(list)
+        for (src_schema, src_table, fk_name), info in fk_data.items():
+            result[(src_schema, src_table)].append(
+                ForeignKeyDefinition(
+                    name=fk_name,
+                    source_table=f"{info['src_schema']}.{info['src_table']}",
+                    source_columns=tuple(info["src_cols"]),
+                    referenced_table=f"{info['ref_schema']}.{info['ref_table']}",
+                    referenced_columns=tuple(info["ref_cols"]),
+                    on_delete=info["delete_rule"],
+                    on_update=info["update_rule"],
+                )
+            )
+        return dict(result)
+
+    # 6. Check constraints -------------------------------------------------
+
+    def _fetch_all_check_constraints(self) -> dict[_TableKey, list[str]]:
+        """Fetch all CHECK constraints across all user tables in one query.
+
+        Returns:
+            Dict mapping (schema, table) to list of constraint expressions.
+        """
+        with self.connection.cursor() as cur:
+            cur.execute("""
+                SELECT
+                    s.name  AS schema_name,
+                    o.name  AS table_name,
+                    cc.definition
+                FROM sys.check_constraints cc
+                JOIN sys.objects o ON cc.parent_object_id = o.object_id
+                JOIN sys.schemas s ON o.schema_id = s.schema_id
+                WHERE o.type = 'U'
+                  AND o.is_ms_shipped = 0
+                ORDER BY s.name, o.name, cc.name
+            """)
+            rows: list[tuple[Any, ...]] = list(cur.fetchall())
+
+        result: dict[_TableKey, list[str]] = defaultdict(list)
+        for schema_name, table_name, definition in rows:
+            result[(schema_name, table_name)].append(definition)
+        return dict(result)
+
+    # 7. Row count estimates -----------------------------------------------
+
+    def _fetch_all_row_counts(self) -> dict[_TableKey, int | None]:
+        """Fetch estimated row counts for all user tables in one query.
+
+        Uses sys.dm_db_partition_stats for fast estimates.
+
+        Returns:
+            Dict mapping (schema, table) to estimated row count.
+        """
+        with self.connection.cursor() as cur:
+            cur.execute("""
+                SELECT
+                    s.name  AS schema_name,
+                    o.name  AS table_name,
+                    SUM(p.row_count) AS row_count
+                FROM sys.dm_db_partition_stats p
+                JOIN sys.objects o ON p.object_id = o.object_id
+                JOIN sys.schemas s ON o.schema_id = s.schema_id
+                WHERE o.type = 'U'
+                  AND o.is_ms_shipped = 0
+                  AND p.index_id <= 1
+                GROUP BY s.name, o.name
+                ORDER BY s.name, o.name
+            """)
+            rows: list[tuple[Any, ...]] = list(cur.fetchall())
+
+        return {
+            (r[0], r[1]): int(r[2]) if r[2] is not None else None
+            for r in rows
+        }
+
+    # ------------------------------------------------------------------
+    # Helpers
+    # ------------------------------------------------------------------
 
     @staticmethod
     def _build_full_type(
@@ -179,9 +496,9 @@ class MSSQLSchemaReader:
     ) -> str:
         """Build a full type string like ``nvarchar(255)`` or ``decimal(10,2)``.
 
-        MSSQL's ``information_schema.columns.data_type`` returns only the
-        base name.  This combines it with length / precision so that
-        downstream sinks can recover the constraint.
+        MSSQL's ``sys.types.name`` returns only the base name.  This
+        combines it with length / precision so that downstream sinks can
+        recover the constraint.
         """
         bt = base_type.lower()
 
@@ -201,250 +518,3 @@ class MSSQLSchemaReader:
             return f"{base_type}({numeric_prec},{scale})"
 
         return base_type
-
-    def _get_identity_columns(self, schema_name: str, table_name: str) -> set[str]:
-        """Get the set of identity columns for a table.
-
-        Returns:
-            Set of column names that are IDENTITY columns.
-        """
-        try:
-            with self.connection.cursor() as cur:
-                query = """
-                    SELECT c.name
-                    FROM sys.columns c
-                    JOIN sys.tables t ON c.object_id = t.object_id
-                    JOIN sys.schemas s ON t.schema_id = s.schema_id
-                    WHERE s.name = %s AND t.name = %s AND c.is_identity = 1
-                """
-                cur.execute(query, (schema_name, table_name))
-                rows: list[tuple[Any, ...]] = list(cur.fetchall())
-                return {row[0] for row in rows}
-        except Exception:
-            return set()
-
-    def _read_primary_key(self, schema_name: str, table_name: str) -> list[str]:
-        """Read the primary key columns for a table.
-
-        Returns:
-            List of column names in primary key order.
-        """
-        try:
-            with self.connection.cursor() as cur:
-                query = """
-                    SELECT kcu.column_name
-                    FROM information_schema.table_constraints tc
-                    JOIN information_schema.key_column_usage kcu
-                        ON tc.constraint_name = kcu.constraint_name
-                        AND tc.table_schema = kcu.table_schema
-                    WHERE tc.table_schema = %s
-                    AND tc.table_name = %s
-                    AND tc.constraint_type = 'PRIMARY KEY'
-                    ORDER BY kcu.ordinal_position
-                """
-                cur.execute(query, (schema_name, table_name))
-                rows: list[tuple[Any, ...]] = list(cur.fetchall())
-                return [row[0] for row in rows]
-        except Exception:
-            return []
-
-    def _read_indexes(self, schema_name: str, table_name: str) -> list[IndexDefinition]:
-        """Read all indexes on a table (excluding primary key).
-
-        Returns:
-            List of IndexDefinition objects.
-        """
-        try:
-            with self.connection.cursor() as cur:
-                query = """
-                    SELECT
-                        i.name,
-                        is_unique,
-                        is_primary_key
-                    FROM sys.indexes i
-                    JOIN sys.tables t ON i.object_id = t.object_id
-                    JOIN sys.schemas s ON t.schema_id = s.schema_id
-                    WHERE s.name = %s AND t.name = %s AND is_primary_key = 0
-                    ORDER BY i.name
-                """
-                cur.execute(query, (schema_name, table_name))
-                indexes_list: list[tuple[Any, ...]] = list(cur.fetchall())
-
-            indexes = []
-            for idx_name, is_unique, _ in indexes_list:
-                col_names = self._get_index_columns(schema_name, table_name, idx_name)
-                if col_names:
-                    idx_def = IndexDefinition(
-                        name=idx_name,
-                        columns=tuple(col_names),
-                        is_unique=bool(is_unique),
-                        is_clustered=False,
-                        filter_expression=None,
-                    )
-                    indexes.append(idx_def)
-
-            return indexes
-        except Exception:
-            return []
-
-    def _get_index_columns(
-        self, schema_name: str, table_name: str, index_name: str
-    ) -> list[str]:
-        """Get the columns that make up an index.
-
-        Returns:
-            List of column names in index order.
-        """
-        try:
-            with self.connection.cursor() as cur:
-                query = """
-                    SELECT c.name
-                    FROM sys.index_columns ic
-                    JOIN sys.columns c ON ic.object_id = c.object_id
-                        AND ic.column_id = c.column_id
-                    JOIN sys.indexes i ON ic.object_id = i.object_id
-                        AND ic.index_id = i.index_id
-                    JOIN sys.tables t ON i.object_id = t.object_id
-                    JOIN sys.schemas s ON t.schema_id = s.schema_id
-                    WHERE s.name = %s AND t.name = %s AND i.name = %s
-                    ORDER BY ic.key_ordinal
-                """
-                cur.execute(query, (schema_name, table_name, index_name))
-                rows: list[tuple[Any, ...]] = list(cur.fetchall())
-                return [row[0] for row in rows]
-        except Exception:
-            return []
-
-    def _read_foreign_keys(
-        self, schema_name: str, table_name: str
-    ) -> list[ForeignKeyDefinition]:
-        """Read all foreign keys for a table.
-
-        Returns:
-            List of ForeignKeyDefinition objects.
-        """
-        try:
-            with self.connection.cursor() as cur:
-                query = """
-                    SELECT
-                        rc.constraint_name,
-                        kcu1.table_schema,
-                        kcu1.table_name,
-                        kcu1.column_name,
-                        kcu2.table_schema,
-                        kcu2.table_name,
-                        kcu2.column_name,
-                        rc.update_rule,
-                        rc.delete_rule
-                    FROM information_schema.referential_constraints rc
-                    JOIN information_schema.key_column_usage kcu1
-                        ON rc.constraint_name = kcu1.constraint_name
-                        AND rc.constraint_schema = kcu1.constraint_schema
-                    JOIN information_schema.key_column_usage kcu2
-                        ON rc.unique_constraint_name = kcu2.constraint_name
-                        AND rc.unique_constraint_schema = kcu2.constraint_schema
-                        AND kcu1.ordinal_position = kcu2.ordinal_position
-                    WHERE rc.constraint_schema = %s
-                    AND kcu1.table_name = %s
-                    ORDER BY rc.constraint_name, kcu1.ordinal_position
-                """
-                cur.execute(query, (schema_name, table_name))
-                rows: list[tuple[Any, ...]] = list(cur.fetchall())
-
-            fks_dict: dict[str, dict[str, Any]] = {}
-            for (
-                fk_name,
-                src_schema,
-                src_table,
-                src_col,
-                ref_schema,
-                ref_table,
-                ref_col,
-                update_rule,
-                delete_rule,
-            ) in rows:
-                if fk_name not in fks_dict:
-                    fks_dict[fk_name] = {
-                        "src_schema": src_schema,
-                        "src_table": src_table,
-                        "src_cols": [],
-                        "ref_schema": ref_schema,
-                        "ref_table": ref_table,
-                        "ref_cols": [],
-                        "update_rule": update_rule,
-                        "delete_rule": delete_rule,
-                    }
-                fks_dict[fk_name]["src_cols"].append(src_col)
-                fks_dict[fk_name]["ref_cols"].append(ref_col)
-
-            fks = []
-            for fk_name, fk_info in fks_dict.items():
-                fk_def = ForeignKeyDefinition(
-                    name=fk_name,
-                    source_table=f"{fk_info['src_schema']}.{fk_info['src_table']}",
-                    source_columns=tuple(fk_info["src_cols"]),
-                    referenced_table=f"{fk_info['ref_schema']}.{fk_info['ref_table']}",
-                    referenced_columns=tuple(fk_info["ref_cols"]),
-                    on_delete=fk_info["delete_rule"],
-                    on_update=fk_info["update_rule"],
-                )
-                fks.append(fk_def)
-
-            return fks
-        except Exception:
-            return []
-
-    def _read_check_constraints(self, schema_name: str, table_name: str) -> list[str]:
-        """Read all CHECK constraints for a table.
-
-        Returns:
-            List of constraint expressions.
-        """
-        try:
-            with self.connection.cursor() as cur:
-                query = """
-                    SELECT check_clause
-                    FROM information_schema.check_constraints
-                    WHERE constraint_schema = %s
-                    AND table_name = %s
-                """
-                cur.execute(query, (schema_name, table_name))
-                rows: list[tuple[Any, ...]] = list(cur.fetchall())
-                return [row[0] for row in rows]
-        except Exception:
-            return []
-
-    def _estimate_row_count(self, schema_name: str, table_name: str) -> int | None:
-        """Get an estimated row count for a table.
-
-        Uses sys.dm_db_partition_stats for a fast estimate.
-
-        Returns:
-            Estimated row count, or None if unavailable.
-        """
-        try:
-            with self.connection.cursor() as cur:
-                query = """
-                    SELECT SUM(row_count)
-                    FROM sys.dm_db_partition_stats
-                    WHERE object_id = OBJECT_ID(%s + '.' + %s)
-                    AND index_id <= 1
-                """
-                cur.execute(query, (schema_name, table_name))
-                result: tuple[Any, ...] | None = cur.fetchone()
-                if result and result[0] is not None:
-                    return int(result[0])
-        except Exception:
-            pass
-
-        try:
-            with self.connection.cursor() as cur:
-                query = f"SELECT COUNT(*) FROM [{schema_name}].[{table_name}]"
-                cur.execute(query)
-                result = cur.fetchone()
-                if result:
-                    return int(result[0])
-        except Exception:
-            pass
-
-        return None

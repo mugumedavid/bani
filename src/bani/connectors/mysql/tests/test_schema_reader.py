@@ -69,8 +69,8 @@ class TestMySQLSchemaReader:
                     ("test_db", "users", 100),
                 ],
                 "information_schema.columns": [
-                    ("id", "int", "NO", None, 1, "auto_increment"),
-                    ("name", "varchar(255)", "YES", None, 2, ""),
+                    ("test_db", "users", "id", "int", "NO", None, 1, "auto_increment"),
+                    ("test_db", "users", "name", "varchar(255)", "YES", None, 2, ""),
                 ],
                 "constraint_name = 'PRIMARY'": [],
                 "information_schema.statistics": [],
@@ -102,9 +102,20 @@ class TestMySQLSchemaReader:
                     ("test_db", "users", 50),
                 ],
                 "information_schema.columns": [
-                    ("id", "int", "NO", None, 1, "auto_increment"),
+                    (
+                        "test_db",
+                        "users",
+                        "id",
+                        "int",
+                        "NO",
+                        None,
+                        1,
+                        "auto_increment",
+                    ),
                 ],
-                "constraint_name = 'PRIMARY'": [("id",)],
+                "constraint_name = 'PRIMARY'": [
+                    ("test_db", "users", "id"),
+                ],
                 "information_schema.statistics": [],
                 "information_schema.referential_constraints": [],
                 "check_constraints": [],
@@ -115,6 +126,7 @@ class TestMySQLSchemaReader:
         schema = reader.read_schema()
 
         assert len(schema.tables) == 1
+        assert schema.tables[0].primary_key == ("id",)
 
     def test_read_schema_handles_null_row_count(self) -> None:
         """Should handle NULL table_rows gracefully."""
