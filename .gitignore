@@ -12,3 +12,5 @@ build/
 *.db-shm
 *.db-wal
 .bani/
+ui/node_modules/
+ui/dist/

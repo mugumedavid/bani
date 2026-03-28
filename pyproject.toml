@@ -36,6 +36,9 @@ dependencies = [
     "lxml>=4.9",
     "jsonschema>=4.17",
     "tomli>=2.0; python_version < '3.11'",
+    "fastapi>=0.100",
+    "uvicorn[standard]>=0.20",
+    "websockets>=11.0",
 ]
 
 [project.optional-dependencies]

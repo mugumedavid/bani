@@ -19,6 +19,7 @@ from bani.cli.commands.preview import preview as preview_command
 from bani.cli.commands.run import run as run_command
 from bani.cli.commands.schedule import schedule as schedule_command
 from bani.cli.commands.schema import schema as schema_group
+from bani.cli.commands.ui import ui as ui_command
 from bani.cli.commands.validate import validate as validate_command
 from bani.cli.commands.version import version as version_command
 
@@ -90,6 +91,7 @@ app.command(name="version")(version_command)
 app.add_typer(schema_group, name="schema")
 app.add_typer(connectors_app, name="connectors")
 app.add_typer(mcp_app, name="mcp")
+app.command(name="ui")(ui_command)
 
 
 def main() -> None:
