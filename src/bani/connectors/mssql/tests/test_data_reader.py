@@ -13,13 +13,28 @@ from bani.connectors.mssql.data_reader import MSSQLDataReader
 class TestMSSQLDataReader:
     """Tests for MSSQLDataReader."""
 
-    def test_data_reader_init(self) -> None:
-        """Test data reader initialization."""
+    def test_data_reader_init_default_driver(self) -> None:
+        """Test data reader defaults to pymssql driver."""
         mock_connection = MagicMock()
         reader = MSSQLDataReader(mock_connection)
 
         assert reader.connection is mock_connection
         assert reader.type_mapper is not None
+        assert reader._ph == "%s"
+
+    def test_data_reader_init_pyodbc_driver(self) -> None:
+        """Test data reader with pyodbc driver uses ? placeholder."""
+        mock_connection = MagicMock()
+        reader = MSSQLDataReader(mock_connection, driver="pyodbc")
+
+        assert reader._ph == "?"
+
+    def test_data_reader_init_pymssql_driver(self) -> None:
+        """Test data reader with pymssql driver uses %s placeholder."""
+        mock_connection = MagicMock()
+        reader = MSSQLDataReader(mock_connection, driver="pymssql")
+
+        assert reader._ph == "%s"
 
     def test_estimate_row_count_fallback_to_count(self) -> None:
         """Test estimate_row_count falls back to COUNT(*)."""

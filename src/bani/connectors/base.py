@@ -52,6 +52,22 @@ class SourceConnector(ABC):
         """
         ...
 
+    def reconnect(self) -> None:
+        """Re-establish the connection using the stored config.
+
+        Connectors store ``_config`` during ``connect()``.  This method
+        closes the existing connection (ignoring errors) and opens a
+        fresh one.  Useful for recovering from network timeouts.
+        """
+        config = getattr(self, "_config", None)
+        if config is None:
+            raise RuntimeError("Cannot reconnect: no stored config")
+        try:
+            self.disconnect()
+        except Exception:
+            pass
+        self.connect(config)
+
     @abstractmethod
     def introspect_schema(self) -> DatabaseSchema:
         """Introspect the complete schema of the source database.
@@ -146,6 +162,22 @@ class SinkConnector(ABC):
             Exception: If disconnection fails.
         """
         ...
+
+    def reconnect(self) -> None:
+        """Re-establish the connection using the stored config.
+
+        Connectors store ``_config`` during ``connect()``.  This method
+        closes the existing connection (ignoring errors) and opens a
+        fresh one.  Useful for recovering from network timeouts.
+        """
+        config = getattr(self, "_config", None)
+        if config is None:
+            raise RuntimeError("Cannot reconnect: no stored config")
+        try:
+            self.disconnect()
+        except Exception:
+            pass
+        self.connect(config)
 
     @abstractmethod
     def create_table(self, table_def: TableDefinition) -> None:

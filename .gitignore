@@ -8,7 +8,7 @@ dist/
 build/
 .coverage
 **/CLAUDE.md
-!/CLAUDE.md
 *.db
 *.db-shm
 *.db-wal
+.bani/

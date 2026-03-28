@@ -103,6 +103,7 @@ class MySQLConnector(SourceConnector, SinkConnector):
             "charset": "utf8mb4",
             "cursorclass": pymysql.cursors.Cursor,
             "autocommit": True,
+            "local_infile": True,
         }
 
         if username:
@@ -118,6 +119,7 @@ class MySQLConnector(SourceConnector, SinkConnector):
         # Establish connection
         self.connection = pymysql.connect(**connect_kwargs)
         self._database = config.database
+        self._config = config  # Stored for reconnection
 
         # Initialize helper objects
         self._schema_reader = MySQLSchemaReader(self.connection, self._database)
@@ -451,15 +453,21 @@ class MySQLConnector(SourceConnector, SinkConnector):
                 src_cols = ", ".join(f"`{col}`" for col in fk.source_columns)
                 ref_cols = ", ".join(f"`{col}`" for col in fk.referenced_columns)
 
-                # Build ALTER TABLE statement
+                # MySQL requires FK names to be unique per-database.
+                # Prefix with source table to avoid collisions.
+                unique_name = f"{src_table}_{fk.name}"[:64]
+
                 alter_sql = (
                     f"ALTER TABLE `{src_schema}`.`{src_table}` "
-                    f"ADD CONSTRAINT `{fk.name}` FOREIGN KEY ({src_cols}) "
+                    f"ADD CONSTRAINT `{unique_name}` FOREIGN KEY ({src_cols}) "
                     f"REFERENCES `{ref_schema}`.`{ref_table}` ({ref_cols}) "
                     f"ON DELETE {fk.on_delete} ON UPDATE {fk.on_update}"
                 )
 
-                cur.execute(alter_sql)
+                try:
+                    cur.execute(alter_sql)
+                except Exception:
+                    pass  # Skip FKs that fail (type mismatch, missing PK, etc.)
 
     def execute_sql(self, sql_str: str) -> None:
         """Execute arbitrary SQL.

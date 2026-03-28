@@ -88,13 +88,17 @@ class SQLiteConnector(SourceConnector, SinkConnector):
         # Establish connection
         self.connection = sqlite3.connect(config.database)
 
-        # Enable foreign keys (OFF by default in SQLite)
-        self.connection.execute("PRAGMA foreign_keys = ON")
-
-        # Use WAL mode for better concurrent read performance
-        # (only applies to file-based databases)
+        # Performance pragmas — set before any other operations
+        # WAL improves write concurrency; only applies to file-based databases
         if config.database != ":memory:":
             self.connection.execute("PRAGMA journal_mode = WAL")
+        # synchronous = NORMAL avoids fsync on every transaction
+        self.connection.execute("PRAGMA synchronous = NORMAL")
+        # 64 MB page cache (negative value = size in KB)
+        self.connection.execute("PRAGMA cache_size = -64000")
+
+        # Enable foreign keys (OFF by default in SQLite)
+        self.connection.execute("PRAGMA foreign_keys = ON")
 
         # Initialize helper objects
         self._schema_reader = SQLiteSchemaReader(self.connection)

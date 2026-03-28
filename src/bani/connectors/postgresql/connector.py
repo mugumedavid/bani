@@ -100,10 +100,17 @@ class PostgreSQLConnector(SourceConnector, SinkConnector):
         else:
             conninfo_parts.append("sslmode=disable")
 
+        # TCP keepalive prevents idle timeout during long target-side writes
+        conninfo_parts.append("keepalives=1")
+        conninfo_parts.append("keepalives_idle=30")
+        conninfo_parts.append("keepalives_interval=10")
+        conninfo_parts.append("keepalives_count=5")
+
         conninfo = " ".join(conninfo_parts)
 
         # Establish connection
         self.connection = psycopg.connect(conninfo, autocommit=True)
+        self._config = config  # Stored for reconnection
 
         # Initialize helper objects
         self._schema_reader = PostgreSQLSchemaReader(self.connection)

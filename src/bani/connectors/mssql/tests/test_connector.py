@@ -13,6 +13,21 @@ from bani.domain.project import ConnectionConfig
 from bani.domain.schema import ColumnDefinition, TableDefinition
 
 
+def _basic_config(**overrides: Any) -> ConnectionConfig:
+    """Create a basic ConnectionConfig for tests."""
+    defaults: dict[str, Any] = {
+        "dialect": "mssql",
+        "host": "localhost",
+        "port": 1433,
+        "database": "testdb",
+        "username_env": "",
+        "password_env": "",
+        "encrypt": False,
+    }
+    defaults.update(overrides)
+    return ConnectionConfig(**defaults)
+
+
 class TestMSSQLConnector:
     """Tests for MSSQLConnector."""
 
@@ -21,6 +36,7 @@ class TestMSSQLConnector:
         connector = MSSQLConnector()
         assert connector.connection is None
         assert connector._database == ""
+        assert connector._driver == "pymssql"
 
     def test_resolve_env_var_with_env_prefix(self) -> None:
         """Test resolving environment variable with ${env:} prefix."""
@@ -48,86 +64,87 @@ class TestMSSQLConnector:
         result = MSSQLConnector._resolve_env_var("")
         assert result is None
 
-    @patch("pymssql.connect")
-    def test_connect_basic(self, mock_connect: Any) -> None:
-        """Test basic connection."""
+    @patch(
+        "bani.connectors.mssql.connector.pyodbc_module", None,
+    )
+    @patch("bani.connectors.mssql.connector.pymssql_module")
+    def test_connect_pymssql_fallback(self, mock_pymssql: Any) -> None:
+        """Test connection via pymssql when pyodbc is unavailable."""
         mock_connection = MagicMock()
-        mock_connect.return_value = mock_connection
+        mock_pymssql.connect.return_value = mock_connection
 
         connector = MSSQLConnector()
-        config = ConnectionConfig(
-            dialect="mssql",
-            host="localhost",
-            port=1433,
-            database="testdb",
-            username_env="",
-            password_env="",
-            encrypt=False,
-        )
+        connector.connect(_basic_config())
 
-        connector.connect(config)
-
-        assert connector.connection is not None
+        assert connector.connection is mock_connection
+        assert connector._driver == "pymssql"
         assert connector._database == "testdb"
-        mock_connect.assert_called_once()
+        mock_pymssql.connect.assert_called_once()
 
-    @patch("pymssql.connect")
-    def test_connect_missing_host(self, mock_connect: Any) -> None:
+    @patch("bani.connectors.mssql.connector.pyodbc_module")
+    @patch("bani.connectors.mssql.connector.pymssql_module")
+    def test_connect_pyodbc_preferred(
+        self, mock_pymssql: Any, mock_pyodbc: Any,
+    ) -> None:
+        """Test that pyodbc is tried first when available."""
+        mock_connection = MagicMock()
+        mock_pyodbc.connect.return_value = mock_connection
+
+        connector = MSSQLConnector()
+        connector.connect(_basic_config())
+
+        assert connector.connection is mock_connection
+        assert connector._driver == "pyodbc"
+        mock_pyodbc.connect.assert_called_once()
+        mock_pymssql.connect.assert_not_called()
+
+    @patch("bani.connectors.mssql.connector.pyodbc_module")
+    @patch("bani.connectors.mssql.connector.pymssql_module")
+    def test_connect_pyodbc_failure_falls_back(
+        self, mock_pymssql: Any, mock_pyodbc: Any,
+    ) -> None:
+        """Test fallback to pymssql when pyodbc connect fails."""
+        mock_pyodbc.connect.side_effect = Exception("ODBC driver not found")
+        mock_fallback_conn = MagicMock()
+        mock_pymssql.connect.return_value = mock_fallback_conn
+
+        connector = MSSQLConnector()
+        connector.connect(_basic_config())
+
+        assert connector.connection is mock_fallback_conn
+        assert connector._driver == "pymssql"
+        mock_pymssql.connect.assert_called_once()
+
+    def test_connect_missing_host(self) -> None:
         """Test connection fails without host."""
         connector = MSSQLConnector()
-        config = ConnectionConfig(
-            dialect="mssql",
-            host="",
-            port=1433,
-            database="testdb",
-            username_env="",
-            password_env="",
-            encrypt=False,
-        )
 
         with pytest.raises(ValueError, match="requires 'host'"):
-            connector.connect(config)
+            connector.connect(_basic_config(host=""))
 
-    @patch("pymssql.connect")
-    def test_connect_missing_database(self, mock_connect: Any) -> None:
+    def test_connect_missing_database(self) -> None:
         """Test connection fails without database."""
         connector = MSSQLConnector()
-        config = ConnectionConfig(
-            dialect="mssql",
-            host="localhost",
-            port=1433,
-            database="",
-            username_env="",
-            password_env="",
-            encrypt=False,
-        )
 
         with pytest.raises(ValueError, match="requires 'database'"):
-            connector.connect(config)
+            connector.connect(_basic_config(database=""))
 
     def test_disconnect_not_connected(self) -> None:
         """Test disconnect when not connected."""
         connector = MSSQLConnector()
         connector.disconnect()  # Should not raise
 
-    @patch("pymssql.connect")
-    def test_disconnect_connected(self, mock_connect: Any) -> None:
+    @patch(
+        "bani.connectors.mssql.connector.pyodbc_module", None,
+    )
+    @patch("bani.connectors.mssql.connector.pymssql_module")
+    def test_disconnect_connected(self, mock_pymssql: Any) -> None:
         """Test disconnect when connected."""
         mock_connection = MagicMock()
-        mock_connect.return_value = mock_connection
+        mock_pymssql.connect.return_value = mock_connection
 
         connector = MSSQLConnector()
-        config = ConnectionConfig(
-            dialect="mssql",
-            host="localhost",
-            port=1433,
-            database="testdb",
-            username_env="",
-            password_env="",
-            encrypt=False,
-        )
-
-        connector.connect(config)
+        connector.connect(_basic_config())
         connector.disconnect()
 
         mock_connection.close.assert_called_once()

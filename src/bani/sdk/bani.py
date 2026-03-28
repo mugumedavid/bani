@@ -7,6 +7,7 @@ from pathlib import Path
 from typing import TYPE_CHECKING, Any, cast
 
 from bani.application.orchestrator import MigrationOrchestrator, MigrationResult
+from bani.application.preview import PreviewResult, preview_source
 from bani.application.progress import ProgressTracker
 from bani.bdl.parser import parse
 from bani.bdl.validator import validate_json, validate_xml
@@ -103,14 +104,23 @@ class BaniProject:
             source.disconnect()
             sink.disconnect()
 
-    def preview(self, sample_size: int = 10) -> dict[str, list[dict[str, Any]]]:
+    def preview(
+        self,
+        tables: list[str] | None = None,
+        sample_size: int = 10,
+    ) -> PreviewResult:
         """Preview data from the source database.
 
+        Delegates to :func:`bani.application.preview.preview_source` for
+        the actual introspection and sampling logic.
+
         Args:
+            tables: Optional list of table names to preview. If ``None``,
+                all tables are previewed.
             sample_size: Number of rows to sample per table.
 
         Returns:
-            A dictionary mapping table names to lists of sample rows.
+            A :class:`PreviewResult` with column metadata and sample rows.
         """
         source_cfg = self._project.source
         assert source_cfg is not None
@@ -120,33 +130,7 @@ class BaniProject:
         source.connect(source_cfg)
 
         try:
-            schema = source.introspect_schema()
-
-            preview_data: dict[str, list[dict[str, Any]]] = {}
-
-            for table_def in schema.tables:
-                table_name = table_def.fully_qualified_name
-                rows: list[dict[str, Any]] = []
-
-                batch_count = 0
-                for batch in source.read_table(
-                    table_def.table_name, table_def.schema_name, batch_size=sample_size
-                ):
-                    # Convert batch to Python dicts
-                    batch_dict = batch.to_pydict()
-                    num_rows = batch.num_rows
-                    for i in range(num_rows):
-                        row_dict = {
-                            col: batch_dict[col][i] for col in batch.column_names
-                        }
-                        rows.append(row_dict)
-                    batch_count += 1
-                    if batch_count >= 1:  # Only sample from first batch
-                        break
-
-                preview_data[table_name] = rows
-
-            return preview_data
+            return preview_source(source, tables=tables, sample_size=sample_size)
         finally:
             source.disconnect()
 

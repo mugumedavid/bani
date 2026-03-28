@@ -214,10 +214,12 @@ class TestBaniProject:
 
             preview = bani_project.preview(sample_size=10)
 
-            assert "public.users" in preview
-            assert len(preview["public.users"]) == 2
-            assert preview["public.users"][0]["id"] == 1
-            assert preview["public.users"][0]["name"] == "Alice"
+            assert len(preview.tables) == 1
+            table_preview = preview.tables[0]
+            assert table_preview.table_name == "users"
+            assert len(table_preview.sample_rows) == 2
+            assert table_preview.sample_rows[0]["id"] == 1
+            assert table_preview.sample_rows[0]["name"] == "Alice"
             mock_source.connect.assert_called_once()
             mock_source.introspect_schema.assert_called_once()
             mock_source.disconnect.assert_called_once()

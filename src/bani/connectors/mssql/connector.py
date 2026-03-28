@@ -1,18 +1,39 @@
 """MSSQL connector implementing both source and sink interfaces.
 
-Uses pymssql as the driver. Chosen for its pure-Python implementation,
-broad compatibility with SQL Server 2012+, and ease of installation
-(no native library dependencies like ODBC/FreeTDS).
+Prefers pyodbc with fast_executemany for high-throughput writes via ODBC
+array parameter binding. Falls back to pymssql when the ODBC driver is
+not available.
 """
 
 from __future__ import annotations
 
+import logging
 import os
 from collections.abc import Iterator
 from typing import Any
 
 import pyarrow as pa  # type: ignore[import-untyped]
 import pymssql as pymssql_module
+
+try:
+    # Ensure pyodbc can find the ODBC driver registry on macOS/Linux.
+    # Homebrew installs odbcinst.ini to /usr/local/etc (Intel) or
+    # /opt/homebrew/etc (Apple Silicon).
+    if "ODBCSYSINI" not in os.environ:
+        import platform as _plat
+        # Apple Silicon first, then Intel, then system
+        _candidates = ["/opt/homebrew/etc", "/usr/local/etc", "/etc"]
+        if _plat.machine() != "arm64":
+            _candidates = ["/usr/local/etc", "/opt/homebrew/etc", "/etc"]
+        for _odbc_dir in _candidates:
+            if os.path.isfile(os.path.join(_odbc_dir, "odbcinst.ini")):
+                os.environ["ODBCSYSINI"] = _odbc_dir
+                break
+    import pyodbc as pyodbc_module  # type: ignore[import-untyped]
+except ImportError:
+    pyodbc_module = None  # type: ignore[assignment]
+
+_log = logging.getLogger(__name__)
 
 from bani.connectors.base import SinkConnector, SourceConnector
 from bani.connectors.default_translation import (
@@ -73,19 +94,20 @@ class MSSQLConnector(SourceConnector, SinkConnector):
         self._data_reader: MSSQLDataReader | None = None
         self._data_writer: MSSQLDataWriter | None = None
         self._database: str = ""
+        self._driver: str = "pymssql"
 
     def connect(self, config: ConnectionConfig) -> None:
         """Establish a connection to an MSSQL database.
 
-        Resolves credential environment variables and establishes the
-        connection with UTF-8 charset.
+        Tries pyodbc first (for fast_executemany support), then falls
+        back to pymssql if the ODBC driver is not available.
 
         Args:
             config: Connection configuration with dialect="mssql".
 
         Raises:
             ValueError: If required configuration is missing.
-            pymssql.Error: If connection fails.
+            Exception: If connection fails with both drivers.
         """
         if not config.host:
             raise ValueError("MSSQL connector requires 'host' in connection config")
@@ -97,29 +119,110 @@ class MSSQLConnector(SourceConnector, SinkConnector):
 
         port = config.port if config.port > 0 else 1433
 
+        # Try pyodbc first for fast_executemany support
+        if pyodbc_module is not None:
+            try:
+                self.connection = self._connect_pyodbc(
+                    config.host, port, config.database,
+                    username, password,
+                )
+                self._driver = "pyodbc"
+                _log.info("MSSQL: connected via pyodbc (fast_executemany)")
+            except Exception as exc:
+                _log.info(
+                    "MSSQL: pyodbc connection failed (%s), "
+                    "falling back to pymssql",
+                    exc,
+                )
+                self.connection = None
+
+        # Fall back to pymssql
+        if self.connection is None:
+            self.connection = self._connect_pymssql(
+                config.host, port, config.database,
+                username, password, config.encrypt,
+            )
+            self._driver = "pymssql"
+            _log.info("MSSQL: connected via pymssql")
+
+        self._database = config.database
+        self._config = config  # Stored for reconnection
+
+        self._schema_reader = MSSQLSchemaReader(self.connection, self._database)
+        self._data_reader = MSSQLDataReader(self.connection, self._driver)
+        self._data_writer = MSSQLDataWriter(self.connection, self._driver)
+
+    @staticmethod
+    def _connect_pyodbc(
+        host: str,
+        port: int,
+        database: str,
+        username: str | None,
+        password: str | None,
+    ) -> Any:
+        """Create a connection using pyodbc.
+
+        Args:
+            host: Server hostname.
+            port: Server port.
+            database: Database name.
+            username: Optional username.
+            password: Optional password.
+
+        Returns:
+            A pyodbc connection object.
+        """
+        parts = [
+            "DRIVER={ODBC Driver 18 for SQL Server}",
+            f"SERVER={host},{port}",
+            f"DATABASE={database}",
+            "TrustServerCertificate=yes",
+        ]
+        if username:
+            parts.append(f"UID={username}")
+        if password:
+            parts.append(f"PWD={password}")
+
+        conn_str = ";".join(parts)
+        return pyodbc_module.connect(conn_str, autocommit=True)
+
+    @staticmethod
+    def _connect_pymssql(
+        host: str,
+        port: int,
+        database: str,
+        username: str | None,
+        password: str | None,
+        encrypt: bool,
+    ) -> Any:
+        """Create a connection using pymssql.
+
+        Args:
+            host: Server hostname.
+            port: Server port.
+            database: Database name.
+            username: Optional username.
+            password: Optional password.
+            encrypt: Whether to use encrypted connection.
+
+        Returns:
+            A pymssql connection object.
+        """
         connect_kwargs: dict[str, Any] = {
-            "host": config.host,
+            "host": host,
             "port": port,
-            "database": config.database,
+            "database": database,
             "charset": "UTF-8",
             "autocommit": True,
         }
-
         if username:
             connect_kwargs["user"] = username
-
         if password:
             connect_kwargs["password"] = password
-
-        if config.encrypt:
+        if encrypt:
             connect_kwargs["login_timeout"] = 30
 
-        self.connection = pymssql_module.connect(**connect_kwargs)
-        self._database = config.database
-
-        self._schema_reader = MSSQLSchemaReader(self.connection, self._database)
-        self._data_reader = MSSQLDataReader(self.connection)
-        self._data_writer = MSSQLDataWriter(self.connection)
+        return pymssql_module.connect(**connect_kwargs)
 
     def disconnect(self) -> None:
         """Close the database connection.
@@ -394,7 +497,21 @@ class MSSQLConnector(SourceConnector, SinkConnector):
                     f"ON [{schema_name}].[{table_name}] ({col_list})"
                 )
 
-                cur.execute(create_idx_sql)
+                # MSSQL treats NULLs as duplicates in unique indexes
+                # (unlike PostgreSQL). Add a WHERE filter to exclude
+                # NULLs so the unique constraint behaves like PG.
+                if index.is_unique:
+                    not_null_filter = " AND ".join(
+                        f"[{col}] IS NOT NULL" for col in index.columns
+                    )
+                    create_idx_sql += f" WHERE {not_null_filter}"
+
+                try:
+                    cur.execute(create_idx_sql)
+                except Exception:
+                    # Index may fail for other reasons (e.g. data
+                    # incompatibility). Skip and continue.
+                    pass
 
     def _narrow_max_columns_for_index(
         self,
@@ -411,12 +528,13 @@ class MSSQLConnector(SourceConnector, SinkConnector):
         that participate in the given index to NVARCHAR(4000) (MSSQL's
         largest indexable nvarchar length).
         """
+        ph = "?" if self._driver == "pyodbc" else "%s"
         for col_name in columns:
             cur.execute(
                 "SELECT DATA_TYPE, CHARACTER_MAXIMUM_LENGTH, IS_NULLABLE "
                 "FROM INFORMATION_SCHEMA.COLUMNS "
-                "WHERE TABLE_SCHEMA = %s AND TABLE_NAME = %s "
-                "AND COLUMN_NAME = %s",
+                f"WHERE TABLE_SCHEMA = {ph} AND TABLE_NAME = {ph} "
+                f"AND COLUMN_NAME = {ph}",
                 (schema_name, table_name, col_name),
             )
             row = cur.fetchone()
@@ -436,40 +554,102 @@ class MSSQLConnector(SourceConnector, SinkConnector):
                     f"ALTER COLUMN [{col_name}] VARBINARY(900) {null_kw}"
                 )
 
+    def _reconnect(self) -> None:
+        """Re-establish the connection using the stored config.
+
+        Used to recover from broken connections (e.g. TCP timeout)
+        during long-running operations like FK creation.
+        """
+        try:
+            self.connection.close()
+        except Exception:
+            pass
+        self.connection = None
+        self.connect(self._config)
+        _log.info("MSSQL: reconnected after broken connection")
+
     def create_foreign_keys(self, fks: tuple[ForeignKeyDefinition, ...]) -> None:
         """Create foreign key constraints.
+
+        Recovers from broken connections by reconnecting automatically.
+        Gives up after 3 consecutive connection failures to avoid
+        burning time on a persistently dead server.
 
         Args:
             fks: Tuple of foreign key definitions.
 
         Raises:
             RuntimeError: If not connected.
-            Exception: If FK creation fails.
         """
         if self.connection is None:
             raise RuntimeError("MSSQL connector is not connected")
 
-        with self.connection.cursor() as cur:
-            for fk in fks:
-                src_parts = fk.source_table.split(".")
-                src_schema = src_parts[0] if len(src_parts) > 1 else self._database
-                src_table = src_parts[-1]
+        consecutive_conn_failures = 0
+        max_conn_failures = 3
 
-                ref_parts = fk.referenced_table.split(".")
-                ref_schema = ref_parts[0] if len(ref_parts) > 1 else self._database
-                ref_table = ref_parts[-1]
-
-                src_cols = ", ".join(f"[{col}]" for col in fk.source_columns)
-                ref_cols = ", ".join(f"[{col}]" for col in fk.referenced_columns)
-
-                alter_sql = (
-                    f"ALTER TABLE [{src_schema}].[{src_table}] "
-                    f"ADD CONSTRAINT [{fk.name}] FOREIGN KEY ({src_cols}) "
-                    f"REFERENCES [{ref_schema}].[{ref_table}] ({ref_cols}) "
-                    f"ON DELETE {fk.on_delete} ON UPDATE {fk.on_update}"
+        for fk in fks:
+            if consecutive_conn_failures >= max_conn_failures:
+                _log.warning(
+                    "Aborting FK creation: %d consecutive connection failures. "
+                    "Skipping remaining %d FKs.",
+                    max_conn_failures,
+                    len(fks),
                 )
+                break
 
-                cur.execute(alter_sql)
+            src_parts = fk.source_table.split(".")
+            src_schema = src_parts[0] if len(src_parts) > 1 else self._database
+            src_table = src_parts[-1]
+
+            ref_parts = fk.referenced_table.split(".")
+            ref_schema = ref_parts[0] if len(ref_parts) > 1 else self._database
+            ref_table = ref_parts[-1]
+
+            src_cols = ", ".join(f"[{col}]" for col in fk.source_columns)
+            ref_cols = ", ".join(f"[{col}]" for col in fk.referenced_columns)
+
+            unique_name = f"{src_table}_{fk.name}"[:128]
+
+            alter_sql = (
+                f"ALTER TABLE [{src_schema}].[{src_table}] "
+                f"ADD CONSTRAINT [{unique_name}] FOREIGN KEY ({src_cols}) "
+                f"REFERENCES [{ref_schema}].[{ref_table}] ({ref_cols}) "
+                f"ON DELETE {fk.on_delete} ON UPDATE {fk.on_update}"
+            )
+
+            try:
+                with self.connection.cursor() as cur:
+                    cur.execute(alter_sql)
+                consecutive_conn_failures = 0  # Reset on success
+            except Exception as exc:
+                exc_str = str(exc)
+                is_conn_error = (
+                    "IMC06" in exc_str
+                    or "connection is broken" in exc_str.lower()
+                    or "communication link" in exc_str.lower()
+                )
+                if is_conn_error:
+                    consecutive_conn_failures += 1
+                    _log.warning(
+                        "Connection broken during FK creation "
+                        "(%d/%d), reconnecting...",
+                        consecutive_conn_failures, max_conn_failures,
+                    )
+                    try:
+                        self._reconnect()
+                        with self.connection.cursor() as cur:
+                            cur.execute(alter_sql)
+                        consecutive_conn_failures = 0  # Reconnect + retry worked
+                    except Exception as retry_exc:
+                        _log.warning(
+                            "FK %s on %s.%s skipped after reconnect: %s",
+                            unique_name, src_schema, src_table, retry_exc,
+                        )
+                else:
+                    _log.warning(
+                        "FK %s on %s.%s skipped: %s",
+                        unique_name, src_schema, src_table, exc,
+                    )
 
     def execute_sql(self, sql_str: str) -> None:
         """Execute arbitrary SQL.

@@ -1,0 +1,234 @@
+"""Quarantine manager for failed-row isolation (Section 12.2).
+
+When a batch write fails under the ``LOG_AND_CONTINUE`` error strategy, the
+failed rows are written to a ``_bani_quarantine`` table in the target
+database so they can be inspected and retried later. This prevents silent
+data loss during migrations.
+"""
+
+from __future__ import annotations
+
+import json
+import logging
+from typing import Any
+
+from bani.connectors.base import SinkConnector
+
+logger = logging.getLogger(__name__)
+
+_QUARANTINE_TABLE = "_bani_quarantine"
+
+# DDL uses ANSI SQL that works across PostgreSQL, MySQL, SQLite, and MSSQL
+# (with minor differences handled by try/except).  We avoid vendor-specific
+# auto-increment syntax by making ``id`` an INTEGER PRIMARY KEY — SQLite
+# treats this as an alias for rowid, while PG/MySQL/MSSQL need explicit
+# sequences or identity.  To keep the code simple we omit auto-increment
+# entirely and let the database handle it, or rely on the ``quarantined_at``
+# default for ordering.
+_CREATE_TABLE_SQL_VARIANTS: tuple[str, ...] = (
+    # PostgreSQL — SERIAL, TIMESTAMP default
+    f"""CREATE TABLE IF NOT EXISTS {_QUARANTINE_TABLE} (
+    id SERIAL PRIMARY KEY,
+    project_name VARCHAR(255) NOT NULL,
+    table_name VARCHAR(255) NOT NULL,
+    row_offset INTEGER,
+    error_message TEXT,
+    row_data TEXT,
+    quarantined_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+)""",
+    # MySQL — AUTO_INCREMENT, TIMESTAMP default
+    f"""CREATE TABLE IF NOT EXISTS {_QUARANTINE_TABLE} (
+    id INTEGER AUTO_INCREMENT PRIMARY KEY,
+    project_name VARCHAR(255) NOT NULL,
+    table_name VARCHAR(255) NOT NULL,
+    row_offset INTEGER,
+    error_message TEXT,
+    row_data TEXT,
+    quarantined_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+)""",
+    # MSSQL — IDENTITY, DATETIME default
+    f"""IF OBJECT_ID('{_QUARANTINE_TABLE}', 'U') IS NULL
+CREATE TABLE {_QUARANTINE_TABLE} (
+    id INTEGER IDENTITY(1,1) PRIMARY KEY,
+    project_name NVARCHAR(255) NOT NULL,
+    table_name NVARCHAR(255) NOT NULL,
+    row_offset INTEGER,
+    error_message NVARCHAR(MAX),
+    row_data NVARCHAR(MAX),
+    quarantined_at DATETIME DEFAULT GETDATE()
+)""",
+    # SQLite — INTEGER PRIMARY KEY is auto rowid
+    f"""CREATE TABLE IF NOT EXISTS {_QUARANTINE_TABLE} (
+    id INTEGER PRIMARY KEY,
+    project_name TEXT NOT NULL,
+    table_name TEXT NOT NULL,
+    row_offset INTEGER,
+    error_message TEXT,
+    row_data TEXT,
+    quarantined_at TEXT DEFAULT (datetime('now'))
+)""",
+)
+
+
+class QuarantineManager:
+    """Manages the ``_bani_quarantine`` table in the target database.
+
+    Failed rows are JSON-serialised and stored alongside the error message,
+    project name, table name, and row offset so they can be audited or
+    retried.
+    """
+
+    def __init__(self) -> None:
+        """Initialize the quarantine manager."""
+        self._table_ensured = False
+
+    def ensure_table_exists(self, sink: SinkConnector) -> None:
+        """Create the quarantine table if it does not already exist.
+
+        Tries multiple DDL variants (PostgreSQL, MySQL, MSSQL, SQLite)
+        and succeeds on the first one that does not raise an exception.
+
+        Args:
+            sink: The target database connector.
+        """
+        if self._table_ensured:
+            return
+
+        for variant in _CREATE_TABLE_SQL_VARIANTS:
+            try:
+                sink.execute_sql(variant)
+                self._table_ensured = True
+                logger.debug("Quarantine table ensured via DDL variant")
+                return
+            except Exception:
+                continue
+
+        # If all variants fail, log a warning but don't crash the migration.
+        logger.warning(
+            "Could not create quarantine table '%s' — "
+            "failed rows will be logged but not persisted to the target database",
+            _QUARANTINE_TABLE,
+        )
+
+    def quarantine_row(
+        self,
+        sink: SinkConnector,
+        project_name: str,
+        table_name: str,
+        row_offset: int | None,
+        row_data_dict: dict[str, Any] | list[dict[str, Any]] | str,
+        error_msg: str,
+    ) -> None:
+        """Write a failed row (or batch) to the quarantine table.
+
+        Args:
+            sink: The target database connector.
+            project_name: Name of the migration project.
+            table_name: Fully qualified table name.
+            row_offset: Row offset within the table (may be ``None``).
+            row_data_dict: The row data as a dict, list of dicts, or
+                pre-serialised JSON string.
+            error_msg: The error message describing the failure.
+        """
+        self.ensure_table_exists(sink)
+
+        if isinstance(row_data_dict, str):
+            row_json = row_data_dict
+        else:
+            try:
+                row_json = json.dumps(row_data_dict, default=str)
+            except (TypeError, ValueError):
+                row_json = repr(row_data_dict)
+
+        # Truncate very large payloads to avoid overwhelming the target DB.
+        max_payload = 1_000_000  # 1 MB
+        if len(row_json) > max_payload:
+            row_json = row_json[:max_payload] + "... [truncated]"
+
+        # Use string interpolation for the INSERT because execute_sql()
+        # does not support parameter binding.  Values are escaped minimally
+        # (single-quote doubling) — the quarantine table is an internal
+        # bookkeeping table, not user-facing SQL.
+        escaped_project = project_name.replace("'", "''")
+        escaped_table = table_name.replace("'", "''")
+        escaped_error = error_msg.replace("'", "''")
+        escaped_data = row_json.replace("'", "''")
+        offset_val = str(row_offset) if row_offset is not None else "NULL"
+
+        sql = (
+            f"INSERT INTO {_QUARANTINE_TABLE} "
+            f"(project_name, table_name, row_offset, error_message, row_data) "
+            f"VALUES ('{escaped_project}', '{escaped_table}', {offset_val}, "
+            f"'{escaped_error}', '{escaped_data}')"
+        )
+
+        try:
+            sink.execute_sql(sql)
+        except Exception as exc:
+            # Don't let quarantine failures crash the migration.
+            logger.warning(
+                "Failed to quarantine row for %s.%s at offset %s: %s",
+                project_name,
+                table_name,
+                row_offset,
+                exc,
+            )
+
+    def get_quarantined_rows(
+        self,
+        sink: SinkConnector,
+        project_name: str,
+        table_name: str | None = None,
+    ) -> list[dict[str, Any]]:
+        """Retrieve quarantined rows for a project (and optionally a table).
+
+        Note: This method relies on ``execute_sql`` which does not return
+        result sets in the current ``SinkConnector`` ABC. It is provided
+        as a placeholder interface; full query support will be added when
+        the connector ABC gains a ``query_sql`` method.
+
+        Args:
+            sink: The target database connector.
+            project_name: Name of the migration project.
+            table_name: Optional table name filter.
+
+        Returns:
+            List of quarantined row dicts (empty if query is unsupported).
+        """
+        # The current SinkConnector.execute_sql() returns None, so we
+        # cannot retrieve rows through it.  Return an empty list and
+        # log a debug message.  The CLI or SDK can query the table
+        # directly when needed.
+        logger.debug(
+            "get_quarantined_rows called for project='%s', table='%s' — "
+            "returning empty list (execute_sql does not return result sets)",
+            project_name,
+            table_name,
+        )
+        return []
+
+    def clear(
+        self,
+        sink: SinkConnector,
+        project_name: str,
+    ) -> None:
+        """Delete all quarantined rows for a project.
+
+        Args:
+            sink: The target database connector.
+            project_name: Name of the migration project.
+        """
+        escaped_project = project_name.replace("'", "''")
+        sql = (
+            f"DELETE FROM {_QUARANTINE_TABLE} "
+            f"WHERE project_name = '{escaped_project}'"
+        )
+        try:
+            sink.execute_sql(sql)
+            logger.info(
+                "Cleared quarantined rows for project '%s'", project_name
+            )
+        except Exception as exc:
+            logger.warning(
+                "Failed to clear quarantine for '%s': %s", project_name, exc
+            )

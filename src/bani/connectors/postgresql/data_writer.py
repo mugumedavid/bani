@@ -1,12 +1,14 @@
 """PostgreSQL data writer using COPY protocol for efficient bulk inserts.
 
 Writes Arrow batches to PostgreSQL tables using the COPY FROM STDIN protocol
-for maximum throughput, with fallback to INSERT batches if needed.
+with psycopg3's write_row() for native serialization, with fallback to
+multi-row INSERT batches if needed.
 """
 
 from __future__ import annotations
 
-import io
+import json
+import logging
 from typing import TYPE_CHECKING, Any
 
 if TYPE_CHECKING:
@@ -23,12 +25,16 @@ from bani.connectors.value_coercion import (
 # permissive profile so the test suite and any future callers work.
 register_driver_profile("psycopg", DriverProfile())
 
+logger = logging.getLogger(__name__)
+
+_INSERT_BATCH_SIZE = 1000
+
 
 class PostgreSQLDataWriter:
     """Writes Arrow batches to PostgreSQL tables.
 
-    Prefers the efficient COPY protocol but falls back to INSERT statements
-    if necessary.
+    Prefers the efficient COPY protocol with write_row() but falls back
+    to multi-row INSERT statements if necessary.
     """
 
     def __init__(self, connection: psycopg.Connection[tuple[Any, ...]]) -> None:
@@ -44,7 +50,8 @@ class PostgreSQLDataWriter:
     ) -> int:
         """Write an Arrow batch to a table.
 
-        Attempts to use COPY for efficiency; falls back to INSERT if needed.
+        Attempts COPY (binary, then text) for efficiency; falls back to
+        multi-row INSERT if needed.
 
         Args:
             table_name: Name of the target table.
@@ -60,22 +67,75 @@ class PostgreSQLDataWriter:
         if batch.num_rows == 0:
             return 0
 
-        # Try COPY first (most efficient)
+        # Try binary COPY first (fastest)
         try:
-            return self._write_copy(table_name, schema_name, batch)
+            return self._write_copy(table_name, schema_name, batch, binary=True)
         except Exception:
-            # Fall back to INSERT
-            return self._write_insert(table_name, schema_name, batch)
+            logger.debug(
+                "Binary COPY failed for %s.%s, falling back to text COPY",
+                schema_name,
+                table_name,
+            )
+
+        # Fall back to text COPY
+        try:
+            return self._write_copy(table_name, schema_name, batch, binary=False)
+        except Exception:
+            logger.debug(
+                "Text COPY failed for %s.%s, falling back to INSERT",
+                schema_name,
+                table_name,
+            )
+
+        # Final fallback: multi-row INSERT
+        return self._write_insert(table_name, schema_name, batch)
+
+    def _extract_rows(self, batch: pa.RecordBatch) -> list[list[Any]]:
+        """Extract rows from an Arrow batch as Python lists.
+
+        Uses vectorized ``to_pylist()`` for efficient C-level column
+        extraction, then post-processes JSON columns.  NULL values are
+        automatically represented as ``None`` by ``to_pylist()``.
+
+        Args:
+            batch: Arrow RecordBatch.
+
+        Returns:
+            List of rows, each row a list of Python values.
+        """
+        num_cols = len(batch.schema)
+
+        # Vectorized column extraction — one C-level to_pylist() per column
+        columns = [batch.column(i).to_pylist() for i in range(num_cols)]
+
+        # Post-process JSON columns (dict/list → str for psycopg jsonb/json)
+        for col_idx in range(num_cols):
+            col = columns[col_idx]
+            first_val = next((v for v in col if v is not None), None)
+            if isinstance(first_val, (dict, list)):
+                columns[col_idx] = [
+                    json.dumps(v) if isinstance(v, (dict, list)) else v
+                    for v in col
+                ]
+
+        # Transpose columns to rows
+        return [list(row) for row in zip(*columns)]
 
     def _write_copy(
-        self, table_name: str, schema_name: str, batch: pa.RecordBatch
+        self,
+        table_name: str,
+        schema_name: str,
+        batch: pa.RecordBatch,
+        *,
+        binary: bool,
     ) -> int:
-        """Write batch using COPY FROM STDIN protocol.
+        """Write batch using COPY FROM STDIN with write_row().
 
         Args:
             table_name: Name of the target table.
             schema_name: Schema containing the table.
             batch: Arrow RecordBatch to write.
+            binary: If True, use FORMAT BINARY; otherwise plain text COPY.
 
         Returns:
             Number of rows written.
@@ -83,87 +143,30 @@ class PostgreSQLDataWriter:
         Raises:
             Exception: If COPY fails.
         """
-        # Build the COPY command
         col_names = batch.schema.names
         col_list = ", ".join(f'"{name}"' for name in col_names)
+        fmt_clause = " (FORMAT BINARY)" if binary else ""
         copy_sql = (
             f'COPY "{schema_name}"."{table_name}" ({col_list}) '
-            "FROM STDIN WITH (FORMAT csv)"
+            f"FROM STDIN{fmt_clause}"
         )
 
-        # Convert batch to CSV format
-        csv_data = self._batch_to_csv(batch)
+        rows = self._extract_rows(batch)
 
         with self.connection.cursor() as cur:
             with cur.copy(copy_sql) as copy:
-                copy.write(csv_data)
+                for row in rows:
+                    copy.write_row(row)
 
         return int(batch.num_rows)
-
-    def _batch_to_csv(self, batch: pa.RecordBatch) -> bytes:
-        """Convert Arrow batch to CSV format for COPY.
-
-        Args:
-            batch: Arrow RecordBatch.
-
-        Returns:
-            CSV data as bytes.
-        """
-        output = io.StringIO()
-
-        # Write each row as CSV
-        for row_idx in range(batch.num_rows):
-            row_values = []
-            for col_idx, _col_name in enumerate(batch.schema.names):
-                column = batch[col_idx]
-                value = column[row_idx]
-
-                # Convert value to CSV-safe string
-                if value.is_valid == 0:  # NULL
-                    row_values.append("")
-                else:
-                    scalar = value.as_py()
-                    row_values.append(self._scalar_to_csv_value(scalar))
-
-            output.write(",".join(row_values) + "\n")
-
-        return output.getvalue().encode("utf-8")
-
-    def _scalar_to_csv_value(self, value: Any) -> str:
-        """Convert a Python scalar to CSV-safe string.
-
-        Args:
-            value: Python scalar value.
-
-        Returns:
-            CSV-safe string representation.
-        """
-        if value is None:
-            return ""
-
-        # Handle special types
-        if isinstance(value, bool):
-            return "true" if value else "false"
-        elif isinstance(value, (list, dict)):
-            # JSON types - convert to JSON string
-            import json
-
-            return json.dumps(value)
-        elif isinstance(value, bytes):
-            # Bytea - convert to escape sequence
-            return f"\\\\x{value.hex()}"
-        else:
-            # For strings, escape quotes and backslashes
-            str_val = str(value)
-            if "," in str_val or '"' in str_val or "\n" in str_val:
-                str_val = str_val.replace('"', '""')
-                str_val = f'"{str_val}"'
-            return str_val
 
     def _write_insert(
         self, table_name: str, schema_name: str, batch: pa.RecordBatch
     ) -> int:
-        """Write batch using INSERT statements (fallback).
+        """Write batch using multi-row INSERT statements (fallback).
+
+        Batches rows in groups of _INSERT_BATCH_SIZE using parameterized
+        queries for safety and performance.
 
         Args:
             table_name: Name of the target table.
@@ -178,59 +181,30 @@ class PostgreSQLDataWriter:
         """
         col_names = batch.schema.names
         col_list = ", ".join(f'"{name}"' for name in col_names)
+        num_cols = len(col_names)
+
+        rows = self._extract_rows(batch)
         total_rows = 0
 
         with self.connection.cursor() as cur:
-            for row_idx in range(batch.num_rows):
-                values = []
-                for col_idx in range(len(col_names)):
-                    column = batch[col_idx]
-                    value = column[row_idx]
+            for chunk_start in range(0, len(rows), _INSERT_BATCH_SIZE):
+                chunk = rows[chunk_start : chunk_start + _INSERT_BATCH_SIZE]
 
-                    if value.is_valid == 0:  # NULL
-                        values.append("NULL")
-                    else:
-                        scalar = value.as_py()
-                        values.append(self._scalar_to_sql_literal(scalar))
+                # Build multi-row VALUES clause with placeholders
+                single_row_ph = "(" + ", ".join(["%s"] * num_cols) + ")"
+                values_clause = ", ".join([single_row_ph] * len(chunk))
 
-                values_str = ", ".join(values)
                 insert_sql = (
                     f'INSERT INTO "{schema_name}"."{table_name}" ({col_list}) '
-                    f"VALUES ({values_str})"
+                    f"VALUES {values_clause}"
                 )
 
-                cur.execute(insert_sql)
-                total_rows += 1
+                # Flatten all row values into a single params list
+                params: list[Any] = []
+                for row in chunk:
+                    params.extend(row)
+
+                cur.execute(insert_sql, params)
+                total_rows += len(chunk)
 
         return total_rows
-
-    def _scalar_to_sql_literal(self, value: Any) -> str:
-        """Convert a Python scalar to SQL literal.
-
-        Args:
-            value: Python scalar value.
-
-        Returns:
-            SQL literal string (e.g., "'string'", "123", "true").
-        """
-        if value is None:
-            return "NULL"
-        elif isinstance(value, bool):
-            return "true" if value else "false"
-        elif isinstance(value, (int, float)):
-            return str(value)
-        elif isinstance(value, bytes):
-            return f"'\\\\x{value.hex()}'"
-        elif isinstance(value, (list, dict)):
-            import json
-
-            json_str = json.dumps(value)
-            # Escape single quotes for SQL
-            json_str = json_str.replace("'", "''")
-            return f"'{json_str}'"
-        else:
-            # String types
-            str_val = str(value)
-            # Escape single quotes
-            str_val = str_val.replace("'", "''")
-            return f"'{str_val}'"

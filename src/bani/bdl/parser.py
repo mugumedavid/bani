@@ -507,31 +507,67 @@ def _parse_table_json(data: dict[str, Any]) -> TableMapping:
 
 
 def _parse_hook(elem: ET.Element) -> HookConfig:
-    """Parse a hook element."""
-    name = elem.get("name", "")
-    event = elem.get("event", "")
-    timeout = int(elem.get("timeout", "300"))
-    on_failure = elem.get("onFailure", "fail")
+    """Parse a hook element.
 
-    command = elem.text or ""
+    Supports two formats:
+
+    Legacy (inline text + ``event`` attribute)::
+
+        <hook name="backup" event="pre" timeout="300" onFailure="abort">
+            pg_dump {source_database}
+        </hook>
+
+    Extended (child elements + ``phase`` attribute)::
+
+        <hook name="backup" phase="pre" onFailure="abort">
+            <command>pg_dump {source_database}</command>
+            <timeout>300</timeout>
+        </hook>
+    """
+    name = elem.get("name", "")
+    # Accept both "phase" and "event" attributes for backward compat.
+    phase = elem.get("phase", "") or elem.get("event", "")
+    on_failure = elem.get("onFailure", "abort")
+
+    # Try child <command> element first, fall back to inline text.
+    cmd_elem = elem.find("b:command", NS)
+    if cmd_elem is None:
+        cmd_elem = elem.find("command")
+    if cmd_elem is not None and cmd_elem.text:
+        command = cmd_elem.text.strip()
+    else:
+        command = (elem.text or "").strip()
+
+    # Try child <timeout> element first, fall back to attribute.
+    timeout_elem = elem.find("b:timeout", NS)
+    if timeout_elem is None:
+        timeout_elem = elem.find("timeout")
+    if timeout_elem is not None and timeout_elem.text:
+        timeout = int(timeout_elem.text)
+    else:
+        timeout = int(elem.get("timeout", "300"))
 
     return HookConfig(
         name=name,
-        phase=event,
-        command=command.strip(),
+        phase=phase,
+        command=command,
         timeout_seconds=timeout,
         on_failure=on_failure,
     )
 
 
 def _parse_hook_json(data: dict[str, Any]) -> HookConfig:
-    """Parse hook from JSON data."""
+    """Parse hook from JSON data.
+
+    Accepts both ``"phase"`` and ``"event"`` keys for backward compat.
+    """
+    phase = data.get("phase", "") or data.get("event", "")
     return HookConfig(
         name=data.get("name", ""),
-        phase=data.get("event", ""),
+        phase=phase,
         command=data.get("command", ""),
         timeout_seconds=data.get("timeout", 300),
-        on_failure=data.get("onFailure", "fail"),
+        on_failure=data.get("onFailure", "abort"),
     )
 
 

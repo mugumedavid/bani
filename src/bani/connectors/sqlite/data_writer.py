@@ -85,22 +85,20 @@ class SQLiteDataWriter:
         placeholders = ", ".join(["?"] * len(col_names))
         total_rows = 0
 
-        # Prepare all row values
-        all_values: list[tuple[Any, ...]] = []
-        for row_idx in range(batch.num_rows):
-            row_values: list[Any] = []
-            for col_idx in range(len(col_names)):
-                column = batch[col_idx]
-                value = column[row_idx]
+        # Vectorized column extraction — one C-level to_pylist() per column
+        columns = [batch.column(i).to_pylist() for i in range(len(col_names))]
 
-                if not value.is_valid:
-                    row_values.append(None)
-                else:
-                    row_values.append(
-                        coerce_for_binding(value.as_py(), "sqlite3")
-                    )
+        # Apply driver-specific coercion per column
+        for col_idx in range(len(col_names)):
+            columns[col_idx] = [
+                coerce_for_binding(v, "sqlite3") if v is not None else None
+                for v in columns[col_idx]
+            ]
 
-            all_values.append(tuple(row_values))
+        # Transpose columns to rows
+        all_values: list[tuple[Any, ...]] = [
+            tuple(row) for row in zip(*columns)
+        ]
 
         # Execute in batches — sqlite3 auto-manages transactions
         cursor = self.connection.cursor()

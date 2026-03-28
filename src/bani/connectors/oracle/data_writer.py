@@ -1,16 +1,20 @@
 """Oracle data writer using batch INSERT for efficient bulk inserts.
 
-Writes Arrow batches to Oracle tables using executemany with
-multi-row INSERT statements (or parameterized batch inserts).
+Writes Arrow batches to Oracle tables using ``executemany`` with
+``batcherrors=True`` for partial-success semantics and 10 000-row
+chunking to limit memory pressure.
 """
 
 from __future__ import annotations
 
+import logging
 from typing import TYPE_CHECKING, Any
 
 import pyarrow as pa
 
 from datetime import datetime, time
+
+logger = logging.getLogger(__name__)
 
 from bani.connectors.value_coercion import (
     DriverProfile,
@@ -41,9 +45,13 @@ if TYPE_CHECKING:
 class OracleDataWriter:
     """Writes Arrow batches to Oracle tables.
 
-    Uses executemany for efficient batch inserts. Oracle's arraysize
-    setting determines batch efficiency.
+    Uses ``executemany`` with ``batcherrors=True`` for efficient batch
+    inserts that tolerate individual row failures.  Rows are chunked
+    into groups of :pyattr:`CHUNK_SIZE` to limit memory pressure while
+    keeping round-trip overhead low.
     """
+
+    CHUNK_SIZE: int = 10_000
 
     def __init__(self, connection: oracledb.Connection) -> None:
         """Initialize the data writer.
@@ -79,7 +87,11 @@ class OracleDataWriter:
     def _write_insert(
         self, table_name: str, schema_name: str, batch: pa.RecordBatch
     ) -> int:
-        """Write batch using parameterized INSERT statements.
+        """Write batch using chunked executemany with batch error handling.
+
+        Rows are split into chunks of :pyattr:`CHUNK_SIZE` and inserted
+        with ``batcherrors=True`` so that individual row failures do not
+        abort the entire batch.
 
         Args:
             table_name: Name of the target table.
@@ -87,10 +99,11 @@ class OracleDataWriter:
             batch: Arrow RecordBatch to write.
 
         Returns:
-            Number of rows written.
+            Number of rows successfully written.
 
         Raises:
-            Exception: If INSERT fails.
+            Exception: If INSERT fails catastrophically (connection
+                error, invalid SQL, etc.).
         """
         col_names = batch.schema.names
         col_list = ", ".join(f'"{name}"' for name in col_names)
@@ -101,37 +114,49 @@ class OracleDataWriter:
             f"VALUES ({placeholders})"
         )
 
-        # Prepare all row values
-        all_values: list[tuple[Any, ...]] = []
-        for row_idx in range(batch.num_rows):
-            row_values: list[Any] = []
-            for col_idx in range(len(col_names)):
-                column = batch[col_idx]
-                value = column[row_idx]
+        # Vectorized column extraction — one C-level to_pylist() per column
+        columns = [batch.column(i).to_pylist() for i in range(len(col_names))]
 
-                if not value.is_valid:
-                    row_values.append(None)
-                else:
-                    row_values.append(
-                        coerce_for_binding(value.as_py(), "oracledb")
-                    )
+        # Apply driver-specific coercion per column
+        for col_idx in range(len(col_names)):
+            columns[col_idx] = [
+                coerce_for_binding(v, "oracledb") if v is not None else None
+                for v in columns[col_idx]
+            ]
 
-            all_values.append(tuple(row_values))
+        # Transpose columns to rows
+        all_values: list[tuple[Any, ...]] = [
+            tuple(row) for row in zip(*columns)
+        ]
 
-        # Execute using executemany for efficiency
+        total_rows = 0
         cursor = self.connection.cursor()
         try:
-            # Tell oracledb the correct bind types based on Arrow schema
-            # so it doesn't infer NUMBER for float columns (which can't
-            # hold IEEE 754 extremes like 1.797E+308).
+            # Set input sizes ONCE before the loop so the cursor knows
+            # the correct bind types for every chunk.
             input_sizes = self._arrow_to_input_sizes(batch.schema)
             if input_sizes:
                 cursor.setinputsizes(*input_sizes)
 
-            cursor.executemany(insert_sql, all_values)
-            return len(all_values)
+            for i in range(0, len(all_values), self.CHUNK_SIZE):
+                chunk = all_values[i : i + self.CHUNK_SIZE]
+                cursor.executemany(insert_sql, chunk, batcherrors=True)
+
+                errors = cursor.getbatcherrors()
+                if errors:
+                    for error in errors:
+                        logger.warning(
+                            "Oracle batch insert error at offset %d: %s",
+                            error.offset,
+                            error.message,
+                        )
+
+                total_rows += len(chunk) - len(errors)
         finally:
             cursor.close()
+
+        self.connection.commit()
+        return total_rows
 
     @staticmethod
     def _arrow_to_input_sizes(

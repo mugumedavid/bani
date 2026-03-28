@@ -29,6 +29,7 @@ dependencies = [
     "psycopg[binary]>=3.1",
     "pymysql>=1.0",
     "pymssql>=2.2",
+    "pyodbc>=5.0",
     "oracledb>=2.0",
     "typer>=0.9",
     "rich>=13.0",

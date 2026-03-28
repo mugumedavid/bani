@@ -24,14 +24,16 @@ class MSSQLDataReader:
     Converts MSSQL types to Arrow types automatically.
     """
 
-    def __init__(self, connection: Any) -> None:
+    def __init__(self, connection: Any, driver: str = "pymssql") -> None:
         """Initialize the data reader.
 
         Args:
-            connection: An active pymssql connection.
+            connection: An active database connection (pyodbc or pymssql).
+            driver: The driver name, either ``"pyodbc"`` or ``"pymssql"``.
         """
         self.connection = connection
         self.type_mapper = MSSQLTypeMapper()
+        self._ph = "?" if driver == "pyodbc" else "%s"
 
     def read_table(
         self,
@@ -146,7 +148,7 @@ class MSSQLDataReader:
             cur.execute(
                 "SELECT COLUMN_NAME, DATA_TYPE "
                 "FROM INFORMATION_SCHEMA.COLUMNS "
-                "WHERE TABLE_SCHEMA = %s AND TABLE_NAME = %s",
+                f"WHERE TABLE_SCHEMA = {self._ph} AND TABLE_NAME = {self._ph}",
                 (schema_name, table_name),
             )
             rows: list[tuple[Any, ...]] = list(cur.fetchall())
@@ -171,10 +173,10 @@ class MSSQLDataReader:
         """
         try:
             with self.connection.cursor() as cur:
-                query = """
+                query = f"""
                     SELECT SUM(row_count)
                     FROM sys.dm_db_partition_stats
-                    WHERE object_id = OBJECT_ID(%s + '.' + %s)
+                    WHERE object_id = OBJECT_ID({self._ph} + '.' + {self._ph})
                     AND index_id <= 1
                 """
                 cur.execute(query, (schema_name, table_name))

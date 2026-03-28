@@ -727,7 +727,7 @@ class TestCreateForeignKeysExecution:
         sql = mock_cursor.execute.call_args[0][0]
         assert "ALTER TABLE" in sql
         assert "`test_db`.`orders`" in sql
-        assert "ADD CONSTRAINT `fk_user_id`" in sql
+        assert "ADD CONSTRAINT `orders_fk_user_id`" in sql
         assert "FOREIGN KEY (`user_id`)" in sql
         assert "REFERENCES `test_db`.`users` (`id`)" in sql
 

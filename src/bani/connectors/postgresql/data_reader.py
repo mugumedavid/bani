@@ -2,6 +2,11 @@
 
 Reads table data efficiently using PostgreSQL named cursors and converts
 rows to pyarrow.RecordBatch instances with proper type mappings.
+
+For columns whose PostgreSQL types require Python-level conversion
+(jsonb, json, uuid), the reader pushes ``::text`` casts into the SELECT
+statement so that the database returns plain strings.  This eliminates
+per-row ``json.dumps`` / ``str(uuid)`` calls in ``_make_record_batch``.
 """
 
 from __future__ import annotations
@@ -16,12 +21,28 @@ if TYPE_CHECKING:
 
 from bani.connectors.postgresql.type_mapper import PostgreSQLTypeMapper
 
+# PostgreSQL type OIDs that benefit from a ``::text`` cast in the SELECT.
+# When cast at the DB level, psycopg returns plain ``str`` instead of
+# rich Python objects (dict/list for jsonb, UUID for uuid), removing the
+# need for Python-level serialisation in the hot path.
+_CAST_TEXT_OIDS: frozenset[int] = frozenset(
+    {
+        114,  # json
+        3802,  # jsonb
+        2950,  # uuid
+    }
+)
+
 
 class PostgreSQLDataReader:
     """Reads data from PostgreSQL tables as Arrow batches.
 
     Uses server-side cursors for efficient streaming of large tables.
     Converts PostgreSQL types to Arrow types automatically.
+
+    For json, jsonb, and uuid columns the reader issues a
+    ``SELECT col::text`` so the database performs the text conversion,
+    avoiding expensive Python-level serialisation.
     """
 
     def __init__(self, connection: psycopg.Connection[tuple[Any, ...]]) -> None:
@@ -43,8 +64,9 @@ class PostgreSQLDataReader:
     ) -> Iterator[pa.RecordBatch]:
         """Read data from a table as Arrow batches.
 
-        Uses a server-side cursor for memory efficiency. Yields batches
-        of the specified size.
+        Performs a lightweight ``LIMIT 0`` probe to discover column type
+        OIDs, then builds a SELECT with ``::text`` casts for json/jsonb/uuid
+        columns before streaming data through a server-side cursor.
 
         Args:
             table_name: Name of the table to read from.
@@ -59,28 +81,55 @@ class PostgreSQLDataReader:
         Raises:
             Exception: If reading fails.
         """
-        # Build the SELECT query
-        col_list = "*" if columns is None else ", ".join(f'"{col}"' for col in columns)
+        # ----------------------------------------------------------
+        # Step 1: lightweight metadata probe (LIMIT 0) to get OIDs
+        # ----------------------------------------------------------
+        base_col_list = (
+            "*" if columns is None else ", ".join(f'"{col}"' for col in columns)
+        )
+        probe_query = (
+            f'SELECT {base_col_list} FROM "{schema_name}"."{table_name}" LIMIT 0'
+        )
+
+        with self.connection.cursor() as meta_cur:
+            meta_cur.execute(probe_query)
+            if meta_cur.description is None:
+                return
+            col_meta = meta_cur.description  # (name, oid, ...)
+
+        # ----------------------------------------------------------
+        # Step 2: build SELECT with ::text casts for problematic OIDs
+        # ----------------------------------------------------------
+        select_parts: list[str] = []
+        col_names: list[str] = []
+        col_type_oids: list[int] = []
+
+        for desc in col_meta:
+            name: str = desc[0]
+            oid: int = desc[1]
+            col_names.append(name)
+            if oid in _CAST_TEXT_OIDS:
+                select_parts.append(f'"{name}"::text AS "{name}"')
+                # After the cast the column arrives as text (OID 25)
+                col_type_oids.append(25)
+            else:
+                select_parts.append(f'"{name}"')
+                col_type_oids.append(oid)
+
+        col_list = ", ".join(select_parts)
         query = f'SELECT {col_list} FROM "{schema_name}"."{table_name}"'
         if filter_sql:
             query += f" WHERE {filter_sql}"
 
-        # Use a named server-side cursor for efficient streaming.
-        # Named cursors require a transaction block, so wrap in one
-        # (the connection may be in autocommit mode).
+        # ----------------------------------------------------------
+        # Step 3: stream via server-side cursor
+        # ----------------------------------------------------------
         cursor_name = f"read_cursor_{id(self)}"
 
         with self.connection.transaction():
-            with self.connection.cursor(name=cursor_name) as cur:
+            cur = self.connection.cursor(name=cursor_name)
+            try:
                 cur.execute(query)
-
-                # Get column metadata from cursor description
-                if cur.description is None:
-                    # No columns returned
-                    return
-
-                col_names = [desc[0] for desc in cur.description]
-                col_types = [desc[1] for desc in cur.description]
 
                 # Fetch and batch rows
                 batch_rows: list[tuple[Any, ...]] = []
@@ -88,17 +137,28 @@ class PostgreSQLDataReader:
                 while True:
                     rows: list[tuple[Any, ...]] = cur.fetchmany(batch_size)
                     if not rows:
-                        # Yield final batch if any
                         if batch_rows:
-                            yield self._make_record_batch(batch_rows, col_names, col_types)
+                            yield self._make_record_batch(
+                                batch_rows,
+                                col_names,
+                                col_type_oids,
+                            )
                         break
 
                     batch_rows.extend(rows)
 
                     if len(batch_rows) >= batch_size:
-                        # Yield full batch
-                        yield self._make_record_batch(batch_rows, col_names, col_types)
+                        yield self._make_record_batch(
+                            batch_rows,
+                            col_names,
+                            col_type_oids,
+                        )
                         batch_rows = []
+            finally:
+                try:
+                    cur.close()
+                except Exception:
+                    pass  # Connection may have timed out; safe to ignore
 
     def _make_record_batch(
         self,
@@ -108,10 +168,17 @@ class PostgreSQLDataReader:
     ) -> pa.RecordBatch:
         """Convert a list of rows to an Arrow RecordBatch.
 
+        Because json/jsonb/uuid columns are already cast to text at the
+        DB level, this method only needs a lightweight ``str()`` fallback
+        for any remaining non-string values in string-typed columns
+        (e.g. inet, cidr, macaddr which psycopg may still return as
+        rich Python objects).
+
         Args:
             rows: List of row tuples.
             col_names: Column names.
-            col_types: PostgreSQL type OIDs from cursor description.
+            col_types: PostgreSQL type OIDs from cursor description
+                (post-cast, so json/jsonb/uuid appear as OID 25).
 
         Returns:
             A pyarrow.RecordBatch.
@@ -131,17 +198,12 @@ class PostgreSQLDataReader:
             col_data = columns_data[col_name]
             arrow_type = self.type_mapper.map_pg_type_oid(col_type_oid)
 
-            # psycopg returns rich Python objects for many PG types
-            # (jsonb → dict/list, uuid → UUID, inet → IPv4Address, etc.)
-            # Arrow string columns need plain str values.
+            # Lightweight fallback: psycopg may still return rich objects
+            # for types we didn't cast (inet → IPv4Address, etc.).
+            # json/jsonb/uuid are already plain strings from the DB cast.
             if arrow_type == pa.string():
-                import json as _json
-
                 col_data = [
-                    _json.dumps(v, default=str)
-                    if isinstance(v, (dict, list))
-                    else str(v) if v is not None and not isinstance(v, str)
-                    else v
+                    str(v) if v is not None and not isinstance(v, str) else v
                     for v in col_data
                 ]
 

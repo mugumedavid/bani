@@ -129,6 +129,8 @@ class OracleConnector(SourceConnector, SinkConnector):
         finally:
             cursor.close()
 
+        self._config = config  # Stored for reconnection
+
         # Initialize helper objects
         self._schema_reader = OracleSchemaReader(self.connection, self._owner)
         self._data_reader = OracleDataReader(self.connection, self._owner)
@@ -411,9 +413,13 @@ class OracleConnector(SourceConnector, SinkConnector):
                 # Build ALTER TABLE statement
                 # Oracle only supports ON DELETE CASCADE and ON DELETE SET NULL.
                 # NO ACTION / RESTRICT are the default — just omit them.
+                # Oracle requires constraint names to be unique per-schema.
+                # Prefix with source table to avoid collisions.
+                unique_name = f"{src_table}_{fk.name}"[:30]
+
                 alter_sql = (
                     f'ALTER TABLE "{src_schema}"."{src_table}" '
-                    f'ADD CONSTRAINT "{fk.name}" FOREIGN KEY ({src_cols}) '
+                    f'ADD CONSTRAINT "{unique_name}" FOREIGN KEY ({src_cols}) '
                     f'REFERENCES "{ref_schema}"."{ref_table}" ({ref_cols})'
                 )
                 if fk.on_delete and fk.on_delete.upper() in (
@@ -421,7 +427,10 @@ class OracleConnector(SourceConnector, SinkConnector):
                 ):
                     alter_sql += f" ON DELETE {fk.on_delete}"
 
-                cursor.execute(alter_sql)
+                try:
+                    cursor.execute(alter_sql)
+                except Exception:
+                    pass  # Skip FKs that fail (type mismatch, missing PK, etc.)
         finally:
             cursor.close()
 

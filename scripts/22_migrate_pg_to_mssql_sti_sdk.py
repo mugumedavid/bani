@@ -105,6 +105,11 @@ def main() -> int:
     sink = cast(SinkConnector, ConnectorRegistry.get(project.target.dialect)())
     sink.connect(project.target)
 
+    # Show which MSSQL driver is active
+    mssql_driver = getattr(sink, "_driver", "unknown")
+    print(f"MSSQL driver: {mssql_driver}"
+          f"{' (fast_executemany)' if mssql_driver == 'pyodbc' else ' (inline INSERT)'}")
+
     tracker = ProgressTracker()
     start = time.time()
 
@@ -165,33 +170,37 @@ def main() -> int:
             if table is None:
                 continue
 
-            has_identity = any(c.is_auto_increment for c in table.columns)
-            if has_identity:
-                with sink.connection.cursor() as cur:  # type: ignore[union-attr]
-                    cur.execute(
-                        f"SET IDENTITY_INSERT [{table.schema_name}]"
-                        f".[{table.table_name}] ON"
-                    )
+            try:
+                has_identity = any(c.is_auto_increment for c in table.columns)
+                if has_identity:
+                    with sink.connection.cursor() as cur:  # type: ignore[union-attr]
+                        cur.execute(
+                            f"SET IDENTITY_INSERT [{table.schema_name}]"
+                            f".[{table.table_name}] ON"
+                        )
 
-            row_count = 0
-            batch_num = 0
-            for batch in source.read_table(
-                table.table_name, source_schema, batch_size=1000
-            ):
-                sink.write_batch(table.table_name, table.schema_name, batch)
-                row_count += batch.num_rows
-                batch_num += 1
+                row_count = 0
+                batch_num = 0
+                for batch in source.read_table(
+                    table.table_name, source_schema, batch_size=1000
+                ):
+                    sink.write_batch(table.table_name, table.schema_name, batch)
+                    row_count += batch.num_rows
+                    batch_num += 1
 
-            if has_identity:
-                with sink.connection.cursor() as cur:  # type: ignore[union-attr]
-                    cur.execute(
-                        f"SET IDENTITY_INSERT [{table.schema_name}]"
-                        f".[{table.table_name}] OFF"
-                    )
+                if has_identity:
+                    with sink.connection.cursor() as cur:  # type: ignore[union-attr]
+                        cur.execute(
+                            f"SET IDENTITY_INSERT [{table.schema_name}]"
+                            f".[{table.table_name}] OFF"
+                        )
 
-            tracker.table_complete(fqn, row_count, row_count, batch_num)
-            total_rows += row_count
-            print(f"  {table.table_name}: {row_count} rows")
+                tracker.table_complete(fqn, row_count, row_count, batch_num)
+                total_rows += row_count
+                print(f"  {table.table_name}: {row_count} rows")
+            except Exception as exc:
+                print(f"  {table.table_name}: SKIPPED ({exc})")
+                continue
 
         # -- 7. Create indexes -------------------------------------------
         print("\nCreating indexes...")
@@ -205,22 +214,24 @@ def main() -> int:
                 except Exception as exc:
                     print(f"  {table.table_name}: FAILED ({exc})", file=sys.stderr)
 
-        # -- 8. Create foreign keys (including deferred) -----------------
+        # -- 8. Create foreign keys (non-deferred first, then deferred) --
+        deferred_names = {fk.name for fk in deferred_fks}
         print("\nCreating foreign keys...")
         for table in schema.tables:
-            if table.foreign_keys:
+            # Skip FKs that the resolver deferred (they go in the second pass)
+            non_deferred = tuple(
+                fk for fk in table.foreign_keys if fk.name not in deferred_names
+            )
+            if non_deferred:
                 try:
-                    sink.create_foreign_keys(table.foreign_keys)
-                    print(f"  {table.table_name}: {len(table.foreign_keys)} FKs")
+                    sink.create_foreign_keys(non_deferred)
+                    print(f"  {table.table_name}: {len(non_deferred)} FKs")
                 except Exception as exc:
                     print(f"  {table.table_name}: FAILED ({exc})", file=sys.stderr)
 
         if deferred_fks:
-            try:
-                sink.create_foreign_keys(deferred_fks)
-                print(f"  + {len(deferred_fks)} deferred FKs")
-            except Exception as exc:
-                print(f"  deferred FKs: FAILED ({exc})", file=sys.stderr)
+            print(f"  Creating {len(deferred_fks)} deferred FKs...")
+            sink.create_foreign_keys(deferred_fks)
 
         # -- 9. Verification ---------------------------------------------
         duration = time.time() - start

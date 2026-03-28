@@ -2,12 +2,21 @@
 
 from __future__ import annotations
 
+import gc
+import logging
+import queue
+import threading
 import time
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from dataclasses import dataclass
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
+import pyarrow as pa  # type: ignore[import-untyped]
+
+from bani.application.checkpoint import CheckpointManager
 from bani.application.progress import ProgressTracker
+from bani.application.quarantine import QuarantineManager
+from bani.application.schema_remap import SchemaRemapper
 from bani.connectors.base import SinkConnector, SourceConnector
 from bani.domain.dependency import DependencyResolver
 from bani.domain.errors import BaniError, WriteError
@@ -16,6 +25,14 @@ from bani.domain.schema import ForeignKeyDefinition, TableDefinition
 
 if TYPE_CHECKING:
     from bani.domain.schema import DatabaseSchema
+
+logger = logging.getLogger(__name__)
+
+_CHUNK_ROW_THRESHOLD = 50_000
+"""Minimum estimated row count before chunk-level parallelism is used."""
+
+_NUMERIC_ARROW_PREFIXES = ("int", "uint")
+"""Arrow type string prefixes that indicate a numeric integer type."""
 
 
 @dataclass(frozen=True)
@@ -48,6 +65,8 @@ class MigrationOrchestrator:
         source: SourceConnector,
         sink: SinkConnector,
         tracker: ProgressTracker | None = None,
+        checkpoint: CheckpointManager | None = None,
+        quarantine: QuarantineManager | None = None,
     ) -> None:
         """Initialize the orchestrator.
 
@@ -56,15 +75,24 @@ class MigrationOrchestrator:
             source: Source database connector.
             sink: Target database connector.
             tracker: Optional progress tracker for event emission.
+            checkpoint: Optional checkpoint manager (created if not provided).
+            quarantine: Optional quarantine manager (created if not provided).
         """
         self.project = project
         self.source = source
         self.sink = sink
         self.tracker = tracker or ProgressTracker()
         self.options = project.options or ProjectOptions()
+        self._checkpoint = checkpoint or CheckpointManager()
+        self._quarantine = quarantine or QuarantineManager()
 
-    def execute(self) -> MigrationResult:
+    def execute(self, resume: bool = False) -> MigrationResult:
         """Execute the full migration from schema creation through data transfer.
+
+        Args:
+            resume: If ``True``, attempt to resume from a previous checkpoint.
+                Completed tables are skipped; in-progress tables resume from
+                their last committed row offset.
 
         Returns:
             MigrationResult with summary statistics.
@@ -76,15 +104,54 @@ class MigrationOrchestrator:
         total_rows_read = 0
         total_rows_written = 0
 
+        checkpoint = self._checkpoint
+        quarantine = self._quarantine
+        project_hash = checkpoint.compute_hash(self.project)
+
+        # Determine whether we can actually resume
+        if resume:
+            existing = checkpoint.load(self.project.name)
+            if existing and checkpoint.is_valid(self.project.name, project_hash):
+                logger.info(
+                    "Resuming migration for project '%s' from checkpoint",
+                    self.project.name,
+                )
+            else:
+                if existing:
+                    logger.warning(
+                        "Checkpoint for '%s' is invalid (config changed) — "
+                        "starting fresh",
+                        self.project.name,
+                    )
+                resume = False
+
         try:
             # Introspect source schema
             source_schema = self.source.introspect_schema()
+
+            # Apply cross-dialect schema remapping if needed
+            if (
+                self.project.source
+                and self.project.target
+                and self.project.source.dialect != self.project.target.dialect
+            ):
+                source_schema = SchemaRemapper.remap_schema(
+                    source_schema,
+                    self.project.source.dialect,
+                    self.project.target.dialect,
+                )
 
             # Resolve table dependencies
             resolver = DependencyResolver()
             resolution = resolver.resolve(source_schema)
             ordered_tables = resolution.ordered_tables
             deferred_fks = resolution.deferred_fks
+
+            # Create or validate checkpoint
+            if not resume:
+                checkpoint.create(
+                    self.project.name, project_hash, ordered_tables
+                )
 
             # Emit migration started
             self.tracker.migration_started(
@@ -96,13 +163,13 @@ class MigrationOrchestrator:
                 table_count=len(ordered_tables),
             )
 
-            # Create target schema if requested
-            if self.options.create_target_schema:
+            # Create target schema if requested (skip on resume)
+            if self.options.create_target_schema and not resume:
                 self._create_target_schema(source_schema)
 
             # Transfer table data in parallel
             transfer_results = self._transfer_tables_parallel(
-                source_schema, ordered_tables
+                source_schema, ordered_tables, resume=resume
             )
 
             # Aggregate results
@@ -172,24 +239,44 @@ class MigrationOrchestrator:
                 # Log and continue on LOG_AND_CONTINUE
 
     def _transfer_tables_parallel(
-        self, source_schema: DatabaseSchema, ordered_tables: tuple[str, ...]
+        self,
+        source_schema: DatabaseSchema,
+        ordered_tables: tuple[str, ...],
+        resume: bool = False,
     ) -> list[_TableTransferResult]:
         """Transfer tables in parallel with concurrency limit.
 
         Args:
             source_schema: The source database schema.
             ordered_tables: Tables in dependency-safe order.
+            resume: If ``True``, skip tables that are already completed
+                in the checkpoint.
 
         Returns:
             List of transfer results for each table.
         """
         results: list[_TableTransferResult] = []
         max_workers = self.options.parallel_workers
+        checkpoint = self._checkpoint
+        project_name = self.project.name
 
         with ThreadPoolExecutor(max_workers=max_workers) as executor:
             futures = {}
 
             for table_name in ordered_tables:
+                # Skip completed tables when resuming
+                if resume and checkpoint.is_table_completed(
+                    project_name, table_name
+                ):
+                    logger.info(
+                        "Skipping completed table '%s' (resume mode)",
+                        table_name,
+                    )
+                    results.append(
+                        _TableTransferResult(table_name, True, 0, 0)
+                    )
+                    continue
+
                 table = source_schema.get_table("", table_name.split(".")[-1])
                 if table is None:
                     # Fallback: search by fully qualified name
@@ -210,18 +297,391 @@ class MigrationOrchestrator:
                     )
                     continue
 
+                # Mark as in_progress in checkpoint
+                checkpoint.update_table_status(
+                    project_name, table_name, "in_progress"
+                )
+
                 future = executor.submit(self._transfer_table, table)
                 futures[future] = table_name
 
             # Collect results as they complete
             for future in as_completed(futures):
+                tbl_name = futures[future]
                 result = future.result()
                 results.append(result)
 
+                # Update checkpoint with result
+                if result.success:
+                    checkpoint.update_table_status(
+                        project_name,
+                        tbl_name,
+                        "completed",
+                        rows=result.rows_written,
+                    )
+                else:
+                    checkpoint.update_table_status(
+                        project_name,
+                        tbl_name,
+                        "failed",
+                        error=result.error,
+                    )
+
         return results
+
+    def _should_chunk(self, table: TableDefinition) -> bool:
+        """Determine whether a table qualifies for chunk-level parallelism.
+
+        A table qualifies when it has a single-column integer primary key and
+        an estimated row count above ``_CHUNK_ROW_THRESHOLD``.
+
+        Args:
+            table: The table definition to evaluate.
+
+        Returns:
+            True if the table should be transferred using range-based chunks.
+        """
+        if len(table.primary_key) != 1:
+            return False
+        if (
+            table.row_count_estimate is None
+            or table.row_count_estimate < _CHUNK_ROW_THRESHOLD
+        ):
+            return False
+        pk_col_name = table.primary_key[0]
+        for col in table.columns:
+            if col.name == pk_col_name:
+                arrow_type = col.arrow_type_str or ""
+                return arrow_type.startswith(_NUMERIC_ARROW_PREFIXES)
+        return False
+
+    def _get_pk_range(
+        self, table: TableDefinition, pk_col: str
+    ) -> tuple[int, int] | None:
+        """Get min and max values of the primary key column.
+
+        Uses the source connector's connection directly to execute a
+        ``SELECT MIN/MAX`` query.  Returns ``None`` on any failure so
+        the caller can fall back to non-chunked transfer.
+
+        Args:
+            table: The table definition.
+            pk_col: Name of the primary key column.
+
+        Returns:
+            ``(min_val, max_val)`` tuple, or ``None`` if the range
+            cannot be determined.
+        """
+        conn: Any = getattr(self.source, "connection", None)
+        if conn is None:
+            return None
+
+        try:
+            # Standard SQL — works across PostgreSQL, MySQL, MSSQL, Oracle, SQLite.
+            # We use the simplest identifier quoting (double quotes) which is
+            # ANSI standard and supported by PG, Oracle, SQLite.  MySQL accepts
+            # them when ANSI_QUOTES is on; for MySQL we also fall back on failure.
+            schema = table.schema_name
+            tbl = table.table_name
+            if schema:
+                fqn = f'"{schema}"."{tbl}"'
+            else:
+                fqn = f'"{tbl}"'
+            sql = f'SELECT MIN("{pk_col}"), MAX("{pk_col}") FROM {fqn}'
+
+            cur = conn.cursor()
+            try:
+                cur.execute(sql)
+                row = cur.fetchone()
+            finally:
+                cur.close()
+
+            if row is None or row[0] is None or row[1] is None:
+                return None
+            return (int(row[0]), int(row[1]))
+        except Exception:
+            logger.debug(
+                "Failed to get PK range for %s.%s — falling back to sequential",
+                table.schema_name,
+                table.table_name,
+                exc_info=True,
+            )
+            return None
+
+    def _transfer_table_chunked(self, table: TableDefinition) -> _TableTransferResult:
+        """Transfer a large table using range-based chunk parallelism.
+
+        Splits the table into N range-based chunks on the integer primary
+        key and transfers each chunk concurrently using a thread pool.
+        Each chunk uses ``read_table`` with a ``filter_sql`` parameter
+        to restrict the PK range.
+
+        Falls back to ``_transfer_table_sequential`` if range detection
+        fails.
+
+        Args:
+            table: The table definition.
+
+        Returns:
+            Transfer result for this table.
+        """
+        pk_col = table.primary_key[0]
+        pk_range = self._get_pk_range(table, pk_col)
+        if pk_range is None:
+            return self._transfer_table_sequential(table)
+
+        min_val, max_val = pk_range
+        if max_val <= min_val:
+            return self._transfer_table_sequential(table)
+
+        num_chunks = min(self.options.parallel_workers, 4)
+        chunk_size = (max_val - min_val + 1) // num_chunks
+        if chunk_size < 1:
+            return self._transfer_table_sequential(table)
+
+        ranges: list[tuple[int, int]] = [
+            (min_val + i * chunk_size, min_val + (i + 1) * chunk_size - 1)
+            for i in range(num_chunks)
+        ]
+        # Last chunk absorbs the remainder
+        ranges[-1] = (ranges[-1][0], max_val)
+
+        table_name = table.fully_qualified_name
+        batch_size = self.options.batch_size
+
+        # Shared mutable counters protected by a lock
+        lock = threading.Lock()
+        total_rows_read = 0
+        total_rows_written = 0
+        total_batches = 0
+        chunk_errors: list[str] = []
+
+        logger.debug(
+            "Chunked transfer for %s: %d chunks on PK '%s' [%d..%d]",
+            table_name,
+            num_chunks,
+            pk_col,
+            min_val,
+            max_val,
+        )
+
+        # IDENTITY INSERT handling for MSSQL targets
+        identity_insert = self._needs_identity_insert(table)
+
+        try:
+            self.tracker.table_started(
+                table_name, estimated_rows=table.row_count_estimate
+            )
+        except Exception:
+            pass  # Progress tracking is best-effort
+
+        if identity_insert:
+            self._set_identity_insert(table, on=True)
+
+        def transfer_chunk(start: int, end: int) -> tuple[int, int, int]:
+            """Transfer one PK range chunk.
+
+            Returns:
+                Tuple of (rows_read, rows_written, batches).
+            """
+            chunk_read = 0
+            chunk_written = 0
+            chunk_batches = 0
+            filter_sql = f'"{pk_col}" >= {start} AND "{pk_col}" <= {end}'
+
+            for batch in self.source.read_table(
+                table.table_name,
+                table.schema_name,
+                filter_sql=filter_sql,
+                batch_size=batch_size,
+            ):
+                rows_in_batch = len(batch)
+                chunk_read += rows_in_batch
+
+                try:
+                    rows_written = self.sink.write_batch(
+                        table.table_name,
+                        table.schema_name,
+                        batch,
+                    )
+                    chunk_written += rows_written
+
+                    with lock:
+                        nonlocal total_batches
+                        batch_num = total_batches
+                        total_batches += 1
+
+                    try:
+                        self.tracker.batch_complete(
+                            table_name, batch_num, rows_in_batch, rows_written
+                        )
+                    except Exception:
+                        pass  # Progress tracking is best-effort
+
+                    chunk_batches += 1
+                finally:
+                    del batch  # Release Arrow buffer immediately
+
+            return chunk_read, chunk_written, chunk_batches
+
+        try:
+            with ThreadPoolExecutor(max_workers=num_chunks) as pool:
+                futures = {
+                    pool.submit(transfer_chunk, start, end): (start, end)
+                    for start, end in ranges
+                }
+
+                for future in as_completed(futures):
+                    rng = futures[future]
+                    try:
+                        c_read, c_written, _ = future.result()
+                        with lock:
+                            total_rows_read += c_read
+                            total_rows_written += c_written
+                    except Exception as exc:
+                        msg = (
+                            f"Chunk [{rng[0]}..{rng[1]}] failed for "
+                            f"{table_name}: {exc!s}"
+                        )
+                        chunk_errors.append(msg)
+                        if self.options.on_error == ErrorHandlingStrategy.ABORT:
+                            raise WriteError(
+                                msg,
+                                table=table_name,
+                                batch_number=0,
+                            ) from exc
+
+            if identity_insert:
+                self._set_identity_insert(table, on=False)
+
+            if chunk_errors:
+                error_msg = "; ".join(chunk_errors)
+                return _TableTransferResult(
+                    table_name, False, total_rows_read, total_rows_written, error_msg
+                )
+
+            self.tracker.table_complete(
+                table_name,
+                total_rows_read,
+                total_rows_written,
+                total_batches,
+            )
+
+            return _TableTransferResult(
+                table_name, True, total_rows_read, total_rows_written
+            )
+
+        except Exception as e:
+            if identity_insert:
+                try:
+                    self._set_identity_insert(table, on=False)
+                except Exception:
+                    pass  # Best-effort cleanup
+            error_msg = f"Table transfer failed: {e!s}"
+            return _TableTransferResult(
+                table_name, False, total_rows_read, total_rows_written, error_msg
+            )
 
     def _transfer_table(self, table: TableDefinition) -> _TableTransferResult:
         """Transfer a single table from source to target.
+
+        Delegates to ``_transfer_table_chunked`` for large tables with a
+        single-column integer primary key, otherwise uses the sequential
+        producer/consumer path.
+
+        After each table, forces garbage collection and releases unused
+        Arrow memory back to the OS to prevent cumulative slowdown.
+
+        Args:
+            table: The table definition.
+
+        Returns:
+            Transfer result for this table.
+        """
+        try:
+            if self._should_chunk(table):
+                result = self._transfer_table_chunked(table)
+            else:
+                result = self._transfer_table_sequential(table)
+        except Exception as exc:
+            if self._is_connection_error(exc):
+                logger.warning(
+                    "Connection broke during transfer of %s, "
+                    "reconnecting and retrying...",
+                    table.fully_qualified_name,
+                )
+                self._reconnect_all()
+                # Retry once on fresh connections
+                try:
+                    if self._should_chunk(table):
+                        result = self._transfer_table_chunked(table)
+                    else:
+                        result = self._transfer_table_sequential(table)
+                except Exception as retry_exc:
+                    result = _TableTransferResult(
+                        table.fully_qualified_name,
+                        False, 0, 0,
+                        f"Failed after reconnect: {retry_exc!s}",
+                    )
+            else:
+                raise
+
+        # Free Arrow buffers and Python objects between tables to
+        # prevent cumulative memory pressure that slows later tables.
+        gc.collect()
+        pool = pa.default_memory_pool()
+        if hasattr(pool, "release_unused"):
+            pool.release_unused()
+
+        return result
+
+    @staticmethod
+    def _is_connection_error(exc: BaseException) -> bool:
+        """Check if an exception indicates a broken connection."""
+        msg = str(exc).lower()
+        markers = (
+            "connection is broken",
+            "connection reset",
+            "connection refused",
+            "communication link",
+            "operation timed out",
+            "server closed the connection",
+            "could not receive data",
+            "lost connection",
+            "gone away",
+            "imc06",
+            "08s01",  # ODBC connection error SQLSTATE
+            "08003",  # connection does not exist
+        )
+        return any(m in msg for m in markers)
+
+    def _reconnect_all(self) -> None:
+        """Reconnect both source and sink connectors."""
+        try:
+            self.source.reconnect()
+            logger.info("Source connector reconnected")
+        except Exception as exc:
+            logger.error("Source reconnect failed: %s", exc)
+            raise
+        try:
+            self.sink.reconnect()
+            logger.info("Sink connector reconnected")
+        except Exception as exc:
+            logger.error("Sink reconnect failed: %s", exc)
+            raise
+
+    def _transfer_table_sequential(
+        self, table: TableDefinition
+    ) -> _TableTransferResult:
+        """Transfer a single table from source to target sequentially.
+
+        Uses a producer/consumer pattern: a reader thread fills a bounded queue
+        while the writer (main thread) drains it. This overlaps source I/O with
+        target I/O, roughly doubling throughput by hiding network latency.
+
+        After each successful batch write, the checkpoint is updated with the
+        current row offset. On write failure with ``LOG_AND_CONTINUE``, the
+        failed batch is sent to the quarantine table.
 
         Args:
             table: The table definition.
@@ -234,23 +694,64 @@ class MigrationOrchestrator:
         total_rows_written = 0
         batch_number = 0
 
+        checkpoint = self._checkpoint
+        quarantine = self._quarantine
+        project_name = self.project.name
+
+        # IDENTITY INSERT handling for MSSQL targets
+        identity_insert = self._needs_identity_insert(table)
+
         try:
             self.tracker.table_started(
                 table_name, estimated_rows=table.row_count_estimate
             )
 
+            if identity_insert:
+                self._set_identity_insert(table, on=True)
+
             batch_size = self.options.batch_size
-            for batch in self.source.read_table(
-                table.table_name, table.schema_name, batch_size=batch_size
-            ):
-                rows_read = len(batch)
+            batch_queue: queue.Queue[object] = queue.Queue(maxsize=2)
+            reader_error: list[BaseException | None] = [None]
+
+            def reader_worker() -> None:
+                try:
+                    for batch in self.source.read_table(
+                        table.table_name,
+                        table.schema_name,
+                        batch_size=batch_size,
+                    ):
+                        batch_queue.put(batch)
+                except Exception as exc:
+                    reader_error[0] = exc
+                finally:
+                    batch_queue.put(None)  # Sentinel: no more batches
+
+            reader_thread = threading.Thread(target=reader_worker, daemon=True)
+            reader_thread.start()
+
+            # Writer runs in the current thread
+            while True:
+                batch = batch_queue.get()
+                if batch is None:
+                    break
+                if reader_error[0] is not None:
+                    raise reader_error[0]
+
+                rows_read = len(batch)  # type: ignore[arg-type]
                 total_rows_read += rows_read
 
                 try:
                     rows_written = self.sink.write_batch(
-                        table.table_name, table.schema_name, batch
+                        table.table_name,
+                        table.schema_name,
+                        batch,
                     )
                     total_rows_written += rows_written
+
+                    # Update checkpoint with current row offset
+                    checkpoint.update_row_offset(
+                        project_name, table_name, total_rows_written
+                    )
 
                     self.tracker.batch_complete(
                         table_name,
@@ -265,9 +766,35 @@ class MigrationOrchestrator:
                             table=table_name,
                             batch_number=batch_number,
                         ) from e
-                    # Continue on log-and-continue
+                    # LOG_AND_CONTINUE: quarantine the failed batch
+                    logger.warning(
+                        "Batch %d for %s failed, quarantining: %s",
+                        batch_number,
+                        table_name,
+                        e,
+                    )
+                    try:
+                        quarantine.quarantine_row(
+                            self.sink,
+                            project_name,
+                            table_name,
+                            total_rows_read,
+                            f"batch {batch_number} ({rows_read} rows)",
+                            str(e),
+                        )
+                    except Exception:
+                        pass  # Quarantine is best-effort
+                finally:
+                    del batch  # Release Arrow buffer immediately
 
                 batch_number += 1
+
+            reader_thread.join()
+            if reader_error[0] is not None:
+                raise reader_error[0]
+
+            if identity_insert:
+                self._set_identity_insert(table, on=False)
 
             self.tracker.table_complete(
                 table_name,
@@ -281,9 +808,52 @@ class MigrationOrchestrator:
             )
 
         except Exception as e:
+            if identity_insert:
+                try:
+                    self._set_identity_insert(table, on=False)
+                except Exception:
+                    pass  # Best-effort cleanup
             error_msg = f"Table transfer failed: {e!s}"
             return _TableTransferResult(
                 table_name, False, total_rows_read, total_rows_written, error_msg
+            )
+
+    def _needs_identity_insert(self, table: TableDefinition) -> bool:
+        """Check whether IDENTITY_INSERT is needed for this table.
+
+        Returns ``True`` when the target is MSSQL and the table has at
+        least one auto-increment column.
+
+        Args:
+            table: The table definition.
+
+        Returns:
+            Whether IDENTITY_INSERT should be toggled.
+        """
+        if not (self.project.target and self.project.target.dialect == "mssql"):
+            return False
+        return any(c.is_auto_increment for c in table.columns)
+
+    def _set_identity_insert(self, table: TableDefinition, *, on: bool) -> None:
+        """Toggle IDENTITY_INSERT for a table on the MSSQL sink.
+
+        Args:
+            table: The table definition.
+            on: ``True`` to enable, ``False`` to disable.
+        """
+        state = "ON" if on else "OFF"
+        sql = (
+            f"SET IDENTITY_INSERT [{table.schema_name}]"
+            f".[{table.table_name}] {state}"
+        )
+        try:
+            self.sink.execute_sql(sql)
+        except Exception:
+            logger.debug(
+                "IDENTITY_INSERT %s failed for %s (may not be needed)",
+                state,
+                table.fully_qualified_name,
+                exc_info=True,
             )
 
     def _create_indexes_and_fks(

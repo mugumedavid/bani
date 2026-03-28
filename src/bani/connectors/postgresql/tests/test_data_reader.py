@@ -11,6 +11,54 @@ from bani.connectors.postgresql.data_reader import PostgreSQLDataReader
 from bani.connectors.postgresql.type_mapper import PostgreSQLTypeMapper
 
 
+def _make_ctx_cursor(cursor: MagicMock) -> MagicMock:
+    """Add context-manager dunder methods to a mock cursor."""
+    cursor.__enter__ = MagicMock(return_value=cursor)
+    cursor.__exit__ = MagicMock(return_value=None)
+    return cursor
+
+
+def _setup_conn_with_probe(
+    col_meta: list[tuple[str, int]],
+    *,
+    data_fetchmany_side_effect: Any = None,
+) -> tuple[MagicMock, MagicMock, MagicMock]:
+    """Create a mock connection with separate probe and data cursors.
+
+    The probe cursor (unnamed) is used for the LIMIT 0 metadata query.
+    The data cursor (named) is used for the real SELECT with streaming.
+
+    Returns:
+        (connection, probe_cursor, data_cursor)
+    """
+    mock_conn = MagicMock()
+
+    # Probe cursor (called without 'name' kwarg)
+    probe_cursor = _make_ctx_cursor(MagicMock())
+    probe_cursor.description = col_meta
+
+    # Data cursor (called with name=...)
+    data_cursor = _make_ctx_cursor(MagicMock())
+    if data_fetchmany_side_effect is not None:
+        data_cursor.fetchmany.side_effect = data_fetchmany_side_effect
+    else:
+        data_cursor.fetchmany.return_value = []
+
+    def cursor_factory(**kwargs: Any) -> MagicMock:
+        if "name" in kwargs:
+            return data_cursor
+        return probe_cursor
+
+    # Also support positional-only call (no kwargs)
+    def cursor_dispatch(*args: Any, **kwargs: Any) -> MagicMock:
+        if kwargs.get("name"):
+            return data_cursor
+        return probe_cursor
+
+    mock_conn.cursor.side_effect = cursor_dispatch
+    return mock_conn, probe_cursor, data_cursor
+
+
 class TestPostgreSQLDataReaderInit:
     """Tests for data reader initialization."""
 
@@ -28,11 +76,9 @@ class TestPostgreSQLDataReaderReadTable:
     def test_read_table_with_no_columns(self) -> None:
         """Should handle cursor with no description gracefully."""
         mock_conn = MagicMock()
-        mock_cursor = MagicMock()
-        mock_cursor.__enter__ = MagicMock(return_value=mock_cursor)
-        mock_cursor.__exit__ = MagicMock(return_value=None)
-        mock_cursor.description = None
-        mock_conn.cursor.return_value = mock_cursor
+        probe_cursor = _make_ctx_cursor(MagicMock())
+        probe_cursor.description = None
+        mock_conn.cursor.return_value = probe_cursor
 
         reader = PostgreSQLDataReader(mock_conn)
         result = list(reader.read_table("test_table", "public"))
@@ -41,21 +87,18 @@ class TestPostgreSQLDataReaderReadTable:
 
     def test_read_table_single_batch(self) -> None:
         """Should read data in a single batch."""
-        mock_conn = MagicMock()
-        mock_cursor = MagicMock()
-        mock_cursor.__enter__ = MagicMock(return_value=mock_cursor)
-        mock_cursor.__exit__ = MagicMock(return_value=None)
-
-        # Simulate two columns: id (int32 OID 23), name (text OID 25)
-        mock_cursor.description = [("id", 23), ("name", 25)]
-        mock_cursor.fetchmany.side_effect = [
-            [(1, "Alice"), (2, "Bob")],
-            [],
-        ]
-        mock_conn.cursor.return_value = mock_cursor
+        mock_conn, _probe, _data = _setup_conn_with_probe(
+            [("id", 23), ("name", 25)],
+            data_fetchmany_side_effect=[
+                [(1, "Alice"), (2, "Bob")],
+                [],
+            ],
+        )
 
         reader = PostgreSQLDataReader(mock_conn)
-        batches = list(reader.read_table("test_table", "public", batch_size=100))
+        batches = list(
+            reader.read_table("test_table", "public", batch_size=100),
+        )
 
         assert len(batches) == 1
         assert batches[0].num_rows == 2
@@ -63,37 +106,29 @@ class TestPostgreSQLDataReaderReadTable:
 
     def test_read_table_multiple_batches(self) -> None:
         """Should split data into multiple batches."""
-        mock_conn = MagicMock()
-        mock_cursor = MagicMock()
-        mock_cursor.__enter__ = MagicMock(return_value=mock_cursor)
-        mock_cursor.__exit__ = MagicMock(return_value=None)
-
-        mock_cursor.description = [("id", 23)]
-        # First batch with 100 rows, second with 50, third empty
-        mock_cursor.fetchmany.side_effect = [
-            [(i,) for i in range(100)],
-            [(i,) for i in range(100, 150)],
-            [],
-        ]
-        mock_conn.cursor.return_value = mock_cursor
+        mock_conn, _probe, _data = _setup_conn_with_probe(
+            [("id", 23)],
+            data_fetchmany_side_effect=[
+                [(i,) for i in range(100)],
+                [(i,) for i in range(100, 150)],
+                [],
+            ],
+        )
 
         reader = PostgreSQLDataReader(mock_conn)
-        batches = list(reader.read_table("test_table", "public", batch_size=100))
+        batches = list(
+            reader.read_table("test_table", "public", batch_size=100),
+        )
 
         assert len(batches) == 2
         assert batches[0].num_rows == 100
         assert batches[1].num_rows == 50
 
     def test_read_table_with_filter(self) -> None:
-        """Should apply filter expression to query."""
-        mock_conn = MagicMock()
-        mock_cursor = MagicMock()
-        mock_cursor.__enter__ = MagicMock(return_value=mock_cursor)
-        mock_cursor.__exit__ = MagicMock(return_value=None)
-
-        mock_cursor.description = [("id", 23)]
-        mock_cursor.fetchmany.return_value = []
-        mock_conn.cursor.return_value = mock_cursor
+        """Should apply filter expression to the data query."""
+        mock_conn, _probe, data = _setup_conn_with_probe(
+            [("id", 23)],
+        )
 
         reader = PostgreSQLDataReader(mock_conn)
         list(
@@ -104,20 +139,15 @@ class TestPostgreSQLDataReaderReadTable:
             )
         )
 
-        # Verify execute was called with WHERE clause
-        call_args = mock_cursor.execute.call_args[0][0]
-        assert "WHERE id > 5" in call_args
+        # The data cursor should have the WHERE clause
+        data_query = data.execute.call_args[0][0]
+        assert "WHERE id > 5" in data_query
 
     def test_read_table_with_specific_columns(self) -> None:
         """Should select specific columns."""
-        mock_conn = MagicMock()
-        mock_cursor = MagicMock()
-        mock_cursor.__enter__ = MagicMock(return_value=mock_cursor)
-        mock_cursor.__exit__ = MagicMock(return_value=None)
-
-        mock_cursor.description = [("name", 25)]
-        mock_cursor.fetchmany.return_value = []
-        mock_conn.cursor.return_value = mock_cursor
+        mock_conn, probe, _data = _setup_conn_with_probe(
+            [("name", 25)],
+        )
 
         reader = PostgreSQLDataReader(mock_conn)
         list(
@@ -128,9 +158,103 @@ class TestPostgreSQLDataReaderReadTable:
             )
         )
 
-        call_args = mock_cursor.execute.call_args[0][0]
-        assert '"name"' in call_args
-        assert "FROM" in call_args
+        # Probe query should include the column
+        probe_query = probe.execute.call_args[0][0]
+        assert '"name"' in probe_query
+        assert "LIMIT 0" in probe_query
+
+    def test_read_table_probe_runs_limit_zero(self) -> None:
+        """Should issue a LIMIT 0 probe before streaming."""
+        mock_conn, probe, _data = _setup_conn_with_probe(
+            [("id", 23), ("name", 25)],
+        )
+
+        reader = PostgreSQLDataReader(mock_conn)
+        list(reader.read_table("test_table", "public"))
+
+        # Verify probe query
+        probe_query = probe.execute.call_args[0][0]
+        assert "LIMIT 0" in probe_query
+        assert '"public"."test_table"' in probe_query
+
+    def test_read_table_casts_jsonb_to_text(self) -> None:
+        """Should push ::text cast for jsonb columns (OID 3802)."""
+        mock_conn, _probe, data = _setup_conn_with_probe(
+            [("id", 23), ("data", 3802)],
+            data_fetchmany_side_effect=[
+                [(1, '{"key": "value"}')],
+                [],
+            ],
+        )
+
+        reader = PostgreSQLDataReader(mock_conn)
+        batches = list(
+            reader.read_table("test_table", "public", batch_size=100),
+        )
+
+        # The data query should have ::text cast for the jsonb column
+        data_query = data.execute.call_args[0][0]
+        assert '"data"::text AS "data"' in data_query
+        # id should not be cast
+        assert '"id"' in data_query
+        assert '"id"::text' not in data_query
+
+        assert len(batches) == 1
+        assert batches[0].num_rows == 1
+
+    def test_read_table_casts_json_to_text(self) -> None:
+        """Should push ::text cast for json columns (OID 114)."""
+        mock_conn, _probe, data = _setup_conn_with_probe(
+            [("payload", 114)],
+            data_fetchmany_side_effect=[
+                [('["a","b"]',)],
+                [],
+            ],
+        )
+
+        reader = PostgreSQLDataReader(mock_conn)
+        batches = list(
+            reader.read_table("test_table", "public", batch_size=100),
+        )
+
+        data_query = data.execute.call_args[0][0]
+        assert '"payload"::text AS "payload"' in data_query
+
+        assert len(batches) == 1
+
+    def test_read_table_casts_uuid_to_text(self) -> None:
+        """Should push ::text cast for uuid columns (OID 2950)."""
+        mock_conn, _probe, data = _setup_conn_with_probe(
+            [("uid", 2950)],
+            data_fetchmany_side_effect=[
+                [("550e8400-e29b-41d4-a716-446655440000",)],
+                [],
+            ],
+        )
+
+        reader = PostgreSQLDataReader(mock_conn)
+        batches = list(
+            reader.read_table("test_table", "public", batch_size=100),
+        )
+
+        data_query = data.execute.call_args[0][0]
+        assert '"uid"::text AS "uid"' in data_query
+
+        assert batches[0].column("uid")[0].as_py() == (
+            "550e8400-e29b-41d4-a716-446655440000"
+        )
+
+    def test_read_table_no_cast_for_regular_types(self) -> None:
+        """Should not apply ::text cast for regular types."""
+        mock_conn, _probe, data = _setup_conn_with_probe(
+            [("id", 23), ("name", 25), ("active", 16)],
+        )
+
+        reader = PostgreSQLDataReader(mock_conn)
+        list(reader.read_table("test_table", "public"))
+
+        data_query = data.execute.call_args[0][0]
+        assert "::text" not in data_query
 
 
 class TestPostgreSQLDataReaderMakeBatch:
@@ -182,6 +306,25 @@ class TestPostgreSQLDataReaderMakeBatch:
 
         assert batch.num_rows == 2
         assert batch.num_columns == 4
+
+    def test_make_record_batch_string_col_with_text_oid(self) -> None:
+        """After DB-level ::text cast, string data should pass through."""
+        mock_conn = MagicMock()
+        reader = PostgreSQLDataReader(mock_conn)
+
+        # Simulates jsonb cast to text: OID 25 with plain string values
+        rows: list[tuple[Any, ...]] = [
+            ('{"key": "val"}',),
+            (None,),
+        ]
+        col_names = ["data"]
+        col_types = [25]  # text (post-cast OID)
+
+        batch = reader._make_record_batch(rows, col_names, col_types)
+
+        assert batch.num_rows == 2
+        assert batch.column("data")[0].as_py() == '{"key": "val"}'
+        assert batch.column("data")[1].as_py() is None
 
 
 class TestPostgreSQLDataReaderEstimate:
