@@ -1,0 +1,173 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  oracle-to-postgresql.bdl — Oracle-specific migration features
+
+  This BDL file demonstrates migrating from Oracle Database to PostgreSQL,
+  highlighting Oracle-specific considerations:
+
+    1. CONNECTION: Oracle traditionally uses host + port + service name (or SID)
+       rather than a simple "database" name. The service name is passed as the
+       "database" attribute, while additional Oracle-specific connection
+       parameters go into <connectorConfig>.
+
+    2. NUMBER TYPE: Oracle's NUMBER type is extremely flexible:
+       - NUMBER(10,0) is a 10-digit integer
+       - NUMBER(10,2) is a fixed-point decimal
+       - NUMBER without precision/scale is a floating-point number
+       The type mapping overrides below handle the most common conversions.
+
+    3. IDENTIFIERS: Oracle stores unquoted identifiers in UPPERCASE by default
+       (e.g., a table created as "customers" is stored as "CUSTOMERS").
+       The targetName attribute lets you normalise to lowercase for PostgreSQL.
+
+    4. TEXT TYPES: Oracle uses VARCHAR2 (not VARCHAR) and NVARCHAR2 (not NVARCHAR).
+       CLOB and NCLOB are Oracle's large text types. All map to TEXT in PostgreSQL.
+
+    5. DATE vs TIMESTAMP: Oracle DATE includes both date and time components
+       (unlike SQL standard DATE which is date-only). Map to TIMESTAMP in PG
+       to avoid losing the time portion.
+-->
+<bani schemaVersion="1.0"
+      xmlns="https://bani.dev/bdl/1.0"
+      xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+      xsi:schemaLocation="https://bani.dev/bdl/1.0 bdl-1.0.xsd">
+
+  <project name="oracle-to-pg"
+           description="Oracle 19c on-premise to PostgreSQL 16 cloud migration"
+           author="dba-team"
+           created="2026-03-27T10:00:00Z">
+    <tags>
+      <tag>oracle</tag>
+      <tag>cloud-migration</tag>
+    </tags>
+  </project>
+
+  <!--
+    ORACLE SOURCE
+    =============
+    Oracle connections require a service name to identify the database instance.
+    Here, the "database" attribute holds the Oracle service name (e.g., "ORCL"
+    or a fully qualified service name like "erp.example.com").
+
+    The <connectorConfig> section passes Oracle-specific driver options:
+      - serviceName: explicitly sets the Oracle service name (as opposed to SID).
+      - fetchSize: number of rows the driver pre-fetches per round trip.
+        Higher values reduce network round trips but use more client memory.
+        10,000 is a good balance for bulk reads.
+  -->
+  <source connector="oracle">
+    <connection
+      host="localhost"
+      port="1521"
+      database="ORCL"
+      username="${env:ORACLE_USER}"
+      password="${env:ORACLE_PASS}"
+    />
+    <connectorConfig>
+      <option name="serviceName" value="ORCL" />
+      <option name="fetchSize" value="10000" />
+    </connectorConfig>
+  </source>
+
+  <target connector="postgresql">
+    <connection
+      host="localhost"
+      port="5432"
+      database="warehouse"
+      username="${env:PG_USER}"
+      password="${env:PG_PASS}"
+      sslMode="prefer"
+    />
+    <connectorConfig>
+      <option name="targetSchema" value="oracle_data" />
+    </connectorConfig>
+  </target>
+
+  <options>
+    <batchSize>50000</batchSize>
+    <parallelWorkers>4</parallelWorkers>
+    <memoryLimitMB>4096</memoryLimitMB>
+    <onError>log-and-continue</onError>
+    <createTargetSchema>true</createTargetSchema>
+    <dropTargetTablesFirst>true</dropTargetTablesFirst>
+    <transferIndexes>true</transferIndexes>
+    <transferForeignKeys>true</transferForeignKeys>
+    <transferDefaults>true</transferDefaults>
+  </options>
+
+  <!--
+    TYPE MAPPING OVERRIDES FOR ORACLE
+    =================================
+    Oracle's type system has several types with no direct PostgreSQL equivalent.
+
+    NUMBER(p,0) -> BIGINT or INTEGER
+      Oracle uses NUMBER for all integer types. NUMBER(10,0) fits in a
+      32-bit INT; NUMBER(19,0) needs BIGINT. Map specific precisions as needed.
+
+    NUMBER(p,s) where s > 0 -> NUMERIC(p,s)
+      Fixed-point numbers map to PostgreSQL NUMERIC with matching precision.
+
+    NUMBER (no precision) -> DOUBLE PRECISION
+      Oracle NUMBER without precision/scale is a floating-point value.
+      DOUBLE PRECISION is the closest PostgreSQL equivalent.
+
+    VARCHAR2 -> VARCHAR
+      Oracle's VARCHAR2 is the standard character type. PostgreSQL uses VARCHAR
+      or TEXT. For large VARCHAR2 columns, TEXT is more idiomatic in PG.
+
+    NVARCHAR2 -> TEXT
+      Oracle's Unicode character type. PostgreSQL handles Unicode natively in
+      TEXT, so there is no need for a separate Unicode type.
+
+    DATE -> TIMESTAMP
+      Oracle DATE includes time (unlike SQL standard DATE). Mapping to
+      TIMESTAMP preserves the time component. If you only need the date part,
+      you could map to DATE and accept the time truncation.
+
+    CLOB / NCLOB -> TEXT
+      Oracle large objects map to PostgreSQL TEXT.
+
+    BLOB -> BYTEA
+      Oracle binary large objects map to PostgreSQL BYTEA.
+
+    RAW -> BYTEA
+      Oracle fixed-length binary data maps to BYTEA.
+  -->
+  <typeMappings>
+    <mapping source="NUMBER(10,0)" target="INTEGER" />
+    <mapping source="NUMBER(19,0)" target="BIGINT" />
+    <mapping source="NUMBER" target="DOUBLE PRECISION" />
+    <mapping source="VARCHAR2(4000)" target="TEXT" />
+    <mapping source="NVARCHAR2" target="TEXT" />
+    <mapping source="DATE" target="TIMESTAMP" />
+    <mapping source="CLOB" target="TEXT" />
+    <mapping source="NCLOB" target="TEXT" />
+    <mapping source="BLOB" target="BYTEA" />
+    <mapping source="RAW" target="BYTEA" />
+  </typeMappings>
+
+  <!--
+    TABLE SELECTIONS
+    ================
+    Note: Oracle stores unquoted identifiers as UPPERCASE. The sourceName
+    and sourceSchema must match the case stored in Oracle's data dictionary.
+    The targetName can be lowercase to follow PostgreSQL conventions.
+  -->
+  <tables mode="include">
+    <table sourceSchema="HR" sourceName="EMPLOYEES" targetName="employees">
+      <columnMappings>
+        <column source="EMPLOYEE_ID" target="employee_id" />
+        <column source="FIRST_NAME" target="first_name" />
+        <column source="LAST_NAME" target="last_name" />
+        <column source="HIRE_DATE" target="hire_date" targetType="TIMESTAMP" />
+        <column source="SALARY" target="salary" targetType="NUMERIC(10,2)" />
+      </columnMappings>
+    </table>
+    <table sourceSchema="HR" sourceName="DEPARTMENTS" targetName="departments" />
+    <table sourceSchema="HR" sourceName="LOCATIONS" targetName="locations" />
+    <table sourceSchema="HR" sourceName="JOB_HISTORY" targetName="job_history">
+      <filter>WHERE END_DATE IS NOT NULL</filter>
+    </table>
+  </tables>
+
+</bani>

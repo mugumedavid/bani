@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 import os
 from pathlib import Path
 from unittest.mock import MagicMock, patch
@@ -53,11 +54,29 @@ def invalid_bdl_file(tmp_path: Path) -> Path:
     return bdl_file
 
 
+def test_validate_help(runner: CliRunner) -> None:
+    """Test validate command shows help."""
+    result = runner.invoke(app, ["validate", "--help"])
+    assert result.exit_code == 0
+    assert "validate" in result.stdout.lower()
+
+
 def test_validate_missing_file(runner: CliRunner) -> None:
     """Test validate command with missing file."""
     result = runner.invoke(app, ["validate", "nonexistent.xml"])
     assert result.exit_code != 0
     assert "not found" in result.stdout.lower()
+
+
+def test_validate_missing_file_json(runner: CliRunner) -> None:
+    """Test validate command with missing file in JSON mode."""
+    result = runner.invoke(app, ["--output", "json", "validate", "nonexistent.xml"])
+    assert result.exit_code != 0
+    output = json.loads(result.stdout.strip())
+    assert output["command"] == "validate"
+    assert output["status"] == "error"
+    assert len(output["errors"]) > 0
+    assert output["schema_version"] == "1.0"
 
 
 @patch("bani.cli.commands.validate.validate_xml")
@@ -83,17 +102,23 @@ def test_validate_invalid_file(runner: CliRunner, invalid_bdl_file: Path) -> Non
 
 @patch("bani.cli.commands.validate.validate_xml")
 @patch("bani.cli.commands.validate.parse")
-def test_validate_json_output(
+def test_validate_json_output_ok(
     mock_parse: MagicMock,
     mock_validate: MagicMock,
     runner: CliRunner,
     valid_bdl_file: Path,
 ) -> None:
-    """Test validate command with JSON output."""
+    """Test validate command with JSON output on valid file."""
     mock_validate.return_value = []
     mock_parse.return_value = MagicMock()
     result = runner.invoke(app, ["--output", "json", "validate", str(valid_bdl_file)])
     assert result.exit_code == 0
+    output = json.loads(result.stdout.strip())
+    assert output["command"] == "validate"
+    assert output["status"] == "ok"
+    assert output["errors"] == []
+    assert output["warnings"] == []
+    assert output["schema_version"] == "1.0"
 
 
 def test_validate_json_output_invalid(
@@ -102,3 +127,29 @@ def test_validate_json_output_invalid(
     """Test validate command with JSON output on invalid file."""
     result = runner.invoke(app, ["--output", "json", "validate", str(invalid_bdl_file)])
     assert result.exit_code != 0
+    output = json.loads(result.stdout.strip())
+    assert output["command"] == "validate"
+    assert output["status"] == "error"
+    assert len(output["errors"]) > 0
+
+
+@patch("bani.cli.commands.validate.validate_xml")
+@patch("bani.cli.commands.validate.parse")
+def test_validate_json_error_structure(
+    mock_parse: MagicMock,
+    mock_validate: MagicMock,
+    runner: CliRunner,
+    valid_bdl_file: Path,
+) -> None:
+    """Test that validation errors follow Section 18.2 schema."""
+    mock_validate.return_value = ["Unknown connector 'mysq'. Did you mean 'mysql'?"]
+    mock_parse.return_value = MagicMock()
+    result = runner.invoke(app, ["--output", "json", "validate", str(valid_bdl_file)])
+    assert result.exit_code != 0
+    output = json.loads(result.stdout.strip())
+    assert output["command"] == "validate"
+    assert output["status"] == "error"
+    err = output["errors"][0]
+    assert "severity" in err
+    assert "code" in err
+    assert "message" in err

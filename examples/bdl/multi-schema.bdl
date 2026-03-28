@@ -1,0 +1,156 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  multi-schema.bdl — Migrating tables from multiple source schemas
+
+  This BDL file demonstrates migrating tables that reside in different schemas
+  within the source database into a single (or multiple) target schema(s).
+
+  Multi-schema migration is common when:
+
+    1. CONSOLIDATION: A source database organises data into separate schemas
+       by department or module (e.g., "hr", "finance", "inventory"), and the
+       target should merge them into a single schema.
+
+    2. SCHEMA RENAMING: Source schemas have legacy names (e.g., "dbo") that
+       should map to more descriptive target schema names.
+
+    3. CROSS-DATABASE: Different source schemas effectively act as separate
+       domains. Bani can pull tables from any schema the source credentials
+       have access to.
+
+  BDL schema mapping attributes:
+    - sourceSchema: the schema in the source database where the table lives.
+    - targetSchema: the schema in the target database where the table should
+      be created. If omitted, the target connector's default schema is used
+      (typically "public" for PostgreSQL, "dbo" for MSSQL).
+    - sourceName: the table name in the source database.
+    - targetName: the table name in the target database (defaults to sourceName
+      if omitted).
+-->
+<bani schemaVersion="1.0"
+      xmlns="https://bani.dev/bdl/1.0"
+      xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+      xsi:schemaLocation="https://bani.dev/bdl/1.0 bdl-1.0.xsd">
+
+  <project name="multi-schema-consolidation"
+           description="Consolidate tables from multiple MSSQL schemas into PostgreSQL"
+           author="data-architect"
+           created="2026-03-27T15:00:00Z">
+    <tags>
+      <tag>multi-schema</tag>
+      <tag>consolidation</tag>
+    </tags>
+  </project>
+
+  <source connector="mssql">
+    <connection
+      host="localhost"
+      port="1433"
+      database="EnterpriseSuite"
+      username="${env:MSSQL_USER}"
+      password="${env:MSSQL_PASS}"
+      encrypt="true"
+    />
+  </source>
+
+  <target connector="postgresql">
+    <connection
+      host="localhost"
+      port="5432"
+      database="consolidated"
+      username="${env:PG_USER}"
+      password="${env:PG_PASS}"
+      sslMode="prefer"
+    />
+  </target>
+
+  <options>
+    <batchSize>100000</batchSize>
+    <parallelWorkers>4</parallelWorkers>
+    <memoryLimitMB>2048</memoryLimitMB>
+    <onError>log-and-continue</onError>
+    <createTargetSchema>true</createTargetSchema>
+    <dropTargetTablesFirst>false</dropTargetTablesFirst>
+    <transferIndexes>true</transferIndexes>
+    <transferForeignKeys>true</transferForeignKeys>
+  </options>
+
+  <typeMappings>
+    <mapping source="NVARCHAR(MAX)" target="TEXT" />
+    <mapping source="DATETIME2" target="TIMESTAMP WITH TIME ZONE" />
+    <mapping source="BIT" target="BOOLEAN" />
+    <mapping source="MONEY" target="NUMERIC(19,4)" />
+  </typeMappings>
+
+  <tables mode="include">
+
+    <!--
+      HR SCHEMA TABLES
+      ================
+      Tables from the "hr" schema in the source MSSQL database.
+      These are mapped to the "hr" schema in the target PostgreSQL database,
+      preserving the logical grouping.
+    -->
+    <table sourceSchema="hr" sourceName="Employees" targetSchema="hr" targetName="employees" />
+    <table sourceSchema="hr" sourceName="Departments" targetSchema="hr" targetName="departments" />
+    <table sourceSchema="hr" sourceName="Positions" targetSchema="hr" targetName="positions" />
+
+    <!--
+      FINANCE SCHEMA TABLES
+      =====================
+      Tables from the "finance" schema. These are mapped to a "finance" schema
+      in PostgreSQL. The column mappings rename MSSQL PascalCase columns to
+      PostgreSQL snake_case conventions.
+    -->
+    <table sourceSchema="finance" sourceName="Invoices" targetSchema="finance" targetName="invoices">
+      <columnMappings>
+        <column source="InvoiceID" target="invoice_id" />
+        <column source="CustomerID" target="customer_id" />
+        <column source="TotalAmount" target="total_amount" targetType="NUMERIC(19,4)" />
+        <column source="InvoiceDate" target="invoice_date" />
+      </columnMappings>
+    </table>
+    <table sourceSchema="finance" sourceName="Payments" targetSchema="finance" targetName="payments" />
+    <table sourceSchema="finance" sourceName="Accounts" targetSchema="finance" targetName="accounts" />
+
+    <!--
+      INVENTORY SCHEMA TABLES
+      =======================
+      Tables from the "inventory" schema. These are consolidated into a
+      "warehouse" schema in PostgreSQL (demonstrating schema renaming).
+    -->
+    <table sourceSchema="inventory" sourceName="Products" targetSchema="warehouse" targetName="products" />
+    <table sourceSchema="inventory" sourceName="Warehouses" targetSchema="warehouse" targetName="warehouses" />
+    <table sourceSchema="inventory" sourceName="StockLevels" targetSchema="warehouse" targetName="stock_levels" />
+
+    <!--
+      SHARED/DBO TABLES
+      =================
+      Common reference tables from the default "dbo" schema. These are placed
+      in the "public" schema (PostgreSQL default) since they are shared across
+      all domains.
+    -->
+    <table sourceSchema="dbo" sourceName="Countries" targetSchema="public" targetName="countries" />
+    <table sourceSchema="dbo" sourceName="Currencies" targetSchema="public" targetName="currencies" />
+
+  </tables>
+
+  <!--
+    PRE-MIGRATION HOOKS
+    ===================
+    Create the target schemas before migration starts. PostgreSQL requires
+    schemas to exist before tables can be created in them.
+  -->
+  <hooks>
+    <hook event="before-migration" type="sql" target="target">
+      CREATE SCHEMA IF NOT EXISTS hr;
+    </hook>
+    <hook event="before-migration" type="sql" target="target">
+      CREATE SCHEMA IF NOT EXISTS finance;
+    </hook>
+    <hook event="before-migration" type="sql" target="target">
+      CREATE SCHEMA IF NOT EXISTS warehouse;
+    </hook>
+  </hooks>
+
+</bani>

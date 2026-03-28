@@ -1,0 +1,166 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  sqlite-to-mysql.bdl — Embedded database to server migration
+
+  This BDL file demonstrates migrating from SQLite (an embedded, file-based
+  database) to MySQL (a client-server database). Key considerations:
+
+    1. SQLITE CONNECTION: SQLite has no host, port, or network connection.
+       The "database" attribute is the filesystem path to the .db file.
+       For host and port, use placeholder values — the SQLite connector
+       ignores them, but the XSD requires them.
+
+    2. TYPE AFFINITY: SQLite uses a dynamic type system with five storage
+       classes: NULL, INTEGER, REAL, TEXT, BLOB. Column type declarations
+       are advisory — SQLite determines storage class via "type affinity"
+       rules. For example, a column declared as VARCHAR(100) has TEXT
+       affinity. This means introspected types may not map cleanly to
+       MySQL's strict type system.
+
+    3. NO NATIVE DATE/TIME: SQLite has no dedicated DATE, TIME, or DATETIME
+       types. Dates are typically stored as TEXT (ISO 8601 strings), REAL
+       (Julian day numbers), or INTEGER (Unix timestamps). Bani reads them
+       as their storage class and writes to the target type specified in
+       your column mappings.
+
+    4. NO SCHEMAS: SQLite databases do not have schemas in the SQL Server /
+       PostgreSQL sense. Leave sourceSchema empty or omit it.
+
+    5. AUTOINCREMENT: SQLite INTEGER PRIMARY KEY columns auto-increment.
+       MySQL uses AUTO_INCREMENT. Bani handles this translation automatically.
+
+    6. BOOLEAN: SQLite stores booleans as 0/1 integers. MySQL has a BOOLEAN
+       type (alias for TINYINT(1)). The type mapping below ensures correct
+       translation.
+-->
+<bani schemaVersion="1.0"
+      xmlns="https://bani.dev/bdl/1.0"
+      xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+      xsi:schemaLocation="https://bani.dev/bdl/1.0 bdl-1.0.xsd">
+
+  <project name="app-db-to-mysql"
+           description="Migrate embedded SQLite app database to MySQL server"
+           author="backend-team"
+           created="2026-03-27T11:00:00Z">
+    <tags>
+      <tag>sqlite</tag>
+      <tag>upgrade</tag>
+      <tag>server-migration</tag>
+    </tags>
+  </project>
+
+  <!--
+    SQLITE SOURCE
+    =============
+    For SQLite, the "database" attribute is the path to the database file.
+    The host and port are required by the XSD but ignored by the SQLite
+    connector — use "localhost" and 0 as conventional placeholders.
+
+    No credentials are needed for SQLite file access (the file must be
+    readable by the Bani process). Provide empty username/password or
+    omit them entirely.
+  -->
+  <source connector="sqlite">
+    <connection
+      host="localhost"
+      port="0"
+      database="/var/lib/myapp/production.db"
+      username=""
+      password=""
+    />
+    <connectorConfig>
+      <!-- journal_mode=wal allows concurrent reads while Bani migrates -->
+      <option name="journal_mode" value="wal" />
+    </connectorConfig>
+  </source>
+
+  <!--
+    MYSQL TARGET
+    ============
+    Standard MySQL connection with environment-variable credentials.
+    The charset option ensures proper Unicode handling.
+  -->
+  <target connector="mysql">
+    <connection
+      host="localhost"
+      port="3306"
+      database="myapp_production"
+      username="${env:MYSQL_USER}"
+      password="${env:MYSQL_PASS}"
+    />
+    <connectorConfig>
+      <option name="charset" value="utf8mb4" />
+    </connectorConfig>
+  </target>
+
+  <options>
+    <!--
+      SQLite reads are single-threaded (SQLite uses a file-level lock).
+      Using parallelWorkers > 1 is still useful because Bani can write to
+      MySQL concurrently while reading from SQLite sequentially.
+      Smaller batch size helps with memory since SQLite files can be large.
+    -->
+    <batchSize>50000</batchSize>
+    <parallelWorkers>2</parallelWorkers>
+    <memoryLimitMB>1024</memoryLimitMB>
+    <onError>log-and-continue</onError>
+    <createTargetSchema>true</createTargetSchema>
+    <dropTargetTablesFirst>true</dropTargetTablesFirst>
+    <transferIndexes>true</transferIndexes>
+    <transferForeignKeys>true</transferForeignKeys>
+  </options>
+
+  <!--
+    TYPE MAPPINGS FOR SQLITE
+    ========================
+    SQLite's flexible typing means many columns may be introspected with
+    generic affinities. These overrides ensure clean MySQL target types.
+
+    INTEGER -> BIGINT
+      SQLite INTEGER can hold up to 8-byte signed integers. BIGINT in MySQL
+      matches this range. Use INT if you know values are 32-bit.
+
+    REAL -> DOUBLE
+      SQLite REAL is an 8-byte IEEE floating point. MySQL DOUBLE matches.
+
+    TEXT -> TEXT
+      Direct mapping. SQLite TEXT is UTF-8; MySQL TEXT is also UTF-8 when
+      the table uses utf8mb4 charset.
+
+    BLOB -> LONGBLOB
+      SQLite BLOB can hold arbitrary binary data up to 2GB. MySQL LONGBLOB
+      accommodates up to 4GB.
+  -->
+  <typeMappings>
+    <mapping source="INTEGER" target="BIGINT" />
+    <mapping source="REAL" target="DOUBLE" />
+    <mapping source="TEXT" target="TEXT" />
+    <mapping source="BLOB" target="LONGBLOB" />
+  </typeMappings>
+
+  <tables mode="include">
+    <!--
+      SQLite tables typically have no schema prefix. Omit sourceSchema.
+      The targetName converts to MySQL-conventional lowercase.
+    -->
+    <table sourceName="users" targetName="users">
+      <columnMappings>
+        <!--
+          SQLite stores booleans as 0/1 in INTEGER columns.
+          Override the target type to BOOLEAN (TINYINT(1)) for MySQL.
+        -->
+        <column source="is_verified" target="is_verified" targetType="BOOLEAN" />
+        <column source="is_admin" target="is_admin" targetType="BOOLEAN" />
+        <!--
+          SQLite dates stored as TEXT need explicit target typing.
+        -->
+        <column source="created_at" target="created_at" targetType="DATETIME" />
+        <column source="updated_at" target="updated_at" targetType="DATETIME" />
+      </columnMappings>
+    </table>
+    <table sourceName="posts" targetName="posts" />
+    <table sourceName="comments" targetName="comments" />
+    <table sourceName="tags" targetName="tags" />
+  </tables>
+
+</bani>

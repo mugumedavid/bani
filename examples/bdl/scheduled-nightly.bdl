@@ -1,0 +1,178 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  scheduled-nightly.bdl — Cron-scheduled nightly migration with incremental sync
+
+  This BDL file demonstrates a production-ready scheduled migration that runs
+  automatically every night. It combines three features:
+
+    1. SCHEDULE: A cron expression triggers the migration at 2:00 AM daily.
+    2. INCREMENTAL SYNC: Only changed rows are transferred (not a full refresh).
+    3. RETRY: If the migration fails, Bani retries up to 3 times with a 5-minute
+       delay between attempts.
+
+  This pattern is common for data warehousing — a transactional source database
+  (OLTP) feeds into an analytical target database (OLAP) on a nightly cadence,
+  transferring only the delta since the last successful run.
+
+  SCHEDULING DETAILS
+  ==================
+  The <schedule> element controls when Bani runs the migration.
+
+    enabled: Set to "true" to activate the schedule. When "false", the schedule
+             is defined but inactive (useful for temporarily pausing).
+
+    <cron>:  A standard 5-field cron expression:
+               minute  hour  day-of-month  month  day-of-week
+             Examples:
+               "0 2 * * *"    = every day at 02:00
+               "0 */6 * * *"  = every 6 hours
+               "30 1 * * 1"   = every Monday at 01:30
+               "0 3 1 * *"    = first day of every month at 03:00
+
+    <timezone>: IANA timezone name (e.g., "UTC", "America/New_York",
+                "Europe/London"). The cron expression is evaluated in this
+                timezone. Always specify a timezone to avoid ambiguity,
+                especially during DST transitions.
+
+    <retryOnFailure>: Automatic retry on failure.
+      maxRetries:   Maximum number of retry attempts (e.g., "3").
+      delaySeconds: Seconds to wait between retries (e.g., "300" = 5 minutes).
+      After all retries are exhausted, the migration is marked as failed and
+      Bani logs the error for manual investigation.
+-->
+<bani schemaVersion="1.0"
+      xmlns="https://bani.dev/bdl/1.0"
+      xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+      xsi:schemaLocation="https://bani.dev/bdl/1.0 bdl-1.0.xsd">
+
+  <project name="nightly-warehouse-refresh"
+           description="Nightly incremental sync from production MySQL to PostgreSQL warehouse"
+           author="data-engineering"
+           created="2026-03-27T17:00:00Z">
+    <tags>
+      <tag>scheduled</tag>
+      <tag>nightly</tag>
+      <tag>warehouse</tag>
+      <tag>incremental</tag>
+    </tags>
+  </project>
+
+  <source connector="mysql">
+    <connection
+      host="localhost"
+      port="3306"
+      database="production"
+      username="${env:MYSQL_USER}"
+      password="${env:MYSQL_PASS}"
+    />
+    <connectorConfig>
+      <option name="charset" value="utf8mb4" />
+    </connectorConfig>
+  </source>
+
+  <target connector="postgresql">
+    <connection
+      host="localhost"
+      port="5432"
+      database="warehouse"
+      username="${env:PG_USER}"
+      password="${env:PG_PASS}"
+      sslMode="require"
+    />
+    <connectorConfig>
+      <option name="targetSchema" value="production_mirror" />
+    </connectorConfig>
+  </target>
+
+  <options>
+    <batchSize>100000</batchSize>
+    <parallelWorkers>4</parallelWorkers>
+    <memoryLimitMB>2048</memoryLimitMB>
+    <!--
+      For scheduled jobs, log-and-continue is preferred so that one bad table
+      does not block the entire nightly refresh. Failures are logged and can
+      be reviewed the next morning.
+    -->
+    <onError>log-and-continue</onError>
+    <createTargetSchema>true</createTargetSchema>
+    <dropTargetTablesFirst>false</dropTargetTablesFirst>
+    <transferIndexes>true</transferIndexes>
+    <transferForeignKeys>true</transferForeignKeys>
+    <transferDefaults>true</transferDefaults>
+  </options>
+
+  <tables mode="include">
+    <table sourceName="customers" targetName="customers" />
+    <table sourceName="orders" targetName="orders" />
+    <table sourceName="order_items" targetName="order_items" />
+    <table sourceName="products" targetName="products" />
+    <table sourceName="inventory" targetName="inventory" />
+    <table sourceName="shipments" targetName="shipments" />
+  </tables>
+
+  <hooks>
+    <!--
+      Log the start time for operational monitoring.
+    -->
+    <hook event="before-migration" type="shell" onFailure="continue">
+      echo "[$(date -u +%Y-%m-%dT%H:%M:%SZ)] Starting nightly warehouse refresh" >> /var/log/bani/nightly.log
+    </hook>
+
+    <!--
+      Create the target schema if it does not exist.
+    -->
+    <hook event="before-migration" type="sql" target="target">
+      CREATE SCHEMA IF NOT EXISTS production_mirror;
+    </hook>
+
+    <!--
+      Run ANALYZE after migration to update PostgreSQL query planner statistics.
+    -->
+    <hook event="after-migration" type="sql" target="target">
+      ANALYZE;
+    </hook>
+
+    <!--
+      Log completion.
+    -->
+    <hook event="after-migration" type="shell" onFailure="continue">
+      echo "[$(date -u +%Y-%m-%dT%H:%M:%SZ)] Nightly warehouse refresh completed" >> /var/log/bani/nightly.log
+    </hook>
+  </hooks>
+
+  <!--
+    SCHEDULE: Run every day at 02:00 UTC
+    ====================================
+    The cron expression "0 2 * * *" means:
+      minute=0, hour=2, any day of month, any month, any day of week.
+
+    UTC is used to avoid daylight saving time ambiguities. If the source and
+    target databases are in different timezones, UTC is the safest choice.
+
+    Retries: if the migration fails (e.g., source database is temporarily
+    unreachable), retry up to 3 times with a 5-minute (300 second) delay.
+  -->
+  <schedule enabled="true">
+    <cron>0 2 * * *</cron>
+    <timezone>UTC</timezone>
+    <retryOnFailure maxRetries="3" delaySeconds="300" />
+  </schedule>
+
+  <!--
+    INCREMENTAL SYNC
+    ================
+    Combined with the nightly schedule, this ensures each run only transfers
+    rows modified since the previous run. The first run (with no checkpoint)
+    performs a full migration. Subsequent runs are incremental.
+  -->
+  <sync enabled="true">
+    <strategy>timestamp</strategy>
+    <trackingColumn table="customers" column="updated_at" />
+    <trackingColumn table="orders" column="updated_at" />
+    <trackingColumn table="order_items" column="updated_at" />
+    <trackingColumn table="products" column="updated_at" />
+    <trackingColumn table="inventory" column="last_modified" />
+    <trackingColumn table="shipments" column="updated_at" />
+  </sync>
+
+</bani>

@@ -62,3 +62,41 @@ def test_schema_inspect_command_exists(runner: CliRunner) -> None:
     result = runner.invoke(app, ["schema", "inspect", "--help"])
     assert result.exit_code == 0
     assert "inspect" in result.stdout.lower()
+
+
+def test_preview_command_exists(runner: CliRunner) -> None:
+    """Test that the preview command is registered."""
+    result = runner.invoke(app, ["preview", "--help"])
+    assert result.exit_code == 0
+    assert "preview" in result.stdout.lower() or "sample" in result.stdout.lower()
+
+
+def test_init_command_exists(runner: CliRunner) -> None:
+    """Test that the init command is registered."""
+    result = runner.invoke(app, ["init", "--help"])
+    assert result.exit_code == 0
+    assert "init" in result.stdout.lower() or "wizard" in result.stdout.lower()
+
+
+def test_connectors_list_command_exists(runner: CliRunner) -> None:
+    """Test that the connectors list command is registered."""
+    result = runner.invoke(app, ["connectors", "list", "--help"])
+    assert result.exit_code == 0
+
+
+def test_connectors_info_command_exists(runner: CliRunner) -> None:
+    """Test that the connectors info command is registered."""
+    result = runner.invoke(app, ["connectors", "info", "--help"])
+    assert result.exit_code == 0
+
+
+def test_schedule_command_exists(runner: CliRunner) -> None:
+    """Test that the schedule command is registered."""
+    result = runner.invoke(app, ["schedule", "--help"])
+    assert result.exit_code == 0
+
+
+def test_version_command_exists(runner: CliRunner) -> None:
+    """Test that the version command is registered."""
+    result = runner.invoke(app, ["version", "--help"])
+    assert result.exit_code == 0

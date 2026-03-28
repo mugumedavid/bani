@@ -1,0 +1,152 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  mssql-to-postgresql.bdl — MSSQL to PostgreSQL with type mapping overrides
+
+  This BDL file demonstrates migrating from Microsoft SQL Server to PostgreSQL
+  with explicit type mapping overrides. MSSQL and PostgreSQL have several
+  important type differences that benefit from manual control:
+
+    - MONEY is a fixed-precision currency type in MSSQL with no direct PG
+      equivalent — map to NUMERIC(19,4) to preserve precision.
+    - DATETIME/DATETIME2 in MSSQL should map to TIMESTAMP or
+      TIMESTAMP WITH TIME ZONE in PostgreSQL, depending on whether you need
+      timezone awareness.
+    - BIT in MSSQL is a single-bit integer (0 or 1), not a true boolean;
+      PostgreSQL has a native BOOLEAN type.
+    - NVARCHAR is Unicode text in MSSQL. PostgreSQL's TEXT type handles
+      Unicode natively, so NVARCHAR(MAX) can safely map to TEXT.
+    - UNIQUEIDENTIFIER in MSSQL maps to UUID in PostgreSQL.
+
+  The <typeMappings> section lets you override the connector's built-in
+  default mappings for any source type.
+-->
+<bani schemaVersion="1.0"
+      xmlns="https://bani.dev/bdl/1.0"
+      xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+      xsi:schemaLocation="https://bani.dev/bdl/1.0 bdl-1.0.xsd">
+
+  <project name="mssql-erp-to-pg"
+           description="MSSQL ERP to PostgreSQL with type mapping overrides"
+           author="data-team"
+           created="2026-03-27T09:00:00Z">
+    <tags>
+      <tag>mssql</tag>
+      <tag>type-mappings</tag>
+    </tags>
+  </project>
+
+  <!--
+    MSSQL SOURCE
+    ============
+    The "encrypt" attribute enables TLS encryption for the connection.
+    The <connectorConfig> options are passed directly to the MSSQL driver:
+      - applicationIntent=ReadOnly: route the connection to a read-only replica
+        if an Always On Availability Group is configured. This avoids placing
+        migration read load on the primary.
+      - commandTimeout: maximum seconds to wait for a query before timing out.
+  -->
+  <source connector="mssql">
+    <connection
+      host="localhost"
+      port="1433"
+      database="ERP_Production"
+      username="${env:MSSQL_USER}"
+      password="${env:MSSQL_PASS}"
+      encrypt="true"
+    />
+    <connectorConfig>
+      <option name="applicationIntent" value="ReadOnly" />
+      <option name="commandTimeout" value="300" />
+    </connectorConfig>
+  </source>
+
+  <target connector="postgresql">
+    <connection
+      host="localhost"
+      port="5432"
+      database="analytics"
+      username="${env:PG_USER}"
+      password="${env:PG_PASS}"
+      sslMode="require"
+    />
+    <connectorConfig>
+      <option name="targetSchema" value="erp_mirror" />
+    </connectorConfig>
+  </target>
+
+  <options>
+    <batchSize>100000</batchSize>
+    <parallelWorkers>4</parallelWorkers>
+    <memoryLimitMB>2048</memoryLimitMB>
+    <onError>log-and-continue</onError>
+    <createTargetSchema>true</createTargetSchema>
+    <transferIndexes>true</transferIndexes>
+    <transferForeignKeys>true</transferForeignKeys>
+  </options>
+
+  <!--
+    TYPE MAPPING OVERRIDES
+    ======================
+    Each <mapping> overrides how a specific source data type maps to the
+    target data type. These take precedence over the connector's built-in
+    type mapping rules.
+
+    Without overrides, Bani uses an Arrow-based intermediate type system:
+    source type -> Arrow type -> target type. This works well for most types,
+    but some database-specific types benefit from explicit control.
+
+    Format: <mapping source="SOURCE_TYPE" target="TARGET_TYPE" />
+
+    MONEY -> NUMERIC(19,4)
+      MSSQL MONEY is an 8-byte fixed-point type with 4 decimal places.
+      Arrow represents it as decimal128, which maps to generic NUMERIC in PG.
+      We pin NUMERIC(19,4) to preserve the exact precision and scale that
+      MONEY provides, avoiding accidental precision widening.
+
+    DATETIME -> TIMESTAMP
+      MSSQL DATETIME has ~3.33ms precision and no timezone. Mapping to
+      TIMESTAMP (without time zone) preserves the naive datetime semantics.
+      Use TIMESTAMP WITH TIME ZONE if your application assumes UTC storage.
+
+    BIT -> BOOLEAN
+      MSSQL BIT stores 0 or 1 as an integer. PostgreSQL has a native BOOLEAN
+      type. Without this override, BIT might map through Arrow as INT8 and
+      end up as SMALLINT. This override ensures clean boolean semantics.
+
+    NVARCHAR -> TEXT
+      MSSQL NVARCHAR(MAX) is variable-length Unicode text. PostgreSQL TEXT
+      is the idiomatic equivalent. Without the override, you might get
+      VARCHAR with a very large length limit, which is functionally identical
+      but clutters the schema.
+
+    UNIQUEIDENTIFIER -> UUID
+      MSSQL's 16-byte GUID type maps cleanly to PostgreSQL's native UUID.
+  -->
+  <typeMappings>
+    <mapping source="MONEY" target="NUMERIC(19,4)" />
+    <mapping source="SMALLMONEY" target="NUMERIC(10,4)" />
+    <mapping source="DATETIME" target="TIMESTAMP" />
+    <mapping source="DATETIME2" target="TIMESTAMP WITH TIME ZONE" />
+    <mapping source="BIT" target="BOOLEAN" />
+    <mapping source="NVARCHAR(MAX)" target="TEXT" />
+    <mapping source="NVARCHAR" target="VARCHAR" />
+    <mapping source="NTEXT" target="TEXT" />
+    <mapping source="UNIQUEIDENTIFIER" target="UUID" />
+    <mapping source="IMAGE" target="BYTEA" />
+  </typeMappings>
+
+  <tables mode="include">
+    <table sourceSchema="dbo" sourceName="Customers" targetName="customers">
+      <columnMappings>
+        <column source="CustID" target="customer_id" />
+        <column source="CustName" target="customer_name" />
+        <column source="IsActive" target="is_active" targetType="BOOLEAN" />
+      </columnMappings>
+    </table>
+    <table sourceSchema="dbo" sourceName="Orders" targetName="orders" />
+    <table sourceSchema="dbo" sourceName="OrderItems" targetName="order_items" />
+    <table sourceSchema="dbo" sourceName="Products" targetName="products" />
+    <table sourceSchema="dbo" sourceName="Invoices" targetName="invoices" />
+  </tables>
+
+</bani>

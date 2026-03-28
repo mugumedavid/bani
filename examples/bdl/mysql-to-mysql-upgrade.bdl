@@ -1,0 +1,146 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  mysql-to-mysql-upgrade.bdl — Same-engine version upgrade (MySQL 5.5 to 8.4)
+
+  This BDL file demonstrates using Bani for a same-engine upgrade migration.
+  Common reasons to use Bani for this instead of MySQL's built-in upgrade path:
+
+    1. CHARSET UPGRADE: MySQL 5.5 defaults to utf8 (3-byte, no emoji support).
+       MySQL 8.4 should use utf8mb4 (4-byte, full Unicode including emoji).
+       An in-place upgrade does not change existing table charsets — Bani
+       recreates tables with the correct charset on the target.
+
+    2. AUTHENTICATION: MySQL 5.5 uses mysql_native_password. MySQL 8.0+
+       defaults to caching_sha2_password. Moving data via Bani avoids
+       authentication plugin conflicts during an in-place upgrade.
+
+    3. ZERO DOWNTIME: The old MySQL 5.5 stays running on port 3307 while
+       the new MySQL 8.4 is populated on port 3306. Switch traffic when ready.
+
+    4. SELECTIVE MIGRATION: You might not need every table. Bani lets you
+       select exactly which tables to move, apply filters, and rename columns.
+
+    5. SCHEMA CLEANUP: The upgrade is an opportunity to rename tables/columns,
+       drop deprecated columns, and modernise the schema.
+-->
+<bani schemaVersion="1.0"
+      xmlns="https://bani.dev/bdl/1.0"
+      xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+      xsi:schemaLocation="https://bani.dev/bdl/1.0 bdl-1.0.xsd">
+
+  <project name="mysql-55-to-84-upgrade"
+           description="Upgrade migration from MySQL 5.5 (port 3307) to MySQL 8.4 (port 3306)"
+           author="dba-team"
+           created="2026-03-27T12:00:00Z">
+    <tags>
+      <tag>mysql</tag>
+      <tag>upgrade</tag>
+      <tag>charset-migration</tag>
+    </tags>
+  </project>
+
+  <!--
+    SOURCE: MySQL 5.5 on port 3307
+    ==============================
+    The old MySQL instance is running on a non-standard port (3307) to
+    coexist with the new MySQL 8.4 instance on the default port (3306).
+
+    The charset is set to utf8 to match the source database's encoding.
+    This ensures Bani reads character data correctly from the old server.
+  -->
+  <source connector="mysql">
+    <connection
+      host="localhost"
+      port="3307"
+      database="legacy_app"
+      username="${env:MYSQL_OLD_USER}"
+      password="${env:MYSQL_OLD_PASS}"
+    />
+    <connectorConfig>
+      <option name="charset" value="utf8" />
+    </connectorConfig>
+  </source>
+
+  <!--
+    TARGET: MySQL 8.4 on port 3306
+    ==============================
+    The new MySQL instance uses utf8mb4, which supports the full Unicode
+    range including emoji, mathematical symbols, and CJK Extension B.
+
+    The collation utf8mb4_unicode_ci provides language-aware comparison
+    rules. MySQL 8.0+ also supports utf8mb4_0900_ai_ci for UCA 9.0.
+  -->
+  <target connector="mysql">
+    <connection
+      host="localhost"
+      port="3306"
+      database="modern_app"
+      username="${env:MYSQL_NEW_USER}"
+      password="${env:MYSQL_NEW_PASS}"
+    />
+    <connectorConfig>
+      <option name="charset" value="utf8mb4" />
+    </connectorConfig>
+  </target>
+
+  <options>
+    <batchSize>100000</batchSize>
+    <parallelWorkers>4</parallelWorkers>
+    <memoryLimitMB>2048</memoryLimitMB>
+    <!--
+      For an upgrade migration, fail-fast is often preferred so you can
+      investigate and fix any compatibility issues immediately.
+    -->
+    <onError>fail-fast</onError>
+    <createTargetSchema>true</createTargetSchema>
+    <!--
+      Drop target tables first so this BDL can be re-run for a clean
+      refresh without manual cleanup.
+    -->
+    <dropTargetTablesFirst>true</dropTargetTablesFirst>
+    <transferIndexes>true</transferIndexes>
+    <transferForeignKeys>true</transferForeignKeys>
+    <transferDefaults>true</transferDefaults>
+  </options>
+
+  <!--
+    TYPE MAPPINGS FOR MYSQL-TO-MYSQL UPGRADE
+    ========================================
+    Within the same engine, most types are compatible. The main changes are
+    charset-related. Bani handles charset conversion at the connection level
+    (source reads utf8, target writes utf8mb4), but you can also use type
+    mappings for specific column type changes.
+
+    TINYINT(1) -> BOOLEAN
+      MySQL 5.5 often used TINYINT(1) as a pseudo-boolean. MySQL 8.4 still
+      treats BOOLEAN as TINYINT(1), but this mapping documents the intent.
+
+    TIMESTAMP -> TIMESTAMP
+      No change needed, but note that MySQL 8.0 changed the default for
+      explicit_defaults_for_timestamp. Bani copies the data as-is.
+  -->
+  <typeMappings>
+    <mapping source="TINYINT(1)" target="BOOLEAN" />
+  </typeMappings>
+
+  <tables mode="include">
+    <!--
+      This upgrade is an opportunity to rename tables from old conventions
+      to modern ones. The sourceName is the MySQL 5.5 table name; the
+      targetName is the desired name in MySQL 8.4.
+    -->
+    <table sourceName="tbl_users" targetName="users">
+      <columnMappings>
+        <column source="user_id" target="id" />
+        <column source="user_name" target="username" />
+        <column source="user_email" target="email" />
+        <column source="is_active" target="is_active" targetType="BOOLEAN" />
+      </columnMappings>
+    </table>
+    <table sourceName="tbl_orders" targetName="orders" />
+    <table sourceName="tbl_products" targetName="products" />
+    <table sourceName="tbl_categories" targetName="categories" />
+    <table sourceName="tbl_order_items" targetName="order_items" />
+  </tables>
+
+</bani>

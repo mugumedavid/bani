@@ -1,0 +1,182 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  mysql-to-postgresql.bdl — Basic full migration
+
+  This BDL file demonstrates a straightforward migration from MySQL 8 to
+  PostgreSQL 16. It covers every fundamental element of the BDL schema:
+
+    - Project metadata (name, description, author, tags)
+    - Source and target connection definitions with environment-variable
+      credentials (never hardcode passwords in BDL files)
+    - Table selections with column mappings and automatic naming
+    - Global options for batch size, parallelism, and error handling
+
+  Use this as a starting template when building a new migration project.
+-->
+<bani schemaVersion="1.0"
+      xmlns="https://bani.dev/bdl/1.0"
+      xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+      xsi:schemaLocation="https://bani.dev/bdl/1.0 bdl-1.0.xsd">
+
+  <!--
+    PROJECT METADATA
+    ================
+    Every BDL file begins with a <project> element. The "name" attribute is
+    required and should be a short, slug-style identifier. "description",
+    "author", and "created" are optional but recommended.
+
+    Tags are optional labels that can be used to organise and filter projects.
+  -->
+  <project name="erp-to-analytics"
+           description="Full migration of ERP tables from MySQL 8 to PostgreSQL 16 analytics warehouse"
+           author="data-engineering"
+           created="2026-03-27T08:00:00Z">
+    <tags>
+      <tag>erp</tag>
+      <tag>analytics</tag>
+      <tag>full-migration</tag>
+    </tags>
+  </project>
+
+  <!--
+    SOURCE CONNECTION
+    =================
+    The "connector" attribute selects the database driver. Valid built-in
+    connectors: mysql, postgresql, mssql, oracle, sqlite.
+
+    The <connection> element carries host, port, and database as required
+    attributes. Credentials are passed via username and password attributes,
+    using the ${env:VAR_NAME} syntax so that actual secrets are resolved
+    from the process environment at runtime — never embed plaintext passwords.
+
+    Additional connector-specific attributes (e.g., sslMode, encrypt) can be
+    added to <connection> as needed; the XSD allows arbitrary extra attributes.
+  -->
+  <source connector="mysql">
+    <connection
+      host="localhost"
+      port="3306"
+      database="erp"
+      username="${env:MYSQL_USER}"
+      password="${env:MYSQL_PASS}"
+    />
+    <!--
+      CONNECTOR CONFIG (optional)
+      ============================
+      Use <connectorConfig> to pass driver-specific options that go beyond
+      the standard host/port/database/credentials. Each <option> has a
+      name and value attribute.
+    -->
+    <connectorConfig>
+      <option name="charset" value="utf8mb4" />
+      <option name="connectTimeout" value="30" />
+    </connectorConfig>
+  </source>
+
+  <!--
+    TARGET CONNECTION
+    =================
+    Same structure as source. Here we connect to PostgreSQL on the default port.
+    sslMode="prefer" tells the PostgreSQL driver to try SSL but fall back to
+    plaintext if the server does not support it.
+  -->
+  <target connector="postgresql">
+    <connection
+      host="localhost"
+      port="5432"
+      database="analytics"
+      username="${env:PG_USER}"
+      password="${env:PG_PASS}"
+      sslMode="prefer"
+    />
+    <connectorConfig>
+      <option name="targetSchema" value="public" />
+    </connectorConfig>
+  </target>
+
+  <!--
+    GLOBAL OPTIONS
+    ==============
+    These settings control the migration engine's behaviour.
+
+    - batchSize: number of rows per Arrow RecordBatch read from the source
+      and written to the target. Larger batches improve throughput but use
+      more memory. 100,000 is a good default.
+    - parallelWorkers: number of tables transferred concurrently.
+      Set this to the number of CPU cores available, capped by the lesser
+      of source read capacity and target write capacity.
+    - memoryLimitMB: soft memory cap for the migration process.
+    - onError: "log-and-continue" skips failed rows/tables and logs them;
+      "abort" (or "fail-fast") halts the entire migration on the first error.
+    - createTargetSchema: create the target database schema if it doesn't exist.
+    - dropTargetTablesFirst: drop existing target tables before creating them.
+      Set to true for repeatable full refreshes; false to preserve existing data.
+    - transferIndexes, transferForeignKeys, transferDefaults: control whether
+      indexes, FK constraints, and column defaults are copied from source to target.
+  -->
+  <options>
+    <batchSize>100000</batchSize>
+    <parallelWorkers>4</parallelWorkers>
+    <memoryLimitMB>2048</memoryLimitMB>
+    <onError>log-and-continue</onError>
+    <createTargetSchema>true</createTargetSchema>
+    <dropTargetTablesFirst>false</dropTargetTablesFirst>
+    <transferIndexes>true</transferIndexes>
+    <transferForeignKeys>true</transferForeignKeys>
+    <transferDefaults>true</transferDefaults>
+  </options>
+
+  <!--
+    TABLE SELECTIONS
+    ================
+    The <tables> element lists which tables to migrate. The "mode" attribute
+    controls interpretation:
+      - "include" (default): only the listed tables are migrated.
+      - "exclude": all tables are migrated EXCEPT the listed ones.
+
+    Each <table> requires at minimum a "sourceName" attribute. Optional:
+      - sourceSchema: schema in the source database (e.g., "dbo" for MSSQL,
+        omit for MySQL which uses the database name as the schema).
+      - targetName: name of the table in the target. If omitted, the source
+        name is used as-is.
+      - targetSchema: schema in the target database.
+
+    Inside a <table>, you can optionally include:
+      - <columnMappings>: rename or retype specific columns.
+      - <filter>: a SQL WHERE clause to restrict which rows are migrated.
+  -->
+  <tables mode="include">
+
+    <!--
+      Table with column mappings: rename and retype columns during migration.
+      The "source" attribute is the column name in the source database;
+      "target" is the desired name in the target database. "targetType" can
+      override the automatically mapped data type.
+    -->
+    <table sourceName="customers" targetName="customers">
+      <columnMappings>
+        <column source="id" target="customer_id" />
+        <column source="full_name" target="customer_name" />
+        <column source="email_address" target="email" />
+        <column source="is_active" target="active" targetType="BOOLEAN" />
+      </columnMappings>
+    </table>
+
+    <!--
+      Table with a filter: only migrate rows matching the WHERE clause.
+      Filters are applied on the source side, reducing data transfer volume.
+    -->
+    <table sourceName="orders" targetName="orders">
+      <filter>WHERE status != 'CANCELLED'</filter>
+    </table>
+
+    <!--
+      Tables with no column mappings or filters: all columns are transferred
+      with automatic name preservation and type mapping.
+    -->
+    <table sourceName="products" targetName="products" />
+    <table sourceName="categories" targetName="categories" />
+
+  </tables>
+
+</bani>

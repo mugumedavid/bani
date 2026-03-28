@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 import os
 from pathlib import Path
 from unittest.mock import MagicMock, patch
@@ -50,11 +51,31 @@ def sample_bdl_file(tmp_path: Path) -> Path:
     return bdl_file
 
 
+def test_run_help(runner: CliRunner) -> None:
+    """Test run command shows help."""
+    result = runner.invoke(app, ["run", "--help"])
+    assert result.exit_code == 0
+    assert "--dry-run" in result.stdout
+    assert "--tables" in result.stdout
+    assert "--parallel" in result.stdout
+    assert "--batch-size" in result.stdout
+    assert "--resume" in result.stdout
+
+
 def test_run_missing_file(runner: CliRunner) -> None:
     """Test run command with missing file."""
     result = runner.invoke(app, ["run", "nonexistent.xml"])
     assert result.exit_code != 0
     assert "not found" in result.stdout.lower()
+
+
+def test_run_missing_file_json(runner: CliRunner) -> None:
+    """Test run command with missing file in JSON mode."""
+    result = runner.invoke(app, ["--output", "json", "run", "nonexistent.xml"])
+    assert result.exit_code != 0
+    output = json.loads(result.stdout.strip())
+    assert output["status"] == "failed"
+    assert "not found" in output["error"]["message"].lower()
 
 
 def test_run_invalid_xml(runner: CliRunner, tmp_path: Path) -> None:
@@ -81,45 +102,24 @@ def test_run_dry_run(
     assert "dry run" in result.stdout.lower() or "validation" in result.stdout.lower()
 
 
-@patch("bani.cli.commands.run.MigrationOrchestrator")
-@patch("bani.cli.commands.run.parse")
-def test_run_with_mocked_orchestrator(
-    mock_parse: MagicMock,
-    mock_orchestrator_class: MagicMock,
-    runner: CliRunner,
-    sample_bdl_file: Path,
-) -> None:
-    """Test run command with mocked orchestrator."""
-    mock_project = MagicMock(spec=ProjectModel)
-    mock_parse.return_value = mock_project
-
-    mock_orchestrator = MagicMock()
-    mock_result = MagicMock()
-    mock_result.failed_tables = 0
-    mock_result.status.name = "COMPLETED"
-    mock_orchestrator.run.return_value = mock_result
-    mock_orchestrator_class.return_value = mock_orchestrator
-
-    result = runner.invoke(app, ["run", str(sample_bdl_file)])
-    # May fail on connector lookup, which is expected
-    assert "error" in result.stdout.lower() or result.exit_code in [0, 1]
-
-
 @patch("bani.cli.commands.run.validate_xml")
 @patch("bani.cli.commands.run.parse")
-def test_run_with_output_json(
+def test_run_dry_run_json(
     mock_parse: MagicMock,
     mock_validate: MagicMock,
     runner: CliRunner,
     sample_bdl_file: Path,
 ) -> None:
-    """Test run command with JSON output and dry-run."""
+    """Test run command with --dry-run flag in JSON mode."""
     mock_validate.return_value = []
     mock_parse.return_value = MagicMock(spec=ProjectModel)
     result = runner.invoke(
         app, ["--output", "json", "run", str(sample_bdl_file), "--dry-run"]
     )
     assert result.exit_code == 0
+    output = json.loads(result.stdout.strip())
+    assert output["status"] == "ok"
+    assert output["dry_run"] is True
 
 
 @patch("bani.cli.commands.run.validate_xml")

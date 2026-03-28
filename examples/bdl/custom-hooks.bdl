@@ -1,0 +1,204 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  custom-hooks.bdl — Pre/post migration hooks (SQL and shell)
+
+  This BDL file demonstrates the hook system, which allows running custom
+  SQL statements or shell commands at specific points in the migration lifecycle.
+
+  HOOK LIFECYCLE
+  ==============
+  Hooks are executed in this order:
+
+    1. before-migration hooks    (run once before any table is processed)
+    2. For each table:
+       a. before-table hooks     (run before this specific table)
+       b. Data transfer          (Bani copies rows)
+       c. after-table hooks      (run after this specific table)
+    3. after-migration hooks     (run once after all tables are processed)
+
+  HOOK ATTRIBUTES
+  ===============
+    event:     When the hook runs. Values:
+               "before-migration", "after-migration",
+               "before-table", "after-table"
+
+    type:      What kind of hook. Values:
+               "sql" — execute a SQL statement against a database
+               "shell" — execute a shell command on the host
+
+    target:    Which database to run SQL against (only for type="sql"). Values:
+               "source" — run against the source database
+               "target" — run against the target database
+
+    tableName: For "before-table" / "after-table" events, specifies which
+               table this hook applies to. If omitted, the hook applies to
+               every table.
+
+  HOOK BODY
+  =========
+  The text content of the <hook> element is the SQL statement or shell command.
+  For SQL hooks, the statement is executed directly (no parameterisation).
+  For shell hooks, the command is run via the system shell (sh -c on Unix).
+
+  ON FAILURE BEHAVIOUR
+  ====================
+  By default, a hook failure aborts the migration. This is the safe default —
+  if a pre-migration backup fails, you do not want to proceed. However, some
+  hooks (like notifications) are non-critical and should not block the migration.
+  Use the onFailure attribute to control this:
+    onFailure="abort"    — halt the migration (default)
+    onFailure="continue" — log the error and proceed
+
+  SECURITY NOTE: Shell hooks execute with the privileges of the Bani process.
+  Only use shell hooks in trusted environments. Bani does not sandbox hook
+  execution.
+-->
+<bani schemaVersion="1.0"
+      xmlns="https://bani.dev/bdl/1.0"
+      xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+      xsi:schemaLocation="https://bani.dev/bdl/1.0 bdl-1.0.xsd">
+
+  <project name="hooks-demo"
+           description="Migration with comprehensive pre/post hooks"
+           author="devops"
+           created="2026-03-27T16:00:00Z">
+    <tags>
+      <tag>hooks</tag>
+      <tag>automation</tag>
+    </tags>
+  </project>
+
+  <source connector="mssql">
+    <connection
+      host="localhost"
+      port="1433"
+      database="ERP_Production"
+      username="${env:MSSQL_USER}"
+      password="${env:MSSQL_PASS}"
+    />
+  </source>
+
+  <target connector="postgresql">
+    <connection
+      host="localhost"
+      port="5432"
+      database="analytics"
+      username="${env:PG_USER}"
+      password="${env:PG_PASS}"
+      sslMode="prefer"
+    />
+  </target>
+
+  <options>
+    <batchSize>100000</batchSize>
+    <parallelWorkers>4</parallelWorkers>
+    <memoryLimitMB>2048</memoryLimitMB>
+    <onError>log-and-continue</onError>
+    <createTargetSchema>true</createTargetSchema>
+    <transferIndexes>true</transferIndexes>
+    <transferForeignKeys>true</transferForeignKeys>
+  </options>
+
+  <tables mode="include">
+    <table sourceSchema="dbo" sourceName="Customers" targetName="customers" />
+    <table sourceSchema="dbo" sourceName="Orders" targetName="orders" />
+    <table sourceSchema="dbo" sourceName="Products" targetName="products" />
+  </tables>
+
+  <hooks>
+    <!--
+      BEFORE-MIGRATION HOOKS
+      ======================
+      These run once before any data transfer begins.
+    -->
+
+    <!--
+      Shell hook: Create a backup of the target database before overwriting.
+      onFailure is not set, so it defaults to "abort" — if the backup fails,
+      the migration does not proceed. This protects against data loss.
+    -->
+    <hook event="before-migration" type="shell">
+      pg_dump -h localhost -p 5432 -U ${PG_USER} -d analytics -F c -f /backups/analytics_pre_migration.dump
+    </hook>
+
+    <!--
+      SQL hook: Create the target schema if it does not exist.
+      Runs against the target (PostgreSQL) database.
+    -->
+    <hook event="before-migration" type="sql" target="target">
+      CREATE SCHEMA IF NOT EXISTS public;
+    </hook>
+
+    <!--
+      SQL hook: Disable triggers on the target to avoid side effects during
+      bulk data loading. Foreign key constraint checks and audit triggers can
+      slow down inserts significantly and may fire incorrectly during migration.
+    -->
+    <hook event="before-migration" type="sql" target="target">
+      SET session_replication_role = 'replica';
+    </hook>
+
+    <!--
+      AFTER-TABLE HOOKS
+      =================
+      These run after a specific table's data has been transferred.
+    -->
+
+    <!--
+      SQL hook: Create a custom index on the customers table after data load.
+      Indexes are best created after data loading for performance — building
+      an index on a populated table is faster than inserting into an indexed
+      table row by row.
+    -->
+    <hook event="after-table" tableName="customers" type="sql" target="target">
+      CREATE INDEX IF NOT EXISTS idx_customers_email ON customers (email);
+    </hook>
+
+    <!--
+      SQL hook: Refresh materialized views that depend on the orders table.
+    -->
+    <hook event="after-table" tableName="orders" type="sql" target="target">
+      REFRESH MATERIALIZED VIEW IF EXISTS orders_summary;
+    </hook>
+
+    <!--
+      AFTER-MIGRATION HOOKS
+      =====================
+      These run once after all tables have been transferred.
+    -->
+
+    <!--
+      SQL hook: Re-enable triggers after bulk loading is complete.
+    -->
+    <hook event="after-migration" type="sql" target="target">
+      SET session_replication_role = 'origin';
+    </hook>
+
+    <!--
+      SQL hook: Run VACUUM ANALYZE on the target database to update planner
+      statistics and reclaim dead tuple space. This ensures queries perform
+      well immediately after migration.
+    -->
+    <hook event="after-migration" type="sql" target="target">
+      VACUUM ANALYZE;
+    </hook>
+
+    <!--
+      Shell hook: Send a Slack notification when the migration completes.
+      onFailure="continue" means a notification failure does not mark the
+      migration as failed — the data transfer was already successful.
+    -->
+    <hook event="after-migration" type="shell" onFailure="continue">
+      curl -s -X POST https://hooks.slack.com/services/T00/B00/xxx -H 'Content-Type: application/json' -d '{"text":"ERP to Analytics migration completed successfully."}'
+    </hook>
+
+    <!--
+      Shell hook: Remove the pre-migration backup after successful completion.
+      onFailure="continue" so cleanup failures don't affect the overall result.
+    -->
+    <hook event="after-migration" type="shell" onFailure="continue">
+      rm -f /backups/analytics_pre_migration.dump
+    </hook>
+  </hooks>
+
+</bani>

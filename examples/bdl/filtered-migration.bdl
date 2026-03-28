@@ -1,0 +1,136 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  filtered-migration.bdl — Per-table WHERE filters
+
+  This BDL file demonstrates using the <filter> element to selectively migrate
+  subsets of data from each table. Filters are SQL WHERE clauses applied on the
+  source side during data extraction.
+
+  Common use cases for filtered migrations:
+
+    1. ACTIVE RECORDS ONLY: Skip soft-deleted or inactive rows that are no
+       longer needed in the target system.
+
+    2. DATE RANGE: Migrate only recent data (e.g., orders from the last year)
+       to keep the target database lean.
+
+    3. REGIONAL SUBSET: Migrate only data for a specific region, tenant, or
+       business unit.
+
+    4. TEST ENVIRONMENT: Create a target with a representative subset of
+       production data for testing.
+
+    5. COMPLIANCE: Exclude rows containing data subject to retention policies
+       or data residency requirements.
+
+  Filter syntax:
+    - The <filter> element contains a SQL WHERE clause including the WHERE keyword.
+    - The clause is appended to the SELECT query on the source, so it must use
+      source column names and source SQL dialect.
+    - Complex conditions with AND/OR are supported.
+    - Subqueries are supported if the source database allows them.
+-->
+<bani schemaVersion="1.0"
+      xmlns="https://bani.dev/bdl/1.0"
+      xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+      xsi:schemaLocation="https://bani.dev/bdl/1.0 bdl-1.0.xsd">
+
+  <project name="filtered-export"
+           description="Filtered migration of active data from production to analytics"
+           author="data-engineering"
+           created="2026-03-27T14:00:00Z">
+    <tags>
+      <tag>filtered</tag>
+      <tag>subset</tag>
+      <tag>analytics</tag>
+    </tags>
+  </project>
+
+  <source connector="postgresql">
+    <connection
+      host="localhost"
+      port="5432"
+      database="production"
+      username="${env:PG_SRC_USER}"
+      password="${env:PG_SRC_PASS}"
+      sslMode="prefer"
+    />
+  </source>
+
+  <target connector="postgresql">
+    <connection
+      host="localhost"
+      port="5433"
+      database="analytics"
+      username="${env:PG_TGT_USER}"
+      password="${env:PG_TGT_PASS}"
+      sslMode="prefer"
+    />
+  </target>
+
+  <options>
+    <batchSize>100000</batchSize>
+    <parallelWorkers>4</parallelWorkers>
+    <memoryLimitMB>2048</memoryLimitMB>
+    <onError>log-and-continue</onError>
+    <dropTargetTablesFirst>true</dropTargetTablesFirst>
+    <transferIndexes>true</transferIndexes>
+    <transferForeignKeys>false</transferForeignKeys>
+  </options>
+
+  <tables mode="include">
+
+    <!--
+      ACTIVE USERS ONLY
+      Filter out soft-deleted users and users who never completed signup.
+      The filter uses source column names and source SQL dialect.
+    -->
+    <table sourceSchema="public" sourceName="users" targetName="users">
+      <filter>WHERE is_active = true AND deleted_at IS NULL</filter>
+    </table>
+
+    <!--
+      RECENT ORDERS
+      Only migrate orders from the last 12 months. This dramatically reduces
+      data volume for analytics workloads that focus on recent trends.
+      The date expression uses PostgreSQL syntax since the source is PG.
+    -->
+    <table sourceSchema="public" sourceName="orders" targetName="orders">
+      <filter>WHERE created_at >= NOW() - INTERVAL '12 months'</filter>
+    </table>
+
+    <!--
+      COMPLETED ORDER ITEMS
+      Only items belonging to completed orders. Uses a subquery to join
+      against the orders table and filter by status.
+    -->
+    <table sourceSchema="public" sourceName="order_items" targetName="order_items">
+      <filter>WHERE order_id IN (SELECT id FROM public.orders WHERE status = 'completed' AND created_at >= NOW() - INTERVAL '12 months')</filter>
+    </table>
+
+    <!--
+      PUBLISHED PRODUCTS ONLY
+      Skip draft and archived products.
+    -->
+    <table sourceSchema="public" sourceName="products" targetName="products">
+      <filter>WHERE status = 'published'</filter>
+    </table>
+
+    <!--
+      ALL CATEGORIES (no filter)
+      Reference tables are usually small enough to migrate in full.
+      No <filter> element means all rows are transferred.
+    -->
+    <table sourceSchema="public" sourceName="categories" targetName="categories" />
+
+    <!--
+      REGIONAL SUBSET
+      Only US-region customer addresses for a region-specific analytics system.
+    -->
+    <table sourceSchema="public" sourceName="addresses" targetName="addresses">
+      <filter>WHERE country_code = 'US'</filter>
+    </table>
+
+  </tables>
+
+</bani>

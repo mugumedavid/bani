@@ -1,9 +1,10 @@
-"""Schema inspect command — introspects database schemas (Section 10.3)."""
+"""Schema commands — introspect database schemas (Section 10.1, 18.2)."""
 
 from __future__ import annotations
 
 import json
 import os
+import sys
 from typing import Any, cast
 
 import click
@@ -19,14 +20,26 @@ from bani.domain.project import ConnectionConfig
 schema = typer.Typer(help="Schema inspection commands")
 
 
+def _get_ctx() -> dict[str, Any]:
+    """Retrieve context from the Typer/Click context chain."""
+    try:
+        ctx_obj = click.get_current_context().obj
+    except RuntimeError:
+        ctx_obj = None
+
+    if ctx_obj is None:
+        ctx_obj = {"output": "human", "console": Console()}
+    return ctx_obj
+
+
 @schema.command()
 def inspect(
     connector: str = typer.Option(..., help="Connector name (e.g., postgresql, mysql)"),
-    host: str = typer.Option(..., help="Database host"),
-    port: int = typer.Option(..., help="Database port"),
+    host: str = typer.Option("", help="Database host"),
+    port: int = typer.Option(0, help="Database port"),
     database: str = typer.Option(..., help="Database name"),
-    username_env: str = typer.Option(..., help="Environment variable for username"),
-    password_env: str = typer.Option(..., help="Environment variable for password"),
+    username_env: str = typer.Option("", "--username-env", help="Environment variable for username"),
+    password_env: str = typer.Option("", "--password-env", help="Environment variable for password"),
     schema_filter: str | None = typer.Option(
         None, "--schema", help="Filter by schema name (optional)"
     ),
@@ -49,31 +62,48 @@ def inspect(
         schema_filter: Optional schema filter.
         table_filter: Optional table filter.
     """
-    try:
-        ctx_obj = click.get_current_context().obj
-    except RuntimeError:
-        ctx_obj = None
-
-    if ctx_obj is None:
-        ctx_obj = {"output": "human", "console": Console()}
-
+    ctx_obj = _get_ctx()
     output_format = ctx_obj.get("output", "human")
     console: Console = ctx_obj.get("console", Console())
 
     # Get credentials from environment
-    try:
+    if username_env:
         username = os.environ.get(username_env)
-        password = os.environ.get(password_env)
-
         if not username:
-            console.print(f"[red]Error:[/red] {username_env} not set")
+            if output_format == "json":
+                sys.stdout.write(
+                    json.dumps(
+                        {
+                            "command": "schema_inspect",
+                            "status": "error",
+                            "error": f"Environment variable {username_env} not set",
+                        }
+                    )
+                    + "\n"
+                )
+                sys.stdout.flush()
+            else:
+                console.print(f"[red]Error:[/red] {username_env} not set")
             raise typer.Exit(1)
+
+    if password_env:
+        password = os.environ.get(password_env)
         if not password:
-            console.print(f"[red]Error:[/red] {password_env} not set")
+            if output_format == "json":
+                sys.stdout.write(
+                    json.dumps(
+                        {
+                            "command": "schema_inspect",
+                            "status": "error",
+                            "error": f"Environment variable {password_env} not set",
+                        }
+                    )
+                    + "\n"
+                )
+                sys.stdout.flush()
+            else:
+                console.print(f"[red]Error:[/red] {password_env} not set")
             raise typer.Exit(1)
-    except Exception as e:
-        format_error(console, e)
-        raise typer.Exit(1) from e
 
     # Create and connect to source
     try:
@@ -123,18 +153,36 @@ def inspect(
                             "name": col.name,
                             "type": col.data_type,
                             "nullable": col.nullable,
-                            "default": col.default_value,
+                            "auto_increment": col.is_auto_increment,
                         }
                         for col in table.columns
+                    ]
+                    indexes_data = [
+                        {
+                            "name": idx.name,
+                            "columns": list(idx.columns),
+                            "unique": idx.is_unique,
+                        }
+                        for idx in table.indexes
+                    ]
+                    fk_data = [
+                        {
+                            "name": fk.name,
+                            "columns": list(fk.source_columns),
+                            "referenced_table": fk.referenced_table,
+                            "referenced_columns": list(fk.referenced_columns),
+                        }
+                        for fk in table.foreign_keys
                     ]
                     tables_data.append(
                         {
                             "schema": table.schema_name,
-                            "table": table.table_name,
-                            "columns": columns_data,
+                            "name": table.table_name,
                             "row_count_estimate": table.row_count_estimate,
-                            "indexes": len(table.indexes),
-                            "foreign_keys": len(table.foreign_keys),
+                            "columns": columns_data,
+                            "primary_key": list(table.primary_key),
+                            "indexes": indexes_data,
+                            "foreign_keys": fk_data,
                         }
                     )
                 result = {
@@ -142,7 +190,8 @@ def inspect(
                     "connector": connector,
                     "tables": tables_data,
                 }
-                console.print(json.dumps(result))
+                sys.stdout.write(json.dumps(result) + "\n")
+                sys.stdout.flush()
             else:
                 # Cast for display purposes
                 format_schema_table(console, schema_obj)  # type: ignore[arg-type,unused-ignore]
@@ -154,5 +203,18 @@ def inspect(
         format_error(console, e)
         raise typer.Exit(1) from e
     except Exception as e:
-        console.print(f"[bold red]Error:[/bold red] {e}")
+        if output_format == "json":
+            sys.stdout.write(
+                json.dumps(
+                    {
+                        "command": "schema_inspect",
+                        "status": "error",
+                        "error": str(e),
+                    }
+                )
+                + "\n"
+            )
+            sys.stdout.flush()
+        else:
+            console.print(f"[bold red]Error:[/bold red] {e}")
         raise typer.Exit(1) from e

@@ -12,9 +12,15 @@ import typer
 from rich.console import Console
 
 from bani import __version__
+from bani.cli.commands.connectors import connectors_app
+from bani.cli.commands.init import init as init_command
+from bani.cli.commands.mcp_cmd import app as mcp_app
+from bani.cli.commands.preview import preview as preview_command
 from bani.cli.commands.run import run as run_command
+from bani.cli.commands.schedule import schedule as schedule_command
 from bani.cli.commands.schema import schema as schema_group
 from bani.cli.commands.validate import validate as validate_command
+from bani.cli.commands.version import version as version_command
 
 # Global console instance
 console = Console()
@@ -77,7 +83,13 @@ def _app_main(
 # Register subcommands
 app.command()(run_command)
 app.command()(validate_command)
+app.command()(preview_command)
+app.command(name="init")(init_command)
+app.command(name="schedule")(schedule_command)
+app.command(name="version")(version_command)
 app.add_typer(schema_group, name="schema")
+app.add_typer(connectors_app, name="connectors")
+app.add_typer(mcp_app, name="mcp")
 
 
 def main() -> None:
