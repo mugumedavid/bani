@@ -90,7 +90,7 @@ class TestShellExecution:
     def test_success(self, runner: HookRunner) -> None:
         hook = HookConfig(
             name="echo-test",
-            phase="pre",
+            event="pre",
             command="echo hello",
             timeout_seconds=10,
             on_failure="abort",
@@ -108,7 +108,7 @@ class TestShellExecution:
     def test_failure_nonzero_exit(self, runner: HookRunner) -> None:
         hook = HookConfig(
             name="fail-cmd",
-            phase="pre",
+            event="pre",
             command="exit 1",
             timeout_seconds=10,
             on_failure="warn",
@@ -122,7 +122,7 @@ class TestShellExecution:
     def test_timeout(self, runner: HookRunner) -> None:
         hook = HookConfig(
             name="slow-cmd",
-            phase="pre",
+            event="pre",
             command="sleep 30",
             timeout_seconds=1,
             on_failure="warn",
@@ -136,7 +136,7 @@ class TestShellExecution:
     def test_captures_stderr(self, runner: HookRunner) -> None:
         hook = HookConfig(
             name="stderr-cmd",
-            phase="pre",
+            event="pre",
             command="echo oops >&2 && exit 1",
             timeout_seconds=10,
             on_failure="warn",
@@ -163,7 +163,7 @@ class TestSqlExecution:
     ) -> None:
         hook = HookConfig(
             name="vacuum",
-            phase="post",
+            event="post",
             command="sql:VACUUM ANALYZE",
             timeout_seconds=60,
             on_failure="abort",
@@ -185,7 +185,7 @@ class TestSqlExecution:
 
         hook = HookConfig(
             name="bad-sql",
-            phase="post",
+            event="post",
             command="sql:DROP TABLE important",
             timeout_seconds=60,
             on_failure="warn",
@@ -199,7 +199,7 @@ class TestSqlExecution:
     def test_sql_no_executor(self, runner: HookRunner) -> None:
         hook = HookConfig(
             name="orphan-sql",
-            phase="pre",
+            event="pre",
             command="sql:SELECT 1",
             timeout_seconds=10,
             on_failure="warn",
@@ -222,7 +222,7 @@ class TestOnFailure:
     def test_abort_raises(self, runner: HookRunner) -> None:
         hook = HookConfig(
             name="critical",
-            phase="pre",
+            event="pre",
             command="exit 1",
             timeout_seconds=10,
             on_failure="abort",
@@ -238,14 +238,14 @@ class TestOnFailure:
         hooks = (
             HookConfig(
                 name="optional",
-                phase="pre",
+                event="pre",
                 command="exit 1",
                 timeout_seconds=10,
                 on_failure="warn",
             ),
             HookConfig(
                 name="second",
-                phase="pre",
+                event="pre",
                 command="echo ok",
                 timeout_seconds=10,
                 on_failure="abort",
@@ -262,7 +262,7 @@ class TestOnFailure:
     def test_abort_on_timeout(self, runner: HookRunner) -> None:
         hook = HookConfig(
             name="slow-critical",
-            phase="pre",
+            event="pre",
             command="sleep 30",
             timeout_seconds=1,
             on_failure="abort",
@@ -278,14 +278,14 @@ class TestOnFailure:
         hooks = (
             HookConfig(
                 name="ok-hook",
-                phase="pre",
+                event="pre",
                 command="echo fine",
                 timeout_seconds=10,
                 on_failure="abort",
             ),
             HookConfig(
                 name="bad-hook",
-                phase="pre",
+                event="pre",
                 command="exit 1",
                 timeout_seconds=10,
                 on_failure="abort",
@@ -306,7 +306,7 @@ class TestVariableSubstitution:
     def test_single_variable(self, runner: HookRunner) -> None:
         hook = HookConfig(
             name="greet",
-            phase="pre",
+            event="pre",
             command="echo {project_name}",
             timeout_seconds=10,
             on_failure="abort",
@@ -323,7 +323,7 @@ class TestVariableSubstitution:
     def test_multiple_variables(self, runner: HookRunner) -> None:
         hook = HookConfig(
             name="info",
-            phase="pre",
+            event="pre",
             command="echo {source_dialect} to {target_dialect} tables={table_count}",
             timeout_seconds=10,
             on_failure="abort",
@@ -346,7 +346,7 @@ class TestVariableSubstitution:
     def test_unknown_variables_left_asis(self, runner: HookRunner) -> None:
         hook = HookConfig(
             name="partial",
-            phase="pre",
+            event="pre",
             command="echo {project_name} {unknown_var}",
             timeout_seconds=10,
             on_failure="abort",
@@ -363,7 +363,7 @@ class TestVariableSubstitution:
     def test_no_context(self, runner: HookRunner) -> None:
         hook = HookConfig(
             name="nocontext",
-            phase="pre",
+            event="pre",
             command="echo hello",
             timeout_seconds=10,
             on_failure="abort",
@@ -378,7 +378,7 @@ class TestVariableSubstitution:
     ) -> None:
         hook = HookConfig(
             name="alter-hook",
-            phase="post",
+            event="post",
             command="sql:ALTER TABLE {project_name}.foo DISABLE TRIGGER ALL",
             timeout_seconds=60,
             on_failure="abort",
@@ -405,14 +405,14 @@ class TestPhaseFiltering:
         hooks = (
             HookConfig(
                 name="pre-hook",
-                phase="pre",
+                event="pre",
                 command="echo pre",
                 timeout_seconds=10,
                 on_failure="abort",
             ),
             HookConfig(
                 name="post-hook",
-                phase="post",
+                event="post",
                 command="echo post",
                 timeout_seconds=10,
                 on_failure="abort",
@@ -428,14 +428,14 @@ class TestPhaseFiltering:
         hooks = (
             HookConfig(
                 name="pre-hook",
-                phase="pre",
+                event="pre",
                 command="echo pre",
                 timeout_seconds=10,
                 on_failure="abort",
             ),
             HookConfig(
                 name="post-hook",
-                phase="post",
+                event="post",
                 command="echo post",
                 timeout_seconds=10,
                 on_failure="abort",
@@ -451,7 +451,7 @@ class TestPhaseFiltering:
         hooks = (
             HookConfig(
                 name="pre-hook",
-                phase="pre",
+                event="pre",
                 command="echo pre",
                 timeout_seconds=10,
                 on_failure="abort",
@@ -468,14 +468,14 @@ class TestPhaseFiltering:
         hooks = (
             HookConfig(
                 name="first",
-                phase="pre",
+                event="pre",
                 command="echo 1",
                 timeout_seconds=10,
                 on_failure="abort",
             ),
             HookConfig(
                 name="second",
-                phase="pre",
+                event="pre",
                 command="echo 2",
                 timeout_seconds=10,
                 on_failure="abort",

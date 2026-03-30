@@ -103,8 +103,16 @@ function LoginPage() {
 export default function App() {
   const { isAuthenticated, login } = useAuth();
 
-  // Restore token from sessionStorage on mount
+  // Auto-login from URL ?token= param or restore from sessionStorage
   useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    const urlToken = params.get('token');
+    if (urlToken) {
+      login(urlToken);
+      // Clean the token from the URL so it's not bookmarked/shared
+      window.history.replaceState({}, '', window.location.pathname);
+      return;
+    }
     const stored = sessionStorage.getItem('bani_auth_token');
     if (stored) {
       login(stored);

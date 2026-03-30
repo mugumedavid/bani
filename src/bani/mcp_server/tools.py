@@ -270,9 +270,25 @@ def handle_run(params: dict[str, Any]) -> ToolResult:
             )
 
         dry_run = bool(params.get("dry_run", False))
+        resume = bool(params.get("resume", False))
+        table_names = params.get("table_names")
 
         # Parse BDL
         project = parse(str(bdl_content))
+
+        # Apply table filter if provided
+        if isinstance(table_names, list) and table_names:
+            from bani.domain.project import TableMapping
+
+            mappings = []
+            for name in table_names:
+                parts = str(name).split(".", 1)
+                if len(parts) == 2:
+                    mappings.append(TableMapping(source_schema=parts[0], source_table=parts[1]))
+                else:
+                    mappings.append(TableMapping(source_schema="", source_table=str(name)))
+            object.__setattr__(project, "table_mappings", tuple(mappings))
+
         bani_project = BaniProject(project)
 
         # Validate
@@ -294,7 +310,7 @@ def handle_run(params: dict[str, Any]) -> ToolResult:
             )
 
         # Execute
-        result = bani_project.run()
+        result = bani_project.run(resume=resume)
         return _json_result(
             {
                 "success": True,
@@ -422,38 +438,28 @@ def handle_generate_bdl(params: dict[str, Any]) -> ToolResult:
         tables_xml = ""
         if table_list:
             table_entries = "\n".join(
-                f'      <table sourceSchema="public" sourceTable="{t}" '
-                f'targetSchema="public" targetTable="{t}" />'
+                f'    <table sourceName="{t}"/>'
                 for t in table_list
             )
-            tables_xml = f"\n    <tables>\n{table_entries}\n    </tables>"
+            tables_xml = f"\n  <tables>\n{table_entries}\n  </tables>"
 
         bdl_xml = f"""<?xml version="1.0" encoding="UTF-8"?>
-<baniProject xmlns="https://bani.dev/bdl/1.0"
-             name="{source_connector}-to-{target_connector}-migration">
-    <description>Migration from {source_connector} to {target_connector}</description>
-
-    <source dialect="{source_connector}">
-        <host>localhost</host>
-        <port>0</port>
-        <database>source_db</database>
-        <usernameEnv>SOURCE_USER</usernameEnv>
-        <passwordEnv>SOURCE_PASS</passwordEnv>
-    </source>
-
-    <target dialect="{target_connector}">
-        <host>localhost</host>
-        <port>0</port>
-        <database>target_db</database>
-        <usernameEnv>TARGET_USER</usernameEnv>
-        <passwordEnv>TARGET_PASS</passwordEnv>
-    </target>{tables_xml}
-
-    <options>
-        <batchSize>100000</batchSize>
-        <parallelWorkers>4</parallelWorkers>
-    </options>
-</baniProject>
+<bani schemaVersion="1.0">
+  <project name="{source_connector}-to-{target_connector}"
+           description="Migration from {source_connector} to {target_connector}"/>
+  <source connector="{source_connector}">
+    <connection host="localhost" port="0" database="source_db"
+                username="${{env:SOURCE_USER}}" password="${{env:SOURCE_PASS}}" />
+  </source>
+  <target connector="{target_connector}">
+    <connection host="localhost" port="0" database="target_db"
+                username="${{env:TARGET_USER}}" password="${{env:TARGET_PASS}}" />
+  </target>{tables_xml}
+  <options>
+    <batchSize>100000</batchSize>
+    <parallelWorkers>4</parallelWorkers>
+  </options>
+</bani>
 """
         return _text_result(bdl_xml.strip())
     except Exception as exc:
@@ -568,6 +574,11 @@ TOOL_DEFINITIONS: tuple[ToolDefinition, ...] = (
                     "type": "boolean",
                     "description": "Resume from last checkpoint.",
                     "default": False,
+                },
+                "table_names": {
+                    "type": "array",
+                    "items": {"type": "string"},
+                    "description": "Optional list of table names to migrate (schema.table or table). Omit for all tables.",
                 },
             },
             "required": ["bdl_content"],

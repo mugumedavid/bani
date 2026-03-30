@@ -509,24 +509,29 @@ def _parse_table_json(data: dict[str, Any]) -> TableMapping:
 def _parse_hook(elem: ET.Element) -> HookConfig:
     """Parse a hook element.
 
-    Supports two formats:
+    Current format::
 
-    Legacy (inline text + ``event`` attribute)::
-
-        <hook name="backup" event="pre" timeout="300" onFailure="abort">
-            pg_dump {source_database}
+        <hook event="before-migration" type="sql" target="target">
+            CREATE SCHEMA IF NOT EXISTS public;
         </hook>
 
-    Extended (child elements + ``phase`` attribute)::
-
-        <hook name="backup" phase="pre" onFailure="abort">
-            <command>pg_dump {source_database}</command>
-            <timeout>300</timeout>
+        <hook event="after-table" tableName="customers" type="sql" target="target">
+            CREATE INDEX idx ON customers (email);
         </hook>
+
+        <hook event="after-migration" type="shell" onFailure="continue">
+            curl -s -X POST https://hooks.slack.com/...
+        </hook>
+
+    Legacy formats with ``phase`` or ``<command>`` child elements are
+    also accepted.
     """
     name = elem.get("name", "")
-    # Accept both "phase" and "event" attributes for backward compat.
-    phase = elem.get("phase", "") or elem.get("event", "")
+    # Accept both "event" and "phase" for backward compat.
+    event = elem.get("event", "") or elem.get("phase", "")
+    hook_type = elem.get("type", "shell")
+    target = elem.get("target", "")
+    table_name = elem.get("tableName", "")
     on_failure = elem.get("onFailure", "abort")
 
     # Try child <command> element first, fall back to inline text.
@@ -549,8 +554,11 @@ def _parse_hook(elem: ET.Element) -> HookConfig:
 
     return HookConfig(
         name=name,
-        phase=phase,
+        event=event,
         command=command,
+        hook_type=hook_type,
+        target=target,
+        table_name=table_name,
         timeout_seconds=timeout,
         on_failure=on_failure,
     )
@@ -559,13 +567,16 @@ def _parse_hook(elem: ET.Element) -> HookConfig:
 def _parse_hook_json(data: dict[str, Any]) -> HookConfig:
     """Parse hook from JSON data.
 
-    Accepts both ``"phase"`` and ``"event"`` keys for backward compat.
+    Accepts both ``"event"`` and ``"phase"`` keys for backward compat.
     """
-    phase = data.get("phase", "") or data.get("event", "")
+    event = data.get("event", "") or data.get("phase", "")
     return HookConfig(
         name=data.get("name", ""),
-        phase=phase,
+        event=event,
         command=data.get("command", ""),
+        hook_type=data.get("type", "shell"),
+        target=data.get("target", ""),
+        table_name=data.get("tableName", ""),
         timeout_seconds=data.get("timeout", 300),
         on_failure=data.get("onFailure", "abort"),
     )

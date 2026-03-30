@@ -81,9 +81,16 @@ def serialize(project: ProjectModel) -> str:
         hooks_elem = ET.SubElement(root, "hooks")
         for hook in project.hooks:
             hook_elem = ET.SubElement(hooks_elem, "hook")
-            hook_elem.set("name", hook.name)
-            hook_elem.set("event", hook.phase)
-            hook_elem.set("type", hook.command.split()[0].lower())
+            if hook.name:
+                hook_elem.set("name", hook.name)
+            hook_elem.set("event", hook.event)
+            hook_elem.set("type", hook.hook_type)
+            if hook.target:
+                hook_elem.set("target", hook.target)
+            if hook.table_name:
+                hook_elem.set("tableName", hook.table_name)
+            if hook.on_failure != "abort":
+                hook_elem.set("onFailure", hook.on_failure)
             hook_elem.text = hook.command
 
     # Schedule

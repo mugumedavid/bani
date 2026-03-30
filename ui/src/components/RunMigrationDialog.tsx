@@ -74,6 +74,12 @@ export function RunMigrationDialog({
     try {
       const result = await startMigrationRun(projectName, { resume, dry_run: dryRun });
       if ('dry_run' in result && result.dry_run) {
+        // Check for dry run error (missing/ambiguous tables)
+        if ('error' in result && (result as any).status === 'error') {
+          setStartError((result as any).error);
+          setStarting(false);
+          return;
+        }
         // Show dry run results in the dialog
         setDryRunResult(result as DryRunResult);
         setStarting(false);

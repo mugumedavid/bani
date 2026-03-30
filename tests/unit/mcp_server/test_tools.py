@@ -520,7 +520,8 @@ class TestGenerateBdl:
         text = result.content[0]["text"]
         assert "postgresql" in text
         assert "mysql" in text
-        assert "<baniProject" in text
+        assert "<bani" in text
+        assert 'connector="postgresql"' in text
         assert "SOURCE_USER" in text
 
     def test_with_tables(self) -> None:
@@ -534,8 +535,8 @@ class TestGenerateBdl:
         )
 
         text = result.content[0]["text"]
-        assert 'sourceTable="users"' in text
-        assert 'sourceTable="orders"' in text
+        assert 'sourceName="users"' in text
+        assert 'sourceName="orders"' in text
 
     def test_missing_params(self) -> None:
         """Missing connector params returns error."""

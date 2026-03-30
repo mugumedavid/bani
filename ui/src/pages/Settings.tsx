@@ -74,6 +74,9 @@ export function Settings() {
         </p>
       </div>
 
+      {/* Access Token */}
+      <AccessToken />
+
       <form
         onSubmit={(e) => {
           e.preventDefault();
@@ -303,5 +306,47 @@ function ClearRunHistoryButton() {
         </span>
       )}
     </div>
+  );
+}
+
+function AccessToken() {
+  const token = sessionStorage.getItem('bani_auth_token') ?? '';
+  const [copied, setCopied] = useState(false);
+
+  const shareUrl = `${window.location.origin}?token=${token}`;
+
+  function copyToClipboard(text: string) {
+    navigator.clipboard.writeText(text).then(() => {
+      setCopied(true);
+      setTimeout(() => setCopied(false), 2000);
+    });
+  }
+
+  return (
+    <section className="bg-white rounded-xl border border-gray-200 p-6 mb-8 max-w-2xl">
+      <h2 className="text-lg font-semibold text-gray-900 mb-1">Access</h2>
+      <p className="text-sm text-gray-500 mb-4">
+        Share this link to give others access to this Bani instance.
+      </p>
+      <div className="flex items-center gap-2">
+        <input
+          type="text"
+          readOnly
+          value={shareUrl}
+          className="flex-1 rounded-md border border-gray-300 px-3 py-2 text-sm font-mono bg-gray-50 text-gray-600"
+          onClick={(e) => (e.target as HTMLInputElement).select()}
+        />
+        <button
+          type="button"
+          onClick={() => copyToClipboard(shareUrl)}
+          className="px-3 py-2 border border-gray-300 text-gray-600 text-sm font-medium rounded-lg hover:bg-gray-50 transition-colors"
+        >
+          {copied ? 'Copied' : 'Copy'}
+        </button>
+      </div>
+      <p className="mt-2 text-xs text-gray-400">
+        Anyone with this link can access the dashboard. The token changes each time the server restarts.
+      </p>
+    </section>
   );
 }

@@ -206,6 +206,26 @@ def run(
             console.print("[bold green]✓ Dry run passed (validation only)[/bold green]")
         raise typer.Exit(0)
 
+    # Apply CLI overrides to project options
+    from dataclasses import replace as dc_replace
+    from bani.domain.project import ProjectOptions, TableMapping
+
+    opts = project.options or ProjectOptions()
+    opts = dc_replace(opts, batch_size=batch_size, parallel_workers=parallel)
+    object.__setattr__(project, "options", opts)
+
+    # Apply table filter from CLI --tables option
+    if tables:
+        table_names = [t.strip() for t in tables.split(",") if t.strip()]
+        mappings = []
+        for name in table_names:
+            parts = name.split(".", 1)
+            if len(parts) == 2:
+                mappings.append(TableMapping(source_schema=parts[0], source_table=parts[1]))
+            else:
+                mappings.append(TableMapping(source_schema="", source_table=name))
+        object.__setattr__(project, "table_mappings", tuple(mappings))
+
     # Set up progress tracker
     tracker = ProgressTracker()
 
@@ -220,15 +240,17 @@ def run(
         assert source_cfg is not None
         assert target_cfg is not None
 
+        pool_size = project.options.parallel_workers if project.options else 4
+
         # Create source connector
         source_connector_class = ConnectorRegistry.get(source_cfg.dialect)
         source = cast(type[SourceConnector], source_connector_class)()
-        source.connect(source_cfg)
+        source.connect(source_cfg, pool_size=pool_size)
 
         # Create sink connector
         sink_connector_class = ConnectorRegistry.get(target_cfg.dialect)
         sink = cast(type[SinkConnector], sink_connector_class)()
-        sink.connect(target_cfg)
+        sink.connect(target_cfg, pool_size=pool_size)
 
         try:
             orchestrator = MigrationOrchestrator(

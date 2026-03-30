@@ -50,9 +50,11 @@ class BaniUIServer:
             port: Listen port.
             projects_dir: Directory for storing BDL project files.
         """
+        import os
+
         self.host = host
         self.port = port
-        self.auth_token = secrets.token_urlsafe(32)
+        self.auth_token = os.environ.get("BANI_AUTH_TOKEN") or secrets.token_urlsafe(32)
         self.projects_dir = projects_dir
         self.app = self._create_app()
 
@@ -184,10 +186,24 @@ class BaniUIServer:
     def start(self) -> None:
         """Start the server.
 
-        Prints the URL and auth token to stdout, then blocks on
-        ``uvicorn.run()``.
+        Prints the URL and auth token to stdout.  On localhost, opens the
+        browser automatically with the token in the URL so the user
+        doesn't need to copy-paste it.
         """
-        print(f"Bani UI: http://{self.host}:{self.port}")  # noqa: T201
+        url = f"http://{self.host}:{self.port}"
+        token_url = f"{url}?token={self.auth_token}"
+
+        print(f"Bani UI: {url}")  # noqa: T201
         print(f"Auth token: {self.auth_token}")  # noqa: T201
-        print(f"API docs: http://{self.host}:{self.port}/docs")  # noqa: T201
+        print(f"API docs: {url}/docs")  # noqa: T201
+
+        # Auto-open browser on localhost
+        if self.host in ("127.0.0.1", "localhost", "0.0.0.0"):
+            import webbrowser
+
+            # Delay slightly so the server is ready when the browser opens
+            timer = threading.Timer(1.5, webbrowser.open, args=[token_url])
+            timer.daemon = True
+            timer.start()
+
         uvicorn.run(self.app, host=self.host, port=self.port)

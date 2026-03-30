@@ -96,7 +96,7 @@ class HookRunner:
         ctx = context or {}
         results: list[HookResult] = []
 
-        matching = [h for h in hooks if h.phase == phase]
+        matching = [h for h in hooks if h.event == phase]
 
         for hook in matching:
             command = self._substitute_variables(hook.command, ctx)

@@ -10,7 +10,6 @@ import time
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from dataclasses import dataclass
 from datetime import datetime, timezone
-from typing import TYPE_CHECKING
 
 import pyarrow as pa  # type: ignore[import-untyped]
 
@@ -23,10 +22,7 @@ from bani.connectors.base import SinkConnector, SourceConnector
 from bani.domain.dependency import DependencyResolver
 from bani.domain.errors import BaniError, WriteError
 from bani.domain.project import ErrorHandlingStrategy, ProjectModel, ProjectOptions
-from bani.domain.schema import ForeignKeyDefinition, TableDefinition
-
-if TYPE_CHECKING:
-    from bani.domain.schema import DatabaseSchema
+from bani.domain.schema import DatabaseSchema, ForeignKeyDefinition, TableDefinition
 
 logger = logging.getLogger(__name__)
 
@@ -141,6 +137,10 @@ class MigrationOrchestrator:
             # Introspect source schema
             source_schema = self.source.introspect_schema()
 
+            # Filter tables if table_mappings are specified
+            if self.project.table_mappings:
+                source_schema = self._filter_tables(source_schema)
+
             # Store original source schema names for read_table calls
             self._source_schema_map: dict[str, str] = {
                 t.table_name: t.schema_name for t in source_schema.tables
@@ -204,7 +204,6 @@ class MigrationOrchestrator:
                         t for t in source_schema.tables
                         if t.fully_qualified_name not in completed
                     ]
-                    from bani.domain.schema import DatabaseSchema
                     incomplete_schema = DatabaseSchema(
                         tables=tuple(incomplete_tables),
                         source_dialect=source_schema.source_dialect,
@@ -457,6 +456,87 @@ class MigrationOrchestrator:
         """
         return getattr(self, '_source_schema_map', {}).get(
             table.table_name, table.schema_name
+        )
+
+    def _filter_tables(self, schema: DatabaseSchema) -> DatabaseSchema:
+        """Filter introspected schema to only include tables from table_mappings.
+
+        Foreign keys referencing tables outside the filtered set are
+        stripped so that the dependency resolver doesn't choke on
+        missing nodes.
+
+        Raises:
+            BaniError: If any requested table is not found in the source.
+        """
+        from dataclasses import replace as dc_replace
+
+        # Build lookups: FQN → table, and name → list of tables (for ambiguity check)
+        by_fqn: dict[str, TableDefinition] = {}
+        by_name: dict[str, list[TableDefinition]] = {}
+        for t in schema.tables:
+            by_fqn[f"{t.schema_name}.{t.table_name}"] = t
+            by_name.setdefault(t.table_name, []).append(t)
+
+        selected: list[TableDefinition] = []
+        missing: list[str] = []
+        ambiguous: list[str] = []
+
+        for mapping in self.project.table_mappings:
+            if mapping.source_schema:
+                fqn = f"{mapping.source_schema}.{mapping.source_table}"
+                table = by_fqn.get(fqn)
+            else:
+                # Name-only lookup — check for ambiguity
+                matches = by_name.get(mapping.source_table, [])
+                if len(matches) > 1:
+                    schemas = [t.schema_name for t in matches]
+                    ambiguous.append(
+                        f"{mapping.source_table} (exists in: "
+                        f"{', '.join(schemas)})"
+                    )
+                    continue
+                table = matches[0] if matches else None
+
+            if table is None:
+                missing.append(
+                    f"{mapping.source_schema}.{mapping.source_table}"
+                    if mapping.source_schema
+                    else mapping.source_table
+                )
+            elif table not in selected:
+                selected.append(table)
+
+        if ambiguous:
+            raise BaniError(
+                "Ambiguous table names — specify the schema: "
+                + "; ".join(ambiguous)
+            )
+
+        if missing:
+            raise BaniError(
+                f"Tables not found in source: {', '.join(missing)}"
+            )
+
+        # Strip FKs that reference tables not in the selected set
+        selected_names = {t.table_name for t in selected}
+        cleaned: list[TableDefinition] = []
+        for t in selected:
+            kept_fks = tuple(
+                fk for fk in t.foreign_keys
+                if fk.referenced_table.split(".")[-1] in selected_names
+            )
+            if kept_fks != t.foreign_keys:
+                t = dc_replace(t, foreign_keys=kept_fks)
+            cleaned.append(t)
+
+        logger.info(
+            "Table filter: %d of %d tables selected",
+            len(cleaned),
+            len(schema.tables),
+        )
+        return DatabaseSchema(
+            tables=tuple(cleaned),
+            source_dialect=schema.source_dialect,
         )
 
     def _should_chunk(self, table: TableDefinition) -> bool:

@@ -186,15 +186,23 @@ class HookConfig:
 
     Attributes:
         name: Human-readable hook name.
-        phase: When the hook runs (``"pre"`` or ``"post"``).
-        command: Shell command to execute.
+        event: When the hook runs (e.g. ``"before-migration"``,
+            ``"after-migration"``, ``"before-table"``, ``"after-table"``).
+        command: Command text (SQL statement or shell command).
+        hook_type: ``"sql"`` or ``"shell"``.
+        target: For SQL hooks, which connection to run against:
+            ``"source"`` or ``"target"``.
+        table_name: For per-table hooks, the table this applies to.
         timeout_seconds: Maximum execution time before the hook is killed.
-        on_failure: Action on failure: ``"abort"`` or ``"warn"``.
+        on_failure: Action on failure: ``"abort"`` or ``"continue"``.
     """
 
     name: str
-    phase: str
+    event: str
     command: str
+    hook_type: str = "shell"
+    target: str = ""
+    table_name: str = ""
     timeout_seconds: int = 300
     on_failure: str = "abort"
 

@@ -278,6 +278,62 @@ async def _dry_run(project_path: Any, project_name: str) -> Any:
 
             try:
                 schema = source.introspect_schema()
+
+                # Filter to listed tables if any
+                if project.table_mappings:
+                    from dataclasses import replace as dc_replace
+                    by_fqn = {
+                        f"{t.schema_name}.{t.table_name}": t
+                        for t in schema.tables
+                    }
+                    by_name: dict[str, list[Any]] = {}
+                    for t in schema.tables:
+                        by_name.setdefault(t.table_name, []).append(t)
+
+                    filtered = []
+                    missing = []
+                    ambiguous = []
+                    for m in project.table_mappings:
+                        if m.source_schema:
+                            t = by_fqn.get(f"{m.source_schema}.{m.source_table}")
+                        else:
+                            matches = by_name.get(m.source_table, [])
+                            if len(matches) > 1:
+                                ambiguous.append(
+                                    f"{m.source_table} (in: "
+                                    f"{', '.join(x.schema_name for x in matches)})"
+                                )
+                                continue
+                            t = matches[0] if matches else None
+                        if t is None:
+                            missing.append(
+                                f"{m.source_schema}.{m.source_table}"
+                                if m.source_schema else m.source_table
+                            )
+                        elif t not in filtered:
+                            filtered.append(t)
+
+                    if ambiguous:
+                        return {
+                            "status": "error",
+                            "dry_run": True,
+                            "error": "Ambiguous table names — specify the schema: "
+                            + "; ".join(ambiguous),
+                        }
+                    if missing:
+                        return {
+                            "status": "error",
+                            "dry_run": True,
+                            "error": "Tables not found in source: "
+                            + ", ".join(missing),
+                        }
+
+                    from bani.domain.schema import DatabaseSchema
+                    schema = DatabaseSchema(
+                        tables=tuple(filtered),
+                        source_dialect=schema.source_dialect,
+                    )
+
                 tables = [
                     {
                         "name": t.fully_qualified_name,

@@ -128,12 +128,22 @@ function parseBdlToForm(xml: string): FormState {
       target = parseConnectionLegacy(doc.querySelector('connection[type="target"]'));
     }
 
+    // Parse table list from <tables><table sourceName="..."/></tables>
+    const tableEls = doc.querySelectorAll('tables > table');
+    const tableNames = Array.from(tableEls)
+      .map((el) => {
+        const schema = el.getAttribute('sourceSchema') ?? '';
+        const name = el.getAttribute('sourceName') ?? '';
+        return schema ? `${schema}.${name}` : name;
+      })
+      .filter(Boolean);
+
     return {
       name: projectEl?.getAttribute('name') ?? '',
       description: projectEl?.getAttribute('description') ?? '',
       source,
       target,
-      tables: '',
+      tables: tableNames.join('\n'),
       schedule: scheduleEl?.textContent?.trim() ?? '',
     };
   } catch {
@@ -164,6 +174,28 @@ function formToBdlXml(form: FormState): string {
   <target connector="${t.connector}">
     <connection host="${t.host}" port="${t.port}" database="${t.database}" username="${credRef(t.username_env, t.username_is_env)}" password="${credRef(t.password_env, t.password_is_env)}" />
   </target>`;
+
+  // Table filter
+  const tableLines = form.tables
+    .split('\n')
+    .map((l) => l.trim())
+    .filter(Boolean);
+  if (tableLines.length > 0) {
+    xml += `
+  <tables>`;
+    for (const line of tableLines) {
+      const parts = line.split('.');
+      if (parts.length >= 2) {
+        xml += `
+    <table sourceSchema="${parts.slice(0, -1).join('.')}" sourceName="${parts[parts.length - 1]}"/>`;
+      } else {
+        xml += `
+    <table sourceName="${line}"/>`;
+      }
+    }
+    xml += `
+  </tables>`;
+  }
 
   if (form.schedule) {
     xml += `

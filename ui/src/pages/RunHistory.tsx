@@ -1,5 +1,8 @@
+import { useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { getRunHistory, type RunLogEntry } from '../api/client';
+
+const PAGE_SIZE = 15;
 
 const statusColors: Record<string, string> = {
   completed: 'bg-green-100 text-green-700',
@@ -19,10 +22,16 @@ function formatDuration(seconds: number): string {
 }
 
 export function RunHistory() {
+  const [page, setPage] = useState(0);
+
   const { data: runs, isLoading, error } = useQuery<RunLogEntry[]>({
     queryKey: ['runs'],
-    queryFn: () => getRunHistory(50),
+    queryFn: () => getRunHistory(1000),
   });
+
+  const totalRuns = runs?.length ?? 0;
+  const totalPages = Math.max(1, Math.ceil(totalRuns / PAGE_SIZE));
+  const pagedRuns = runs?.slice(page * PAGE_SIZE, (page + 1) * PAGE_SIZE) ?? [];
 
   return (
     <div>
@@ -67,7 +76,7 @@ export function RunHistory() {
         </div>
       )}
 
-      {runs && runs.length > 0 && (
+      {pagedRuns.length > 0 && (
         <div className="bg-white rounded-xl border border-gray-200 overflow-hidden">
           <div className="overflow-x-auto">
             <table className="w-full text-sm">
@@ -94,7 +103,7 @@ export function RunHistory() {
                 </tr>
               </thead>
               <tbody className="divide-y divide-gray-100">
-                {runs.map((run, i) => (
+                {pagedRuns.map((run, i) => (
                   <tr key={`${run.project_name}-${run.started_at}-${i}`} className="hover:bg-gray-50">
                     <td className="px-6 py-4">
                       <span className="font-medium text-gray-900">
@@ -130,6 +139,34 @@ export function RunHistory() {
               </tbody>
             </table>
           </div>
+
+          {/* Pagination */}
+          {totalPages > 1 && (
+            <div className="flex items-center justify-between px-6 py-3 border-t border-gray-200 bg-gray-50">
+              <p className="text-xs text-gray-500">
+                {page * PAGE_SIZE + 1}–{Math.min((page + 1) * PAGE_SIZE, totalRuns)} of {totalRuns} runs
+              </p>
+              <div className="flex items-center gap-2">
+                <button
+                  onClick={() => setPage((p) => Math.max(0, p - 1))}
+                  disabled={page === 0}
+                  className="px-3 py-1 text-xs font-medium rounded border border-gray-300 text-gray-600 hover:bg-white disabled:opacity-30 disabled:cursor-not-allowed"
+                >
+                  Prev
+                </button>
+                <span className="text-xs text-gray-500">
+                  {page + 1} / {totalPages}
+                </span>
+                <button
+                  onClick={() => setPage((p) => Math.min(totalPages - 1, p + 1))}
+                  disabled={page >= totalPages - 1}
+                  className="px-3 py-1 text-xs font-medium rounded border border-gray-300 text-gray-600 hover:bg-white disabled:opacity-30 disabled:cursor-not-allowed"
+                >
+                  Next
+                </button>
+              </div>
+            </div>
+          )}
         </div>
       )}
     </div>
