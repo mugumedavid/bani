@@ -87,6 +87,15 @@ class MigrationOrchestrator:
         self.options = project.options or ProjectOptions()
         self._checkpoint = checkpoint or CheckpointManager()
         self._quarantine = quarantine or QuarantineManager()
+        self._cancel_event: threading.Event | None = None
+
+    def set_cancel_event(self, event: threading.Event) -> None:
+        """Register a threading.Event that signals cancellation."""
+        self._cancel_event = event
+
+    @property
+    def _cancelled(self) -> bool:
+        return self._cancel_event is not None and self._cancel_event.is_set()
 
     def execute(self, resume: bool = False) -> MigrationResult:
         """Execute the full migration from schema creation through data transfer.
@@ -155,6 +164,16 @@ class MigrationOrchestrator:
             ordered_tables = resolution.ordered_tables
             deferred_fks = resolution.deferred_fks
 
+            # Emit introspection results with post-remap names
+            # so they match the table names used in transfer events
+            self.tracker.introspection_complete(
+                tables=tuple(
+                    (t.fully_qualified_name, t.row_count_estimate)
+                    for t in source_schema.tables
+                ),
+                source_dialect=source_schema.source_dialect,
+            )
+
             # Create or validate checkpoint
             if not resume:
                 checkpoint.create(self.project.name, project_hash, ordered_tables)
@@ -169,13 +188,39 @@ class MigrationOrchestrator:
                 table_count=len(ordered_tables),
             )
 
-            # Create target schema if requested (skip on resume)
-            if self.options.create_target_schema and not resume:
-                self._create_target_schema(source_schema)
+            # Create target schema
+            schema_failures: dict[str, str] = {}
+            if self.options.create_target_schema:
+                if resume:
+                    # On resume: only recreate tables that were NOT completed.
+                    # This wipes partial data from interrupted tables.
+                    completed = {
+                        t for t in ordered_tables
+                        if checkpoint.is_table_completed(
+                            self.project.name, t
+                        )
+                    }
+                    incomplete_tables = [
+                        t for t in source_schema.tables
+                        if t.fully_qualified_name not in completed
+                    ]
+                    from bani.domain.schema import DatabaseSchema
+                    incomplete_schema = DatabaseSchema(
+                        tables=tuple(incomplete_tables),
+                        source_dialect=source_schema.source_dialect,
+                    )
+                    schema_failures = self._create_target_schema(
+                        incomplete_schema
+                    )
+                else:
+                    schema_failures = self._create_target_schema(
+                        source_schema
+                    )
 
-            # Transfer table data in parallel
+            # Transfer table data in parallel (skip tables that failed creation)
             transfer_results = self._transfer_tables_parallel(
-                source_schema, ordered_tables, resume=resume
+                source_schema, ordered_tables, resume=resume,
+                skip_tables=schema_failures,
             )
 
             # Aggregate results
@@ -190,8 +235,16 @@ class MigrationOrchestrator:
                         errors.append(result.error)
 
             # Create indexes and foreign keys after data transfer
-            if self.options.transfer_indexes or self.options.transfer_foreign_keys:
+            if (
+                not self._cancelled
+                and (self.options.transfer_indexes
+                     or self.options.transfer_foreign_keys)
+            ):
+                self.tracker.phase_change("indexes")
                 self._create_indexes_and_fks(source_schema, deferred_fks)
+
+            if self._cancelled:
+                errors.append("Migration cancelled by user")
 
         except BaniError as e:
             errors.append(str(e))
@@ -209,6 +262,13 @@ class MigrationOrchestrator:
             total_rows_written=total_rows_written,
             duration_seconds=duration,
         )
+
+        # Clear checkpoint on full success (no use keeping it)
+        if tables_failed == 0:
+            try:
+                checkpoint.clear(self.project.name)
+            except Exception:
+                logger.debug("Failed to clear checkpoint", exc_info=True)
 
         # Append to run history log
         try:
@@ -239,12 +299,19 @@ class MigrationOrchestrator:
             errors=tuple(errors),
         )
 
-    def _create_target_schema(self, source_schema: DatabaseSchema) -> None:
+    def _create_target_schema(
+        self, source_schema: DatabaseSchema
+    ) -> dict[str, str]:
         """Create tables in the target database.
 
         Args:
             source_schema: The introspected source schema.
+
+        Returns:
+            Dict mapping failed table FQN to a brief error reason.
         """
+        failed: dict[str, str] = {}
+
         for table in source_schema.tables:
             # Drop if requested
             if self.options.drop_target_tables_first:
@@ -258,16 +325,26 @@ class MigrationOrchestrator:
             # Create new table
             try:
                 self.sink.create_table(table)
-            except Exception:
-                if self.options.on_error == ErrorHandlingStrategy.ABORT:
-                    raise
-                # Log and continue on LOG_AND_CONTINUE
+            except Exception as exc:
+                reason = str(exc).split("\n")[0][:200]
+                failed[table.fully_qualified_name] = reason
+                logger.warning(
+                    "Failed to create table %s: %s",
+                    table.fully_qualified_name,
+                    reason,
+                )
+                self.tracker.table_create_failed(
+                    table.fully_qualified_name, reason
+                )
+
+        return failed
 
     def _transfer_tables_parallel(
         self,
         source_schema: DatabaseSchema,
         ordered_tables: tuple[str, ...],
         resume: bool = False,
+        skip_tables: dict[str, str] | None = None,
     ) -> list[_TableTransferResult]:
         """Transfer tables in parallel with concurrency limit.
 
@@ -276,6 +353,8 @@ class MigrationOrchestrator:
             ordered_tables: Tables in dependency-safe order.
             resume: If ``True``, skip tables that are already completed
                 in the checkpoint.
+            skip_tables: Dict of table FQN → reason for tables that
+                should be skipped (e.g. failed schema creation).
 
         Returns:
             List of transfer results for each table.
@@ -284,11 +363,28 @@ class MigrationOrchestrator:
         max_workers = self.options.parallel_workers
         checkpoint = self._checkpoint
         project_name = self.project.name
+        _skip = skip_tables or {}
 
         with ThreadPoolExecutor(max_workers=max_workers) as executor:
             futures = {}
 
             for table_name in ordered_tables:
+                # Skip tables whose schema creation failed
+                if table_name in _skip:
+                    reason = _skip[table_name]
+                    logger.info(
+                        "Skipping table '%s' — schema creation failed: %s",
+                        table_name,
+                        reason,
+                    )
+                    results.append(
+                        _TableTransferResult(
+                            table_name, False, 0, 0,
+                            f"Schema creation failed: {reason}",
+                        )
+                    )
+                    continue
+
                 # Skip completed tables when resuming
                 if resume and checkpoint.is_table_completed(project_name, table_name):
                     logger.info(
@@ -317,6 +413,10 @@ class MigrationOrchestrator:
                         )
                     )
                     continue
+
+                # Check for cancellation before submitting more tables
+                if self._cancelled:
+                    break
 
                 # Mark as in_progress in checkpoint
                 checkpoint.update_table_status(project_name, table_name, "in_progress")
@@ -760,6 +860,14 @@ class MigrationOrchestrator:
 
             # Writer runs in the current thread
             while True:
+                # Check for cancellation between batches
+                if self._cancelled:
+                    error_msg = "Migration cancelled by user"
+                    return _TableTransferResult(
+                        table_name, False, total_rows_read, total_rows_written,
+                        error_msg,
+                    )
+
                 batch = batch_queue.get()
                 if batch is None:
                     break

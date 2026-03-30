@@ -44,18 +44,31 @@ class MigrateRequest(BaseModel):
 
     project_name: str = Field(..., description="Name of the project (.bdl file)")
     resume: bool = Field(default=False, description="Resume from checkpoint")
+    dry_run: bool = Field(default=False, description="Dry run (validate only, no data transfer)")
+
+
+class MigrateStarted(BaseModel):
+    """Response body for a migration that was accepted and started."""
+
+    status: str = "started"
+    project_name: str
 
 
 class MigrateStatus(BaseModel):
     """Current migration status."""
 
     running: bool = False
+    phase: str | None = None
     project_name: str | None = None
     tables_completed: int = 0
     tables_failed: int = 0
+    total_tables: int = 0
     total_rows_read: int = 0
     total_rows_written: int = 0
     error: str | None = None
+    current_table: str | None = None
+    table_failures: list[str] = Field(default_factory=list)
+    elapsed_seconds: int = 0
 
 
 class MigrateResult(BaseModel):
@@ -76,13 +89,27 @@ class MigrateResult(BaseModel):
 class SchemaInspectRequest(BaseModel):
     """Request body for schema inspection."""
 
-    dialect: str = Field(..., description="Database dialect (e.g. postgresql, mysql)")
+    dialect: str = Field(
+        default="",
+        description="Database dialect (e.g. postgresql, mysql)",
+    )
+    connector: str = Field(
+        default="",
+        description="Alias for dialect (frontend compatibility)",
+    )
     host: str = Field(default="", description="Database host")
     port: int = Field(default=0, description="Database port")
     database: str = Field(default="", description="Database name")
-    username_env: str = Field(default="", description="Env var for username")
-    password_env: str = Field(default="", description="Env var for password")
+    username_env: str = Field(default="", description="Env var or username")
+    password_env: str = Field(default="", description="Env var or password")
+    username_is_env: bool = Field(default=False, description="If true, username_env is an env var name")
+    password_is_env: bool = Field(default=False, description="If true, password_env is an env var name")
     extra: dict[str, str] = Field(default_factory=dict, description="Extra params")
+
+    @property
+    def resolved_dialect(self) -> str:
+        """Return dialect, falling back to connector field."""
+        return self.dialect or self.connector
 
 
 class ColumnInfo(BaseModel):
@@ -153,3 +180,9 @@ class SettingsModel(BaseModel):
     projects_dir: str = "~/.bani/projects"
     default_host: str = "127.0.0.1"
     default_port: int = 8910
+    batch_size: int = 100_000
+    max_workers: int = 4
+    memory_limit_mb: int = 2048
+    log_level: str = "INFO"
+    checkpoint_enabled: bool = True
+    checkpoint_dir: str = ".bani/checkpoints"

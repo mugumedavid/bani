@@ -42,22 +42,56 @@ async def inspect_schema(body: SchemaInspectRequest) -> SchemaInspectResponse:
     """
 
     def _inspect() -> SchemaInspectResponse:
+        import os
+
+        # Ensure MSSQL connector is imported so ODBCSYSINI gets set
+        # before pyodbc tries to find the ODBC driver.
+        import bani.connectors.mssql.connector  # noqa: F401
         from bani.sdk.schema_inspector import SchemaInspector
 
+        # Handle credential modes:
+        # - Env var mode: pass the env var name directly
+        # - Direct mode: set as temp env var, pass the temp name
+        if body.username_is_env:
+            user_env = body.username_env
+        else:
+            user_env = "_BANI_UI_USER"
+            if body.username_env:
+                os.environ[user_env] = body.username_env
+
+        if body.password_is_env:
+            pass_env = body.password_env
+        else:
+            pass_env = "_BANI_UI_PASS"
+            if body.password_env:
+                os.environ[pass_env] = body.password_env
+
         try:
+            import logging as _log
+            _log.getLogger("bani.ui").info(
+                "Schema inspect: dialect=%s host=%s port=%s ODBCSYSINI=%s",
+                body.resolved_dialect, body.host, body.port,
+                os.environ.get("ODBCSYSINI", "NOT SET"),
+            )
             db_schema = SchemaInspector.inspect(
-                dialect=body.dialect,
+                dialect=body.resolved_dialect,
                 host=body.host,
                 port=body.port,
                 database=body.database,
-                username_env=body.username_env,
-                password_env=body.password_env,
+                username_env=user_env,
+                password_env=pass_env,
                 **body.extra,
             )
         except ValueError as exc:
             raise HTTPException(status_code=400, detail=str(exc)) from exc
         except Exception as exc:
             raise HTTPException(status_code=500, detail=str(exc)) from exc
+        finally:
+            # Only clean up temp env vars (not real ones)
+            if not body.username_is_env:
+                os.environ.pop("_BANI_UI_USER", None)
+            if not body.password_is_env:
+                os.environ.pop("_BANI_UI_PASS", None)
 
         tables: list[TableInfo] = []
         for t in db_schema.tables:

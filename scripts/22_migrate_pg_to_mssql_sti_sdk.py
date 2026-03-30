@@ -21,6 +21,7 @@ from bani.application.progress import (
     MigrationComplete,
     MigrationStarted,
     TableComplete,
+    TableCreateFailed,
     TableStarted,
 )
 from bani.sdk.bani import BaniProject
@@ -32,6 +33,8 @@ def _on_progress(event: Any) -> None:
     if isinstance(event, MigrationStarted):
         print(f"\n[migration] {event.source_dialect} -> {event.target_dialect}, "
               f"{event.table_count} tables")
+    elif isinstance(event, TableCreateFailed):
+        print(f"  [FAILED] {event.table_name}: {event.reason}")
     elif isinstance(event, TableStarted):
         est = f" (~{event.estimated_rows} rows)" if event.estimated_rows else ""
         print(f"  [table] {event.table_name} started{est}")

@@ -30,6 +30,12 @@ async function request<T>(
   });
 
   if (!response.ok) {
+    if (response.status === 401) {
+      // Token invalid or missing — clear it so login page shows
+      sessionStorage.removeItem('bani_auth_token');
+      window.location.reload();
+      throw new Error('Session expired. Please log in again.');
+    }
     const body = await response.text();
     throw new Error(`API error ${response.status}: ${body}`);
   }
@@ -43,12 +49,58 @@ async function request<T>(
 
 // --- Projects ---
 
-export function getProjects(): Promise<Project[]> {
-  return request<Project[]>('/api/projects');
+export interface ProjectSummary {
+  name: string;
+  path: string;
+}
+
+export function getProjects(): Promise<ProjectSummary[]> {
+  return request<ProjectSummary[]>('/api/projects');
 }
 
 export function getProject(id: string): Promise<Project> {
   return request<Project>(`/api/projects/${id}`);
+}
+
+/**
+ * Generate the credential BDL element.
+ *
+ * - Env var mode: `${env:VAR_NAME}` — resolved at runtime.
+ * - Direct mode: generate a descriptive env var name like
+ *   `BANI_<ROLE>_USER` so the BDL never contains raw secrets.
+ *   The user must set these env vars before running the migration.
+ */
+function credentialRef(
+  value: string,
+  isEnv: boolean,
+  role: string,
+  field: 'USER' | 'PASS',
+): string {
+  if (isEnv) return `\${env:${value}}`;
+  // Direct value — generate an env var name to store it under
+  const envName = `BANI_${role.toUpperCase()}_${field}`;
+  return `\${env:${envName}}`;
+}
+
+function projectToBdlXml(
+  project: Omit<Project, 'id' | 'status' | 'created_at' | 'updated_at'>,
+): string {
+  const s = project.source;
+  const t = project.target;
+  const srcUser = credentialRef(s?.username_env ?? '', s?.username_is_env ?? false, 'SRC', 'USER');
+  const srcPass = credentialRef(s?.password_env ?? '', s?.password_is_env ?? false, 'SRC', 'PASS');
+  const tgtUser = credentialRef(t?.username_env ?? '', t?.username_is_env ?? false, 'TGT', 'USER');
+  const tgtPass = credentialRef(t?.password_env ?? '', t?.password_is_env ?? false, 'TGT', 'PASS');
+  return `<?xml version="1.0" encoding="UTF-8"?>
+<bani schemaVersion="1.0">
+  <project name="${project.name}" description="${project.description ?? ''}"/>
+  <source connector="${s?.connector ?? ''}">
+    <connection host="${s?.host ?? ''}" port="${s?.port ?? 0}" database="${s?.database ?? ''}" username="${srcUser}" password="${srcPass}" />
+  </source>
+  <target connector="${t?.connector ?? ''}">
+    <connection host="${t?.host ?? ''}" port="${t?.port ?? 0}" database="${t?.database ?? ''}" username="${tgtUser}" password="${tgtPass}" />
+  </target>
+</bani>`;
 }
 
 export function createProject(
@@ -56,7 +108,10 @@ export function createProject(
 ): Promise<Project> {
   return request<Project>('/api/projects', {
     method: 'POST',
-    body: JSON.stringify(project),
+    body: JSON.stringify({
+      name: project.name,
+      content: projectToBdlXml(project),
+    }),
   });
 }
 
@@ -84,6 +139,47 @@ export function startMigration(projectId: string): Promise<{ run_id: string }> {
   });
 }
 
+export function validateMigration(
+  projectName: string,
+): Promise<{ source: string; target: string }> {
+  return request<{ source: string; target: string }>('/api/migrate/validate', {
+    method: 'POST',
+    body: JSON.stringify({ project_name: projectName }),
+  });
+}
+
+export interface DryRunTable {
+  name: string;
+  columns: number;
+  estimated_rows: number | null;
+}
+
+export interface DryRunResult {
+  status: string;
+  dry_run: true;
+  project_name: string;
+  source_dialect: string;
+  target_dialect: string;
+  table_count: number;
+  total_estimated_rows: number;
+  tables: DryRunTable[];
+}
+
+export interface MigrationStartResult {
+  status: string;
+  project_name: string;
+}
+
+export function startMigrationRun(
+  projectName: string,
+  options?: { resume?: boolean; dry_run?: boolean },
+): Promise<MigrationStartResult | DryRunResult> {
+  return request<MigrationStartResult | DryRunResult>('/api/migrate', {
+    method: 'POST',
+    body: JSON.stringify({ project_name: projectName, ...options }),
+  });
+}
+
 export function getMigrationStatus(runId: string): Promise<MigrationRun> {
   return request<MigrationRun>(`/api/runs/${runId}`);
 }
@@ -92,14 +188,131 @@ export function getMigrationRuns(): Promise<MigrationRun[]> {
   return request<MigrationRun[]>('/api/runs');
 }
 
+export interface RunSummary {
+  total_runs: number;
+  last_run: RunLogEntry | null;
+  lifetime_rows: number;
+}
+
+export interface RunLogEntry {
+  project_name: string;
+  started_at: string;
+  finished_at: string;
+  status: string;
+  tables_completed: number;
+  tables_failed: number;
+  total_rows: number;
+  duration_seconds: number;
+  error: string | null;
+}
+
+export function getRunHistory(_n: number = 50): Promise<RunLogEntry[]> {
+  return request<RunLogEntry[]>('/api/runs');
+}
+
+export function getRunSummary(): Promise<RunSummary> {
+  return request<RunSummary>('/api/runs/summary');
+}
+
+export function clearRunHistory(): Promise<{ detail: string }> {
+  return request<{ detail: string }>('/api/runs', { method: 'DELETE' });
+}
+
+export interface MigrateStatusResponse {
+  running: boolean;
+  phase: string | null;
+  project_name: string | null;
+  tables_completed: number;
+  tables_failed: number;
+  total_tables: number;
+  total_rows_read: number;
+  total_rows_written: number;
+  error: string | null;
+  current_table: string | null;
+  table_failures: string[];
+  elapsed_seconds: number;
+}
+
+export function getMigrateStatus(): Promise<MigrateStatusResponse> {
+  return request<MigrateStatusResponse>('/api/migrate/status');
+}
+
+export interface CheckpointInfo {
+  exists: boolean;
+  tables_completed?: number;
+  tables_total?: number;
+  created_at?: string;
+}
+
+export function getCheckpoint(projectName: string): Promise<CheckpointInfo> {
+  return request<CheckpointInfo>(`/api/migrate/checkpoint/${encodeURIComponent(projectName)}`);
+}
+
+export function deleteCheckpoint(projectName: string): Promise<{ detail: string }> {
+  return request<{ detail: string }>(`/api/migrate/checkpoint/${encodeURIComponent(projectName)}`, {
+    method: 'DELETE',
+  });
+}
+
 // --- Schema Inspection ---
 
-export function inspectSchema(
+interface ApiTable {
+  schema_name: string;
+  table_name: string;
+  columns: Array<{
+    name: string;
+    data_type: string;
+    nullable: boolean;
+    default_value: string | null;
+    is_auto_increment: boolean;
+    arrow_type_str: string | null;
+  }>;
+  primary_key: string[];
+  indexes: Array<{ name: string; columns: string[]; is_unique: boolean }>;
+  foreign_keys: Array<{
+    name: string;
+    source_table: string;
+    source_columns: string[];
+    referenced_table: string;
+    referenced_columns: string[];
+  }>;
+  row_count_estimate: number | null;
+}
+
+export async function inspectSchema(
   connection: ConnectionConfig,
 ): Promise<Table[]> {
-  return request<Table[]>('/api/schema/inspect', {
-    method: 'POST',
-    body: JSON.stringify(connection),
+  const result = await request<{ source_dialect: string; tables: ApiTable[] }>(
+    '/api/schema/inspect',
+    {
+      method: 'POST',
+      body: JSON.stringify(connection),
+    },
+  );
+  // Transform API shape to frontend Table shape
+  return result.tables.map((t) => {
+    const pkSet = new Set(t.primary_key);
+    return {
+      schema_name: t.schema_name,
+      name: t.table_name,
+      columns: t.columns.map((c) => ({
+        name: c.name,
+        data_type: c.data_type,
+        nullable: c.nullable,
+        default_value: c.default_value,
+        is_primary_key: pkSet.has(c.name),
+        arrow_type_str: c.arrow_type_str,
+      })),
+      indexes: t.indexes,
+      foreign_keys: t.foreign_keys.map((fk) => ({
+        name: fk.name,
+        columns: fk.source_columns,
+        referenced_table: fk.referenced_table,
+        referenced_schema: null,
+        referenced_columns: fk.referenced_columns,
+      })),
+      row_count: t.row_count_estimate,
+    };
   });
 }
 

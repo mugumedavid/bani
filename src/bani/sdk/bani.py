@@ -54,11 +54,25 @@ class BaniProject:
 
         return (len(errors) == 0, errors)
 
-    def run(self, on_progress: Callable[[Any], None] | None = None) -> MigrationResult:
+    def run(
+        self,
+        on_progress: Callable[[Any], None] | None = None,
+        resume: bool = False,
+        cancel_event: Any | None = None,
+        checkpoint: Any | None = None,
+    ) -> MigrationResult:
         """Execute the migration.
 
         Args:
             on_progress: Optional callback for progress updates.
+            resume: If ``True``, resume from the last checkpoint.
+                Completed tables are skipped; in-progress/failed
+                tables are dropped and re-transferred.
+            cancel_event: Optional ``threading.Event`` that signals
+                cancellation. The orchestrator checks it between
+                batches and stops gracefully when set.
+            checkpoint: Optional ``CheckpointManager`` instance. If
+                ``None``, a default one is created.
 
         Returns:
             A MigrationResult with execution summary.
@@ -103,10 +117,15 @@ class BaniProject:
                 tracker = ProgressTracker()
                 tracker.add_listener(on_progress)
 
+            kwargs: dict[str, Any] = {"tracker": tracker}
+            if checkpoint is not None:
+                kwargs["checkpoint"] = checkpoint
             orchestrator = MigrationOrchestrator(
-                self._project, source, sink, tracker=tracker
+                self._project, source, sink, **kwargs
             )
-            return orchestrator.execute()
+            if cancel_event is not None:
+                orchestrator.set_cancel_event(cancel_event)
+            return orchestrator.execute(resume=resume)
         finally:
             source.disconnect()
             sink.disconnect()

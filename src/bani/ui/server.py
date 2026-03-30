@@ -2,25 +2,27 @@
 
 Creates a FastAPI server that:
 1. Serves REST endpoints calling the same application layer as CLI/SDK/MCP.
-2. Streams real-time progress via WebSocket.
+2. Streams real-time progress via Server-Sent Events (SSE).
 3. Serves the built React SPA as static files from ``ui/dist/``.
 4. Requires a local auth token for all API endpoints.
 """
 
 from __future__ import annotations
 
-import asyncio
 import logging
 import secrets
+import threading
+from collections.abc import AsyncIterator
+from contextlib import asynccontextmanager
 from pathlib import Path
 from typing import Any
 
 import uvicorn
-from fastapi import FastAPI, WebSocket
+from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 
-from bani.ui.websocket import progress_websocket_handler
+from bani.ui.sse import SSEBroadcaster, sse_progress_endpoint
 
 logger = logging.getLogger(__name__)
 
@@ -60,10 +62,21 @@ class BaniUIServer:
         Returns:
             A fully-configured FastAPI instance.
         """
+        @asynccontextmanager
+        async def lifespan(app: FastAPI) -> AsyncIterator[None]:
+            yield
+            # Shutdown: cancel any running migration gracefully
+            state = app.state.migration_state
+            cancel_event = state.get("cancel_event")
+            if isinstance(cancel_event, threading.Event) and state.get("running"):
+                logger.info("Server shutting down — cancelling running migration")
+                cancel_event.set()
+
         app = FastAPI(
             title="Bani",
             version="0.1.0",
             description="Bani Web UI backend",
+            lifespan=lifespan,
         )
 
         # Store auth token and shared state on app.state
@@ -78,9 +91,7 @@ class BaniUIServer:
             "total_rows_written": 0,
             "error": None,
         }
-        app.state.ws_queue: asyncio.Queue[dict[str, Any]] = asyncio.Queue(
-            maxsize=1000
-        )
+        app.state.sse_broadcaster = SSEBroadcaster()
 
         # CORS — allow same-origin only for production,
         # but allow all origins for local development.
@@ -106,11 +117,8 @@ class BaniUIServer:
         app.include_router(connectors.router, prefix="/api")
         app.include_router(settings.router, prefix="/api")
 
-        # WebSocket endpoint for progress streaming
-        @app.websocket("/ws/progress")
-        async def progress_ws(websocket: WebSocket) -> None:
-            ws_queue: asyncio.Queue[dict[str, Any]] = app.state.ws_queue
-            await progress_websocket_handler(websocket, ws_queue)
+        # SSE endpoint for real-time progress streaming
+        app.get("/api/migrate/progress")(sse_progress_endpoint)
 
         # Serve static files (React SPA) — mounted LAST so API routes
         # take precedence.  If the dist directory doesn't exist, we skip
@@ -128,19 +136,39 @@ class BaniUIServer:
         Args:
             app: The FastAPI application.
         """
-        # Look for ui/dist/ relative to the bani package
+        # Look for ui/dist/ in several locations:
+        # 1. Repo root: <repo>/ui/dist/ (development)
+        # 2. Relative to package: <package>/dist/ (bundled install)
         package_dir = Path(__file__).resolve().parent
-        dist_dir = package_dir / "dist"
+        repo_root = package_dir.parent.parent.parent  # src/bani/ui -> repo root
+        candidates = [
+            repo_root / "ui" / "dist",   # development layout
+            package_dir / "dist",         # bundled layout
+        ]
+        dist_dir = next((d for d in candidates if d.is_dir()), None)
 
-        if dist_dir.is_dir():
+        if dist_dir is not None:
             from fastapi.staticfiles import StaticFiles
+            from fastapi.responses import FileResponse
 
-            app.mount("/", StaticFiles(directory=str(dist_dir), html=True))
+            index_html = dist_dir / "index.html"
+
+            # Serve static assets (JS, CSS, images) from dist/assets/
+            app.mount(
+                "/assets",
+                StaticFiles(directory=str(dist_dir / "assets")),
+                name="assets",
+            )
+
+            # Catch-all: serve index.html for any non-API path so that
+            # React Router handles client-side routing on refresh.
+            @app.get("/{full_path:path}")
+            async def spa_fallback(full_path: str) -> FileResponse:
+                return FileResponse(str(index_html))
+
             logger.info("Serving SPA from %s", dist_dir)
         else:
-            logger.info(
-                "No ui/dist/ directory found at %s — SPA not served", dist_dir
-            )
+            logger.info("No ui/dist/ directory found — SPA not served")
 
             # Provide a fallback root handler so the user gets a helpful message
             @app.get("/")

@@ -59,6 +59,32 @@ class TableComplete:
 
 
 @dataclass(frozen=True)
+class IntrospectionComplete:
+    """Emitted after schema introspection finishes."""
+
+    timestamp: datetime
+    tables: tuple[tuple[str, int | None], ...]
+    source_dialect: str
+
+
+@dataclass(frozen=True)
+class PhaseChange:
+    """Emitted when the migration enters a new phase."""
+
+    timestamp: datetime
+    phase: str
+
+
+@dataclass(frozen=True)
+class TableCreateFailed:
+    """Emitted when a table fails to be created on the target."""
+
+    timestamp: datetime
+    table_name: str
+    reason: str
+
+
+@dataclass(frozen=True)
 class MigrationComplete:
     """Emitted when the entire migration completes."""
 
@@ -72,7 +98,14 @@ class MigrationComplete:
 
 
 ProgressEvent = (
-    MigrationStarted | TableStarted | BatchComplete | TableComplete | MigrationComplete
+    MigrationStarted
+    | IntrospectionComplete
+    | PhaseChange
+    | TableStarted
+    | BatchComplete
+    | TableComplete
+    | TableCreateFailed
+    | MigrationComplete
 )
 
 
@@ -131,6 +164,36 @@ class ProgressTracker:
             source_dialect=source_dialect,
             target_dialect=target_dialect,
             table_count=table_count,
+        )
+        self.emit(event)
+
+    def phase_change(self, phase: str) -> None:
+        """Emit a phase change event."""
+        event = PhaseChange(
+            timestamp=datetime.now(timezone.utc),
+            phase=phase,
+        )
+        self.emit(event)
+
+    def introspection_complete(
+        self,
+        tables: tuple[tuple[str, int | None], ...],
+        source_dialect: str,
+    ) -> None:
+        """Emit an introspection complete event."""
+        event = IntrospectionComplete(
+            timestamp=datetime.now(timezone.utc),
+            tables=tables,
+            source_dialect=source_dialect,
+        )
+        self.emit(event)
+
+    def table_create_failed(self, table_name: str, reason: str) -> None:
+        """Emit a table creation failure event."""
+        event = TableCreateFailed(
+            timestamp=datetime.now(timezone.utc),
+            table_name=table_name,
+            reason=reason,
         )
         self.emit(event)
 

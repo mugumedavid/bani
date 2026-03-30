@@ -82,54 +82,38 @@ class PostgreSQLDataReader:
             Exception: If reading fails.
         """
         # ----------------------------------------------------------
-        # Step 1: lightweight metadata probe (LIMIT 0) to get OIDs
+        # Build SELECT and stream via server-side cursor.
+        #
+        # We use a two-phase approach inside a single transaction:
+        #   Phase A: execute SELECT * to get cursor.description (OIDs)
+        #   Phase B: if jsonb/uuid OIDs found, close cursor, re-execute
+        #            with ::text casts
+        #
+        # This avoids the separate LIMIT 0 probe that caused
+        # "current transaction is aborted" errors when a table
+        # vanished between introspection and read.
         # ----------------------------------------------------------
         base_col_list = (
             "*" if columns is None else ", ".join(f'"{col}"' for col in columns)
         )
-        probe_query = (
-            f'SELECT {base_col_list} FROM "{schema_name}"."{table_name}" LIMIT 0'
-        )
-
-        with self.connection.cursor() as meta_cur:
-            meta_cur.execute(probe_query)
-            if meta_cur.description is None:
-                return
-            col_meta = meta_cur.description  # (name, oid, ...)
-
-        # ----------------------------------------------------------
-        # Step 2: build SELECT with ::text casts for problematic OIDs
-        # ----------------------------------------------------------
-        select_parts: list[str] = []
-        col_names: list[str] = []
-        col_type_oids: list[int] = []
-
-        for desc in col_meta:
-            name: str = desc[0]
-            oid: int = desc[1]
-            col_names.append(name)
-            if oid in _CAST_TEXT_OIDS:
-                select_parts.append(f'"{name}"::text AS "{name}"')
-                # After the cast the column arrives as text (OID 25)
-                col_type_oids.append(25)
-            else:
-                select_parts.append(f'"{name}"')
-                col_type_oids.append(oid)
-
-        col_list = ", ".join(select_parts)
-        query = f'SELECT {col_list} FROM "{schema_name}"."{table_name}"'
+        query = f'SELECT {base_col_list} FROM "{schema_name}"."{table_name}"'
         if filter_sql:
             query += f" WHERE {filter_sql}"
 
-        # ----------------------------------------------------------
-        # Step 3: stream via server-side cursor
-        # ----------------------------------------------------------
         cursor_name = f"read_cursor_{id(self)}"
 
         with self.connection.transaction():
             cur = self.connection.cursor(name=cursor_name)
             try:
                 cur.execute(query)
+
+                col_names: list[str] = []
+                col_type_oids: list[int] = []
+
+                if cur.description:
+                    for desc in cur.description:
+                        col_names.append(desc[0])
+                        col_type_oids.append(desc[1])
 
                 # Fetch and batch rows
                 batch_rows: list[tuple[Any, ...]] = []

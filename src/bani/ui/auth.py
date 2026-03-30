@@ -13,7 +13,7 @@ from fastapi import Header, HTTPException, Request
 
 def verify_token(
     request: Request,
-    authorization: str = Header(..., alias="Authorization"),
+    authorization: str | None = Header(default=None, alias="Authorization"),
 ) -> str:
     """Validate the Bearer token against the server's auth token.
 
@@ -30,12 +30,40 @@ def verify_token(
     Raises:
         HTTPException: 401 if the token is missing, malformed, or invalid.
     """
+    if not authorization:
+        raise HTTPException(status_code=401, detail="Missing authorization header")
+
     if not authorization.startswith("Bearer "):
         raise HTTPException(status_code=401, detail="Invalid authorization header")
 
     token = authorization[len("Bearer ") :]
     expected: str = request.app.state.auth_token
 
+    if token != expected:
+        raise HTTPException(status_code=401, detail="Invalid token")
+
+    return token
+
+
+def verify_token_from_query(request: Request) -> str:
+    """Validate a token passed as a ``?token=`` query parameter.
+
+    Used for SSE endpoints where ``EventSource`` cannot set headers.
+
+    Args:
+        request: The incoming request.
+
+    Returns:
+        The validated token string.
+
+    Raises:
+        HTTPException: 401 if the token is missing or invalid.
+    """
+    token = request.query_params.get("token")
+    if not token:
+        raise HTTPException(status_code=401, detail="Missing token query parameter")
+
+    expected: str = request.app.state.auth_token
     if token != expected:
         raise HTTPException(status_code=401, detail="Invalid token")
 

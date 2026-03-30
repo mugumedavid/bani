@@ -1,12 +1,11 @@
 import { useQuery } from '@tanstack/react-query';
 import { getConnectors } from '../api/client';
-import type { ConnectorInfo } from '../types';
 
-const statusBadge: Record<string, string> = {
-  stable: 'bg-green-100 text-green-700',
-  beta: 'bg-yellow-100 text-yellow-700',
-  planned: 'bg-gray-100 text-gray-500',
-};
+interface ApiConnector {
+  name: string;
+  class_name: string;
+  module: string;
+}
 
 const dbIcons: Record<string, string> = {
   postgresql: 'PG',
@@ -16,10 +15,18 @@ const dbIcons: Record<string, string> = {
   sqlite: 'SQ',
 };
 
+const dbDescriptions: Record<string, string> = {
+  postgresql: 'PostgreSQL — open-source relational database',
+  mysql: 'MySQL — popular open-source RDBMS',
+  mssql: 'Microsoft SQL Server — enterprise relational database',
+  oracle: 'Oracle Database — enterprise RDBMS',
+  sqlite: 'SQLite — embedded file-based database',
+};
+
 export function ConnectorCatalog() {
-  const { data: connectors, isLoading, error } = useQuery({
+  const { data: connectors, isLoading, error } = useQuery<ApiConnector[]>({
     queryKey: ['connectors'],
-    queryFn: getConnectors,
+    queryFn: getConnectors as unknown as () => Promise<ApiConnector[]>,
   });
 
   return (
@@ -73,8 +80,9 @@ export function ConnectorCatalog() {
   );
 }
 
-function ConnectorCard({ connector }: { connector: ConnectorInfo }) {
+function ConnectorCard({ connector }: { connector: ApiConnector }) {
   const abbr = dbIcons[connector.name] ?? connector.name.slice(0, 2).toUpperCase();
+  const desc = dbDescriptions[connector.name] ?? connector.module;
 
   return (
     <div className="bg-white rounded-xl border border-gray-200 p-6 hover:shadow-md transition-shadow">
@@ -85,42 +93,25 @@ function ConnectorCard({ connector }: { connector: ConnectorInfo }) {
         <div className="flex-1 min-w-0">
           <div className="flex items-center gap-2">
             <h3 className="font-semibold text-gray-900 truncate">
-              {connector.display_name}
+              {connector.name}
             </h3>
-            <span
-              className={`px-2 py-0.5 rounded-full text-xs font-medium ${statusBadge[connector.status] ?? statusBadge.planned}`}
-            >
-              {connector.status}
+            <span className="px-2 py-0.5 rounded-full text-xs font-medium bg-green-100 text-green-700">
+              source + sink
             </span>
           </div>
-          <p className="text-sm text-gray-500 mt-1">{connector.description}</p>
+          <p className="text-sm text-gray-500 mt-1">{desc}</p>
         </div>
       </div>
 
       <div className="space-y-2 text-sm">
-        <div className="flex items-center justify-between">
-          <span className="text-gray-500">Version</span>
-          <span className="font-mono text-gray-700">{connector.version}</span>
+        <div>
+          <span className="text-gray-500 text-xs">Class</span>
+          <div className="font-mono text-gray-700 text-xs">{connector.class_name}</div>
         </div>
-        <div className="flex items-center justify-between">
-          <span className="text-gray-500">Driver</span>
-          <span className="font-mono text-gray-700">{connector.driver}</span>
+        <div>
+          <span className="text-gray-500 text-xs">Module</span>
+          <div className="font-mono text-gray-700 text-xs break-all">{connector.module}</div>
         </div>
-        {connector.supported_databases.length > 0 && (
-          <div>
-            <span className="text-gray-500 block mb-1">Supported versions</span>
-            <div className="flex flex-wrap gap-1">
-              {connector.supported_databases.map((db) => (
-                <span
-                  key={db}
-                  className="px-2 py-0.5 bg-gray-100 text-gray-600 rounded text-xs"
-                >
-                  {db}
-                </span>
-              ))}
-            </div>
-          </div>
-        )}
       </div>
     </div>
   );

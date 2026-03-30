@@ -1,33 +1,27 @@
 import { useQuery } from '@tanstack/react-query';
-import { getMigrationRuns } from '../api/client';
-import type { ProjectStatus } from '../types';
+import { getRunHistory, type RunLogEntry } from '../api/client';
 
-const statusColors: Record<ProjectStatus, string> = {
-  idle: 'bg-gray-100 text-gray-700',
-  running: 'bg-blue-100 text-blue-700',
+const statusColors: Record<string, string> = {
   completed: 'bg-green-100 text-green-700',
   failed: 'bg-red-100 text-red-700',
 };
 
-function formatDuration(seconds: number | null): string {
-  if (seconds === null) return '-';
-  if (seconds < 60) return `${seconds}s`;
-  const mins = Math.floor(seconds / 60);
-  const secs = seconds % 60;
-  if (mins < 60) return `${mins}m ${secs}s`;
-  const hrs = Math.floor(mins / 60);
-  const remainMins = mins % 60;
-  return `${hrs}h ${remainMins}m`;
-}
-
 function formatDate(iso: string): string {
+  if (!iso) return '-';
   return new Date(iso).toLocaleString();
 }
 
+function formatDuration(seconds: number): string {
+  if (seconds < 60) return `${seconds.toFixed(1)}s`;
+  const mins = Math.floor(seconds / 60);
+  const secs = seconds % 60;
+  return `${mins}m ${secs.toFixed(0)}s`;
+}
+
 export function RunHistory() {
-  const { data: runs, isLoading, error } = useQuery({
+  const { data: runs, isLoading, error } = useQuery<RunLogEntry[]>({
     queryKey: ['runs'],
-    queryFn: getMigrationRuns,
+    queryFn: () => getRunHistory(50),
   });
 
   return (
@@ -35,7 +29,7 @@ export function RunHistory() {
       <div className="mb-8">
         <h1 className="text-2xl font-bold text-gray-900">Run History</h1>
         <p className="text-gray-500 mt-1">
-          Past migration runs with status and results
+          Past migration runs
         </p>
       </div>
 
@@ -68,7 +62,7 @@ export function RunHistory() {
             No migration runs yet
           </h3>
           <p className="text-gray-500">
-            Run a migration from the Dashboard to see results here.
+            Run a migration to see results here.
           </p>
         </div>
       )}
@@ -97,14 +91,11 @@ export function RunHistory() {
                   <th className="text-right px-6 py-3 font-medium text-gray-500 uppercase tracking-wider text-xs">
                     Rows
                   </th>
-                  <th className="text-right px-6 py-3 font-medium text-gray-500 uppercase tracking-wider text-xs">
-                    Errors
-                  </th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-gray-100">
-                {runs.map((run) => (
-                  <tr key={run.id} className="hover:bg-gray-50">
+                {runs.map((run, i) => (
+                  <tr key={`${run.project_name}-${run.started_at}-${i}`} className="hover:bg-gray-50">
                     <td className="px-6 py-4">
                       <span className="font-medium text-gray-900">
                         {run.project_name}
@@ -112,7 +103,9 @@ export function RunHistory() {
                     </td>
                     <td className="px-6 py-4">
                       <span
-                        className={`inline-flex px-2.5 py-0.5 rounded-full text-xs font-medium ${statusColors[run.status]}`}
+                        className={`inline-flex px-2.5 py-0.5 rounded-full text-xs font-medium ${
+                          statusColors[run.status] ?? 'bg-gray-100 text-gray-700'
+                        }`}
                       >
                         {run.status}
                       </span>
@@ -124,24 +117,13 @@ export function RunHistory() {
                       {formatDuration(run.duration_seconds)}
                     </td>
                     <td className="px-6 py-4 text-right text-gray-500">
-                      {run.tables_completed}/{run.tables_total}
+                      <span className="text-green-600">{run.tables_completed}</span>
+                      {run.tables_failed > 0 && (
+                        <span className="text-red-500 ml-1">/ {run.tables_failed} failed</span>
+                      )}
                     </td>
                     <td className="px-6 py-4 text-right text-gray-500">
-                      {run.rows_transferred.toLocaleString()}
-                      {run.rows_total > 0 && (
-                        <span className="text-gray-400">
-                          /{run.rows_total.toLocaleString()}
-                        </span>
-                      )}
-                    </td>
-                    <td className="px-6 py-4 text-right">
-                      {run.errors.length > 0 ? (
-                        <span className="text-red-600 font-medium">
-                          {run.errors.length}
-                        </span>
-                      ) : (
-                        <span className="text-gray-400">0</span>
-                      )}
+                      {run.total_rows.toLocaleString()}
                     </td>
                   </tr>
                 ))}

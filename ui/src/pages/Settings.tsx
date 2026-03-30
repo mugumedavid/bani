@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { getSettings, updateSettings } from '../api/client';
+import { getSettings, updateSettings, clearRunHistory } from '../api/client';
 import type { Settings as SettingsType } from '../types';
 
 const LOG_LEVELS = ['DEBUG', 'INFO', 'WARNING', 'ERROR'] as const;
@@ -83,9 +83,12 @@ export function Settings() {
       >
         {/* Performance */}
         <section className="bg-white rounded-xl border border-gray-200 p-6">
-          <h2 className="text-lg font-semibold text-gray-900 mb-4">
+          <h2 className="text-lg font-semibold text-gray-900 mb-1">
             Performance
           </h2>
+          <p className="text-sm text-gray-500 mb-4">
+            Global defaults used when a project doesn&apos;t specify its own values.
+          </p>
           <div className="space-y-4">
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-1">
@@ -97,12 +100,12 @@ export function Settings() {
                 onChange={(e) =>
                   update('batch_size', parseInt(e.target.value) || 1000)
                 }
-                min={100}
-                max={1000000}
+                min={1000}
+                max={500000}
                 className="w-full rounded-md border border-gray-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500"
               />
               <p className="mt-1 text-xs text-gray-400">
-                Number of rows per batch during data transfer (100 - 1,000,000)
+                Rows per batch during data transfer. Default: 100,000. Larger batches use more memory but reduce round trips. Range: 1,000 - 500,000.
               </p>
             </div>
 
@@ -117,11 +120,11 @@ export function Settings() {
                   update('max_workers', parseInt(e.target.value) || 1)
                 }
                 min={1}
-                max={32}
+                max={16}
                 className="w-full rounded-md border border-gray-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500"
               />
               <p className="mt-1 text-xs text-gray-400">
-                Number of concurrent table transfers (1 - 32)
+                Concurrent table transfers. Default: 4. Each worker uses its own database connection. Range: 1 - 16.
               </p>
             </div>
 
@@ -135,12 +138,12 @@ export function Settings() {
                 onChange={(e) =>
                   update('memory_limit_mb', parseInt(e.target.value) || 256)
                 }
-                min={64}
-                max={16384}
+                min={256}
+                max={8192}
                 className="w-full rounded-md border border-gray-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500"
               />
               <p className="mt-1 text-xs text-gray-400">
-                Maximum memory for data buffering (64 - 16,384 MB)
+                Memory budget for data buffering. Default: 2,048 MB. Range: 256 - 8,192 MB.
               </p>
             </div>
           </div>
@@ -208,6 +211,17 @@ export function Settings() {
           </div>
         </section>
 
+        {/* Data Management */}
+        <section className="bg-white rounded-xl border border-gray-200 p-6">
+          <h2 className="text-lg font-semibold text-gray-900 mb-2">
+            Data Management
+          </h2>
+          <p className="text-sm text-gray-500 mb-4">
+            Clear dashboard statistics and run history.
+          </p>
+          <ClearRunHistoryButton />
+        </section>
+
         {/* Save feedback */}
         {saveMutation.isError && (
           <div className="bg-red-50 border border-red-200 rounded-lg p-4">
@@ -241,12 +255,53 @@ export function Settings() {
           <button
             type="button"
             onClick={() => setForm(settings ?? null)}
-            className="px-6 py-2.5 border border-gray-300 text-gray-700 text-sm font-medium rounded-lg hover:bg-gray-50 transition-colors"
+            disabled={JSON.stringify(form) === JSON.stringify(settings)}
+            className="px-6 py-2.5 border border-gray-300 text-gray-700 text-sm font-medium rounded-lg hover:bg-gray-50 disabled:opacity-30 disabled:cursor-not-allowed transition-colors"
           >
-            Reset
+            Discard Changes
           </button>
         </div>
       </form>
+    </div>
+  );
+}
+
+function ClearRunHistoryButton() {
+  const queryClient = useQueryClient();
+  const [cleared, setCleared] = useState(false);
+
+  const clearMutation = useMutation({
+    mutationFn: clearRunHistory,
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['recentRuns'] });
+      queryClient.invalidateQueries({ queryKey: ['runSummary'] });
+      setCleared(true);
+      setTimeout(() => setCleared(false), 3000);
+    },
+  });
+
+  return (
+    <div className="flex items-center gap-3">
+      <button
+        type="button"
+        onClick={() => {
+          if (confirm('Clear all run history? This resets total runs, last run, lifetime rows, and recent runs on the dashboard.')) {
+            clearMutation.mutate();
+          }
+        }}
+        disabled={clearMutation.isPending}
+        className="px-4 py-2 border border-gray-300 text-gray-700 text-sm font-medium rounded-lg hover:bg-gray-50 disabled:opacity-50 transition-colors"
+      >
+        {clearMutation.isPending ? 'Clearing...' : 'Clear Run History'}
+      </button>
+      {cleared && (
+        <span className="text-sm text-green-600">Cleared</span>
+      )}
+      {clearMutation.isError && (
+        <span className="text-sm text-red-600">
+          {(clearMutation.error as Error).message}
+        </span>
+      )}
     </div>
   );
 }

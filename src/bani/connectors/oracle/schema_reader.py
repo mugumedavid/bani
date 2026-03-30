@@ -396,17 +396,31 @@ class OracleSchemaReader:
         """Fetch estimated row counts for all tables in a single query.
 
         Uses all_tables.num_rows (populated by DBMS_STATS / ANALYZE).
+        Falls back to a sample-based estimate when num_rows is NULL or 0
+        (common when stats haven't been gathered).
 
         Returns:
             Dict mapping table_name to estimated row count (or None).
         """
         cursor = self.connection.cursor()
         try:
+            # num_rows from all_tables; if 0/NULL, try the segment-based
+            # estimate from user_segments (bytes / avg_row_len).
             query = """
-                SELECT table_name, num_rows
-                FROM all_tables
-                WHERE owner = :owner
-                ORDER BY table_name
+                SELECT
+                    t.table_name,
+                    CASE
+                        WHEN t.num_rows > 0 THEN t.num_rows
+                        WHEN t.avg_row_len > 0 AND s.bytes IS NOT NULL
+                            THEN GREATEST(TRUNC(s.bytes / t.avg_row_len), 0)
+                        ELSE NULL
+                    END AS estimated_rows
+                FROM all_tables t
+                LEFT JOIN user_segments s
+                    ON s.segment_name = t.table_name
+                    AND s.segment_type = 'TABLE'
+                WHERE t.owner = :owner
+                ORDER BY t.table_name
             """
             cursor.execute(query, {"owner": self.owner})
             rows: list[tuple[Any, ...]] = list(cursor.fetchall())

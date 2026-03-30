@@ -37,7 +37,7 @@ class TestAuthMiddleware:
             transport=transport, base_url="http://testserver"
         ) as ac:
             resp = await ac.get("/api/connectors")
-        assert resp.status_code == 422  # FastAPI returns 422 for missing required header
+        assert resp.status_code == 401
 
     @pytest.mark.anyio()
     async def test_invalid_token_returns_401(self, _server: BaniUIServer) -> None:

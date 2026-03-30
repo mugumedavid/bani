@@ -347,10 +347,24 @@ class PostgreSQLSchemaReader:
 
     def _fetch_all_row_counts(self) -> dict[_TableKey, int | None]:
         with self.connection.cursor() as cur:
+            # Use pg_stat_user_tables (n_live_tup) with a fallback to
+            # pg_class (reltuples) for tables where stats haven't been
+            # collected yet (n_live_tup = 0 after bulk load without ANALYZE).
             cur.execute("""
-                SELECT schemaname, relname, n_live_tup
-                FROM pg_stat_user_tables
-                ORDER BY schemaname, relname
+                SELECT
+                    s.schemaname,
+                    s.relname,
+                    CASE
+                        WHEN s.n_live_tup > 0 THEN s.n_live_tup
+                        ELSE GREATEST(c.reltuples::bigint, 0)
+                    END AS estimated_rows
+                FROM pg_stat_user_tables s
+                JOIN pg_class c
+                    ON c.relname = s.relname
+                    AND c.relnamespace = (
+                        SELECT oid FROM pg_namespace WHERE nspname = s.schemaname
+                    )
+                ORDER BY s.schemaname, s.relname
             """)
             rows = cur.fetchall()
 

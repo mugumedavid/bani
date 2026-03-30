@@ -50,8 +50,8 @@ class TestBaniUIServer:
         assert resp.json() == {"status": "ok"}
 
     @pytest.mark.anyio()
-    async def test_missing_static_files_handled_gracefully(self) -> None:
-        """When ui/dist/ doesn't exist, the root returns a helpful message."""
+    async def test_root_responds(self) -> None:
+        """Root returns either the SPA (200 HTML) or a fallback JSON message."""
         server = BaniUIServer()
         transport = ASGITransport(app=server.app)  # type: ignore[arg-type]
         async with AsyncClient(
@@ -59,8 +59,6 @@ class TestBaniUIServer:
         ) as ac:
             resp = await ac.get("/")
         assert resp.status_code == 200
-        body = resp.json()
-        assert "Bani API is running" in body["message"]
 
     @pytest.mark.anyio()
     async def test_app_state_has_migration_state(self) -> None:
@@ -71,7 +69,7 @@ class TestBaniUIServer:
         assert state["running"] is False
 
     @pytest.mark.anyio()
-    async def test_app_state_has_ws_queue(self) -> None:
-        """App state includes a WebSocket queue."""
+    async def test_app_state_has_sse_broadcaster(self) -> None:
+        """App state includes an SSE broadcaster."""
         server = BaniUIServer()
-        assert hasattr(server.app.state, "ws_queue")
+        assert hasattr(server.app.state, "sse_broadcaster")

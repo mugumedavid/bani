@@ -43,13 +43,22 @@ export interface ConnectorInfo {
 }
 
 export interface ConnectionConfig {
+  name: string;
   connector: string;
   host: string;
   port: number;
   database: string;
   username_env: string;
   password_env: string;
+  username_is_env: boolean;
+  password_is_env: boolean;
   extra: Record<string, string>;
+}
+
+export interface SavedConnection {
+  connection: ConnectionConfig;
+  tables: Table[] | null;
+  savedAt: string;
 }
 
 export interface TypeMappingOverride {
@@ -80,16 +89,30 @@ export interface Project {
 
 export type ProjectStatus = 'idle' | 'running' | 'completed' | 'failed';
 
+export interface TableEstimate {
+  name: string;
+  estimated_rows: number | null;
+}
+
 export interface MigrationEvent {
-  type: 'table_start' | 'table_progress' | 'table_complete' | 'table_error' | 'migration_complete' | 'migration_error';
-  project_id: string;
-  table_name: string | null;
-  rows_transferred: number;
-  total_rows: number;
-  throughput: number;
-  eta_seconds: number | null;
-  error: string | null;
-  timestamp: string;
+  type: 'introspection_complete' | 'phase_change' | 'migration_started' | 'table_start' | 'batch_complete' | 'table_complete' | 'table_create_failed' | 'migration_complete';
+  phase?: string;
+  table_name?: string;
+  rows_read?: number;
+  rows_written?: number;
+  total_rows_read?: number;
+  total_rows_written?: number;
+  estimated_rows?: number;
+  batch_number?: number;
+  batch_count?: number;
+  table_count?: number;
+  tables_completed?: number;
+  tables_failed?: number;
+  duration_seconds?: number;
+  source_dialect?: string;
+  target_dialect?: string;
+  reason?: string;
+  tables?: TableEstimate[];
 }
 
 export interface MigrationRun {

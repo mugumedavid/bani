@@ -843,8 +843,8 @@ def _create_multi_table_schema() -> DatabaseSchema:
 class TestResumeExecution:
     """Tests for execute(resume=True) checkpoint flow."""
 
-    def test_execute_creates_checkpoint(self, tmp_path: Path) -> None:
-        """execute() should create a checkpoint file."""
+    def test_execute_clears_checkpoint_on_success(self, tmp_path: Path) -> None:
+        """execute() should clear the checkpoint after full success."""
         project = create_test_project()
         schema = create_test_schema()
         source = MockSourceConnector(schema)
@@ -852,12 +852,11 @@ class TestResumeExecution:
         ckpt = CheckpointManager(base_dir=tmp_path)
 
         orch = MigrationOrchestrator(project, source, sink, checkpoint=ckpt)
-        orch.execute()
+        result = orch.execute()
 
-        # Checkpoint should exist
-        data = ckpt.load(project.name)
-        assert data is not None
-        assert data["project_hash"] == ckpt.compute_hash(project)
+        assert result.tables_failed == 0
+        # Checkpoint is cleaned up after full success
+        assert ckpt.load(project.name) is None
 
     def test_resume_skips_completed_tables(self, tmp_path: Path) -> None:
         """resume=True should skip tables marked as completed in checkpoint."""
@@ -886,19 +885,19 @@ class TestResumeExecution:
         assert "users" not in read_tables
 
     def test_resume_false_starts_fresh(self, tmp_path: Path) -> None:
-        """execute(resume=False) should create a fresh checkpoint."""
+        """execute(resume=False) should create a fresh checkpoint and clear on success."""
         project = create_test_project()
         schema = create_test_schema()
         source = MockSourceConnector(schema)
         sink = MockSinkConnector()
         ckpt = CheckpointManager(base_dir=tmp_path)
 
-        # Run once
+        # Run once — succeeds, so checkpoint is cleared
         orch = MigrationOrchestrator(project, source, sink, checkpoint=ckpt)
-        orch.execute(resume=False)
+        result = orch.execute(resume=False)
 
-        data = ckpt.load(project.name)
-        assert data is not None
+        assert result.tables_failed == 0
+        assert ckpt.load(project.name) is None
 
     def test_resume_with_invalid_checkpoint_starts_fresh(
         self, tmp_path: Path
@@ -923,8 +922,8 @@ class TestResumeExecution:
         # was invalidated
         assert result.tables_completed >= 1
 
-    def test_checkpoint_updated_after_table_success(self, tmp_path: Path) -> None:
-        """Checkpoint should mark tables as completed after success."""
+    def test_checkpoint_cleared_after_full_success(self, tmp_path: Path) -> None:
+        """Checkpoint should be cleared after a fully successful migration."""
         project = create_test_project()
         schema = create_test_schema()
         source = MockSourceConnector(schema)
@@ -932,13 +931,14 @@ class TestResumeExecution:
         ckpt = CheckpointManager(base_dir=tmp_path)
 
         orch = MigrationOrchestrator(project, source, sink, checkpoint=ckpt)
-        orch.execute()
+        result = orch.execute()
 
-        # The table should be marked completed (remapped to dbo for PG→MSSQL)
-        assert ckpt.is_table_completed(project.name, "dbo.users") is True
+        assert result.tables_failed == 0
+        # Checkpoint file is cleaned up on full success
+        assert ckpt.load(project.name) is None
 
-    def test_checkpoint_updated_after_table_failure(self, tmp_path: Path) -> None:
-        """Checkpoint should mark tables as failed after errors."""
+    def test_checkpoint_after_table_failure_abort(self, tmp_path: Path) -> None:
+        """Checkpoint should persist when migration has failures (ABORT mode)."""
         project = ProjectModel(
             name="test_migration",
             source=ConnectionConfig(dialect="postgresql"),
@@ -946,7 +946,7 @@ class TestResumeExecution:
             options=ProjectOptions(
                 batch_size=50_000,
                 parallel_workers=1,
-                on_error=ErrorHandlingStrategy.LOG_AND_CONTINUE,
+                on_error=ErrorHandlingStrategy.ABORT,
             ),
         )
         schema = create_test_schema()
@@ -983,8 +983,9 @@ class TestResumeExecution:
         orch = MigrationOrchestrator(project, source, sink, checkpoint=ckpt)
         result = orch.execute()
 
-        # Table should still complete (log-and-continue)
-        # but with possible rows_written = 0
+        # With ABORT, table failure means tables_failed > 0,
+        # so checkpoint is preserved for resume
+        assert result.tables_failed > 0
         data = ckpt.load(project.name)
         assert data is not None
 

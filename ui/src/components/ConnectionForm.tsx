@@ -1,11 +1,81 @@
 import { useState } from 'react';
 import type { ConnectionConfig } from '../types';
 
+const CONNECTOR_DEFAULTS: Record<string, Partial<ConnectionConfig>> = {
+  postgresql: { port: 5432, host: 'localhost' },
+  mysql:      { port: 3306, host: 'localhost' },
+  mssql:      { port: 1433, host: 'localhost' },
+  oracle:     { port: 1521, host: 'localhost' },
+  sqlite:     { port: 0, host: '' },
+};
+
 interface ConnectionFormProps {
   value: ConnectionConfig;
   onChange: (config: ConnectionConfig) => void;
   connectorOptions: string[];
   label?: string;
+}
+
+function CredentialField({
+  label,
+  value,
+  isEnv,
+  onValueChange,
+  onModeChange,
+  placeholder,
+}: {
+  label: string;
+  value: string;
+  isEnv: boolean;
+  onValueChange: (v: string) => void;
+  onModeChange: (isEnv: boolean) => void;
+  placeholder: string;
+}) {
+  return (
+    <div>
+      <div className="flex items-center justify-between mb-1">
+        <label className="block text-sm font-medium text-gray-700">{label}</label>
+        <div className="flex items-center gap-3 text-xs">
+          <label className="flex items-center gap-1 cursor-pointer">
+            <input
+              type="radio"
+              checked={!isEnv}
+              onChange={() => onModeChange(false)}
+              className="w-3 h-3 text-indigo-600"
+            />
+            <span className={!isEnv ? 'text-gray-700 font-medium' : 'text-gray-400'}>
+              Direct
+            </span>
+          </label>
+          <label className="flex items-center gap-1 cursor-pointer">
+            <input
+              type="radio"
+              checked={isEnv}
+              onChange={() => onModeChange(true)}
+              className="w-3 h-3 text-indigo-600"
+            />
+            <span className={isEnv ? 'text-gray-700 font-medium' : 'text-gray-400'}>
+              Env var
+            </span>
+          </label>
+        </div>
+      </div>
+      <input
+        type={!isEnv && label.toLowerCase().includes('password') ? 'password' : 'text'}
+        value={value}
+        onChange={(e) => onValueChange(e.target.value)}
+        placeholder={isEnv ? 'DB_USER' : placeholder}
+        className={`w-full rounded-md border border-gray-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 ${
+          isEnv ? 'font-mono bg-gray-50' : ''
+        }`}
+      />
+      <p className="mt-0.5 text-xs text-gray-400">
+        {isEnv
+          ? 'Name of the environment variable (resolved at runtime)'
+          : 'Actual credential value'}
+      </p>
+    </div>
+  );
 }
 
 export function ConnectionForm({
@@ -20,6 +90,18 @@ export function ConnectionForm({
     onChange({ ...value, ...patch });
   }
 
+  function onConnectorChange(connector: string) {
+    const defaults = CONNECTOR_DEFAULTS[connector] ?? {};
+    onChange({
+      ...value,
+      connector,
+      port: defaults.port ?? value.port,
+      host: defaults.host ?? value.host,
+    });
+  }
+
+  const isSqlite = value.connector === 'sqlite';
+
   return (
     <div className="space-y-4">
       {label && (
@@ -30,11 +112,24 @@ export function ConnectionForm({
 
       <div>
         <label className="block text-sm font-medium text-gray-700 mb-1">
+          Connection Name
+        </label>
+        <input
+          type="text"
+          value={value.name}
+          onChange={(e) => update({ name: e.target.value })}
+          placeholder="e.g. Production MSSQL, Staging PostgreSQL"
+          className="w-full rounded-md border border-gray-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500"
+        />
+      </div>
+
+      <div>
+        <label className="block text-sm font-medium text-gray-700 mb-1">
           Connector
         </label>
         <select
           value={value.connector}
-          onChange={(e) => update({ connector: e.target.value })}
+          onChange={(e) => onConnectorChange(e.target.value)}
           className="w-full rounded-md border border-gray-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500"
         >
           <option value="">Select a connector...</option>
@@ -46,78 +141,67 @@ export function ConnectionForm({
         </select>
       </div>
 
-      <div className="grid grid-cols-2 gap-4">
-        <div>
-          <label className="block text-sm font-medium text-gray-700 mb-1">
-            Host
-          </label>
-          <input
-            type="text"
-            value={value.host}
-            onChange={(e) => update({ host: e.target.value })}
-            placeholder="localhost"
-            className="w-full rounded-md border border-gray-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500"
-          />
+      {!isSqlite && (
+        <div className="grid grid-cols-2 gap-4">
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1">
+              Host
+            </label>
+            <input
+              type="text"
+              value={value.host}
+              onChange={(e) => update({ host: e.target.value })}
+              placeholder="localhost"
+              className="w-full rounded-md border border-gray-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500"
+            />
+          </div>
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1">
+              Port
+            </label>
+            <input
+              type="number"
+              value={value.port || ''}
+              onChange={(e) => update({ port: parseInt(e.target.value) || 0 })}
+              className="w-full rounded-md border border-gray-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500"
+            />
+          </div>
         </div>
-        <div>
-          <label className="block text-sm font-medium text-gray-700 mb-1">
-            Port
-          </label>
-          <input
-            type="number"
-            value={value.port || ''}
-            onChange={(e) => update({ port: parseInt(e.target.value) || 0 })}
-            placeholder="5432"
-            className="w-full rounded-md border border-gray-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500"
-          />
-        </div>
-      </div>
+      )}
 
       <div>
         <label className="block text-sm font-medium text-gray-700 mb-1">
-          Database
+          {isSqlite ? 'Database File Path' : 'Database'}
         </label>
         <input
           type="text"
           value={value.database}
           onChange={(e) => update({ database: e.target.value })}
-          placeholder="mydb"
+          placeholder={isSqlite ? '/path/to/database.db' : 'mydb'}
           className="w-full rounded-md border border-gray-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500"
         />
       </div>
 
-      <div className="grid grid-cols-2 gap-4">
-        <div>
-          <label className="block text-sm font-medium text-gray-700 mb-1">
-            Username Env Var
-          </label>
-          <input
-            type="text"
+      {!isSqlite && (
+        <div className="grid grid-cols-2 gap-4">
+          <CredentialField
+            label="Username"
             value={value.username_env}
-            onChange={(e) => update({ username_env: e.target.value })}
-            placeholder="DB_USER"
-            className="w-full rounded-md border border-gray-300 px-3 py-2 text-sm font-mono focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500"
+            isEnv={value.username_is_env}
+            onValueChange={(v) => update({ username_env: v })}
+            onModeChange={(isEnv) => update({ username_is_env: isEnv })}
+            placeholder="sa"
           />
-          <p className="mt-1 text-xs text-gray-400">
-            Environment variable name (not the actual credential)
-          </p>
-        </div>
-        <div>
-          <label className="block text-sm font-medium text-gray-700 mb-1">
-            Password Env Var
-          </label>
-          <input
-            type="text"
+          <CredentialField
+            label="Password"
             value={value.password_env}
-            onChange={(e) => update({ password_env: e.target.value })}
-            placeholder="DB_PASS"
-            className="w-full rounded-md border border-gray-300 px-3 py-2 text-sm font-mono focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500"
+            isEnv={value.password_is_env}
+            onValueChange={(v) => update({ password_env: v })}
+            onModeChange={(isEnv) => update({ password_is_env: isEnv })}
+            placeholder="********"
           />
-          <p className="mt-1 text-xs text-gray-400">
-            Environment variable name (not the actual credential)
-          </p>
         </div>
-      </div>
+      )}
 
       <div>
         <button
@@ -141,9 +225,7 @@ export function ConnectionForm({
                   type="text"
                   value={val}
                   onChange={(e) =>
-                    update({
-                      extra: { ...value.extra, [key]: e.target.value },
-                    })
+                    update({ extra: { ...value.extra, [key]: e.target.value } })
                   }
                   className="flex-1 rounded-md border border-gray-300 px-3 py-1.5 text-sm"
                 />

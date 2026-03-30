@@ -48,37 +48,21 @@ class TestMigrationRoutes:
         assert resp.status_code == 404
 
     @pytest.mark.anyio()
-    async def test_start_migration_mocked(
+    async def test_start_migration_returns_202(
         self,
         _server: BaniUIServer,
         _headers: dict[str, str],
         _projects_dir: str,
     ) -> None:
-        """Start a migration with a mocked orchestrator."""
+        """Start a migration returns 202 Accepted immediately."""
         # Create a minimal BDL project file
         Path(_projects_dir, "test.bdl").write_text("<bani/>")
 
-        mock_result = MagicMock()
-        mock_result.project_name = "test"
-        mock_result.tables_completed = 5
-        mock_result.tables_failed = 0
-        mock_result.total_rows_read = 1000
-        mock_result.total_rows_written = 1000
-        mock_result.duration_seconds = 2.5
-        mock_result.errors = ()
-
-        mock_project = MagicMock()
-        mock_project.run.return_value = mock_result
-
-        with patch("bani.ui.routes.migration.asyncio") as mock_asyncio:
-            # Make to_thread call the function directly
-            async def fake_to_thread(fn: object, *args: object) -> object:
-                # We need to mock Bani.load inside the function
-                with patch("bani.sdk.bani.Bani.load", return_value=mock_project):
-                    return fn()  # type: ignore[operator]
-
-            mock_asyncio.to_thread = fake_to_thread
-            mock_asyncio.QueueFull = type("QueueFull", (Exception,), {})
+        # Patch threading.Thread so the background thread doesn't actually run
+        with patch("bani.ui.routes.migration.threading") as mock_threading:
+            mock_thread = MagicMock()
+            mock_threading.Thread.return_value = mock_thread
+            mock_threading.Event = MagicMock
 
             transport = ASGITransport(app=_server.app)  # type: ignore[arg-type]
             async with AsyncClient(
@@ -90,10 +74,27 @@ class TestMigrationRoutes:
                     headers=_headers,
                 )
 
-        assert resp.status_code == 200
+        assert resp.status_code == 202
         data = resp.json()
+        assert data["status"] == "started"
         assert data["project_name"] == "test"
-        assert data["tables_completed"] == 5
+        mock_thread.start.assert_called_once()
+
+    @pytest.mark.anyio()
+    async def test_validate_migration_project_not_found(
+        self, _server: BaniUIServer, _headers: dict[str, str]
+    ) -> None:
+        """Validating a non-existent project returns 404."""
+        transport = ASGITransport(app=_server.app)  # type: ignore[arg-type]
+        async with AsyncClient(
+            transport=transport, base_url="http://testserver"
+        ) as ac:
+            resp = await ac.post(
+                "/api/migrate/validate",
+                json={"project_name": "nonexistent"},
+                headers=_headers,
+            )
+        assert resp.status_code == 404
 
     @pytest.mark.anyio()
     async def test_get_status_idle(
