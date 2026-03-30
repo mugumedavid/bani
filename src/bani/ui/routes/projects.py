@@ -78,6 +78,12 @@ async def create_project(body: ProjectCreate, request: Request) -> ProjectDetail
             status_code=409, detail=f"Project '{body.name}' already exists"
         )
     file_path.write_text(body.content, encoding="utf-8")
+
+    # Notify scheduler registry of new project
+    registry = getattr(request.app.state, "scheduler_registry", None)
+    if registry:
+        registry.reload(body.name)
+
     return ProjectDetail(name=body.name, path=str(file_path), content=body.content)
 
 
@@ -100,6 +106,12 @@ async def update_project(
     if not file_path.exists():
         raise HTTPException(status_code=404, detail=f"Project '{name}' not found")
     file_path.write_text(body.content, encoding="utf-8")
+
+    # Notify scheduler registry of updated project
+    registry = getattr(request.app.state, "scheduler_registry", None)
+    if registry:
+        registry.reload(name)
+
     return ProjectDetail(name=name, path=str(file_path), content=body.content)
 
 
@@ -118,4 +130,9 @@ async def delete_project(name: str, request: Request) -> None:
     file_path = projects_path / f"{name}.bdl"
     if not file_path.exists():
         raise HTTPException(status_code=404, detail=f"Project '{name}' not found")
+    # Stop scheduler before deleting
+    registry = getattr(request.app.state, "scheduler_registry", None)
+    if registry:
+        registry.stop(name)
+
     file_path.unlink()

@@ -51,25 +51,29 @@ class HookRunner:
 
     Supports two command types:
 
-    - **Shell commands** (default): executed via ``subprocess.run(shell=True)``
-      with timeout enforcement and stdout/stderr capture.
-    - **SQL commands** (prefixed with ``sql:``): executed against a database
-      connection via its ``execute_sql()`` method.
+    - **Shell commands** (``hook_type="shell"``): executed via
+      ``subprocess.run(shell=True)`` with timeout and stdout/stderr capture.
+    - **SQL commands** (``hook_type="sql"``): executed against the source
+      or target database via ``execute_sql()``.
 
     Variable substitution is performed on commands before execution, replacing
-    ``{project_name}``, ``{table_count}``, ``{source_dialect}``, and
-    ``{target_dialect}`` from the provided context dict.
+    ``{project_name}``, ``{table_count}``, ``{source_dialect}``,
+    ``{target_dialect}``, and ``{table_name}`` from the provided context dict.
 
     Args:
-        sql_executor: Optional callable/object with ``execute_sql(sql)`` method
-            for running SQL hooks. If not provided, SQL hooks will fail.
+        source_executor: SQL executor for the source database.
+        target_executor: SQL executor for the target database.
     """
 
     def __init__(
         self,
+        source_executor: SqlExecutor | None = None,
+        target_executor: SqlExecutor | None = None,
         sql_executor: SqlExecutor | None = None,
     ) -> None:
-        self._sql_executor = sql_executor
+        # Backward compat: sql_executor maps to target_executor
+        self._source_executor = source_executor
+        self._target_executor = target_executor or sql_executor
 
     def execute_hooks(
         self,
@@ -107,8 +111,15 @@ class HookRunner:
                 command,
             )
 
-            if command.startswith("sql:"):
-                result = self._execute_sql_hook(hook, command, phase)
+            if hook.hook_type == "sql":
+                executor = (
+                    self._source_executor
+                    if hook.target == "source"
+                    else self._target_executor
+                )
+                result = self._execute_sql_hook(
+                    hook, command, phase, executor
+                )
             else:
                 result = self._execute_shell_hook(hook, command, phase)
 
@@ -228,23 +239,23 @@ class HookRunner:
         hook: HookConfig,
         command: str,
         phase: str,
+        executor: SqlExecutor | None = None,
     ) -> HookResult:
         """Execute a SQL command hook.
 
-        The ``sql:`` prefix is stripped before execution.
-
         Args:
             hook: The hook configuration.
-            command: The resolved command string (including ``sql:`` prefix).
+            command: The resolved SQL string.
             phase: The hook phase.
+            executor: The SQL executor to use.
 
         Returns:
             HookResult with success/error information.
         """
-        sql = command[len("sql:") :]
+        sql = command
         start = time.monotonic()
 
-        if self._sql_executor is None:
+        if executor is None:
             duration = time.monotonic() - start
             return HookResult(
                 name=hook.name,
@@ -255,7 +266,7 @@ class HookRunner:
             )
 
         try:
-            self._sql_executor.execute_sql(sql)
+            executor.execute_sql(sql)
             duration = time.monotonic() - start
             return HookResult(
                 name=hook.name,

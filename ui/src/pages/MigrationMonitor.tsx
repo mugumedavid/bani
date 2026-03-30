@@ -297,6 +297,28 @@ export function MigrationMonitor() {
         </div>
       )}
 
+      {/* Hook execution phase */}
+      {isRunning && phase?.startsWith('hooks:') && migrateStatus && (
+        <div className="bg-indigo-50 border border-indigo-200 rounded-xl p-6 mb-6">
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-3">
+              <Spinner />
+              <div>
+                <h2 className="text-lg font-semibold text-indigo-900">
+                  Running {phase.replace('hooks:', '')} hooks...
+                </h2>
+                {migrateStatus.project_name && (
+                  <p className="text-sm text-indigo-700">
+                    Project: {migrateStatus.project_name}
+                  </p>
+                )}
+              </div>
+            </div>
+            <ElapsedTime seconds={elapsed} />
+          </div>
+        </div>
+      )}
+
       {/* Completed/idle status */}
       {!isRunning && !waitingForStart && migrateStatus && migrateStatus.project_name && (
         <div className={`rounded-xl border p-6 mb-6 ${migrateStatus.error ? 'bg-red-50 border-red-200' : 'bg-green-50 border-green-200'}`}>

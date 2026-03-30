@@ -14,6 +14,7 @@ from datetime import datetime, timezone
 import pyarrow as pa  # type: ignore[import-untyped]
 
 from bani.application.checkpoint import CheckpointManager
+from bani.application.hook_runner import HookRunner
 from bani.application.progress import ProgressTracker
 from bani.application.quarantine import QuarantineManager
 from bani.application.run_log import RunLog, RunLogEntry
@@ -84,6 +85,10 @@ class MigrationOrchestrator:
         self._checkpoint = checkpoint or CheckpointManager()
         self._quarantine = quarantine or QuarantineManager()
         self._cancel_event: threading.Event | None = None
+        self._hook_runner = HookRunner(
+            source_executor=source,
+            target_executor=sink,
+        )
 
     def set_cancel_event(self, event: threading.Event) -> None:
         """Register a threading.Event that signals cancellation."""
@@ -92,6 +97,34 @@ class MigrationOrchestrator:
     @property
     def _cancelled(self) -> bool:
         return self._cancel_event is not None and self._cancel_event.is_set()
+
+    def _hook_context(self, **extra: str) -> dict[str, str]:
+        """Build variable context for hook substitution."""
+        ctx: dict[str, str] = {
+            "project_name": self.project.name,
+            "source_dialect": self.project.source.dialect if self.project.source else "",
+            "target_dialect": self.project.target.dialect if self.project.target else "",
+        }
+        ctx.update(extra)
+        return ctx
+
+    def _run_hooks(self, phase: str, **extra: str) -> None:
+        """Execute hooks for a lifecycle phase, if any are defined."""
+        if not self.project.hooks:
+            return
+        # Check if any hooks match this phase before emitting
+        matching = [h for h in self.project.hooks if h.event == phase]
+        if not matching:
+            return
+        self.tracker.phase_change(f"hooks:{phase}")
+        try:
+            self._hook_runner.execute_hooks(
+                self.project.hooks, phase, context=self._hook_context(**extra)
+            )
+        except Exception:
+            # HookExecutionError with on_failure="abort" propagates;
+            # all others are logged and swallowed.
+            raise
 
     def execute(self, resume: bool = False) -> MigrationResult:
         """Execute the full migration from schema creation through data transfer.
@@ -188,6 +221,12 @@ class MigrationOrchestrator:
                 table_count=len(ordered_tables),
             )
 
+            # Execute before-migration hooks
+            self._run_hooks(
+                "before-migration",
+                table_count=str(len(ordered_tables)),
+            )
+
             # Create target schema
             schema_failures: dict[str, str] = {}
             if self.options.create_target_schema:
@@ -244,6 +283,16 @@ class MigrationOrchestrator:
 
             if self._cancelled:
                 errors.append("Migration cancelled by user")
+
+            # Execute after-migration hooks
+            if not self._cancelled:
+                self._run_hooks(
+                    "after-migration",
+                    table_count=str(len(ordered_tables)),
+                    tables_completed=str(tables_completed),
+                    tables_failed=str(tables_failed),
+                    total_rows=str(total_rows_written),
+                )
 
         except BaniError as e:
             errors.append(str(e))
@@ -915,6 +964,9 @@ class MigrationOrchestrator:
                 table_name, estimated_rows=table.row_count_estimate
             )
 
+            # Execute before-table hooks
+            self._run_hooks("before-table", table_name=table_name)
+
             if identity_insert:
                 self._set_identity_insert(table, on=True)
 
@@ -1018,6 +1070,13 @@ class MigrationOrchestrator:
                 total_rows_read,
                 total_rows_written,
                 batch_number,
+            )
+
+            # Execute after-table hooks
+            self._run_hooks(
+                "after-table",
+                table_name=table_name,
+                rows_written=str(total_rows_written),
             )
 
             return _TableTransferResult(

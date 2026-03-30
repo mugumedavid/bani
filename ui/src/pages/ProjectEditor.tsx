@@ -416,6 +416,7 @@ export function ProjectEditor() {
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['projects'] });
       queryClient.invalidateQueries({ queryKey: ['project', id] });
+      queryClient.invalidateQueries({ queryKey: ['schedules'] });
       if (runAfterSave) {
         setRunAfterSave(false);
         setShowRunDialog(true);

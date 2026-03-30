@@ -214,8 +214,23 @@ export function getRunSummary(): Promise<RunSummary> {
   return request<RunSummary>('/api/runs/summary');
 }
 
+export function getLastRunPerProject(): Promise<Record<string, RunLogEntry>> {
+  return request<Record<string, RunLogEntry>>('/api/runs/last-per-project');
+}
+
 export function clearRunHistory(): Promise<{ detail: string }> {
   return request<{ detail: string }>('/api/runs', { method: 'DELETE' });
+}
+
+export interface ScheduleInfo {
+  project: string;
+  cron: string;
+  next_run: string | null;
+  status: 'active' | 'failed';
+}
+
+export function getSchedules(): Promise<ScheduleInfo[]> {
+  return request<ScheduleInfo[]>('/api/schedules');
 }
 
 export interface MigrateStatusResponse {

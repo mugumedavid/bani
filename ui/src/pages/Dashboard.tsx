@@ -9,11 +9,14 @@ import {
   getMigrateStatus,
   getCheckpoint,
   deleteCheckpoint,
+  getSchedules,
+  getLastRunPerProject,
   type RunLogEntry,
   type RunSummary,
   type MigrateStatusResponse,
   type ProjectSummary,
   type CheckpointInfo,
+  type ScheduleInfo,
 } from '../api/client';
 import { RunMigrationDialog } from '../components/RunMigrationDialog';
 
@@ -223,6 +226,24 @@ export function Dashboard() {
     },
   });
 
+  // Fetch schedule info for all projects
+  const { data: schedules } = useQuery<ScheduleInfo[]>({
+    queryKey: ['schedules'],
+    queryFn: getSchedules,
+    staleTime: 30_000,
+  });
+  const scheduleMap: Record<string, ScheduleInfo> = {};
+  for (const s of schedules ?? []) {
+    scheduleMap[s.project] = s;
+  }
+
+  // Fetch last run status per project
+  const { data: lastRuns } = useQuery<Record<string, RunLogEntry>>({
+    queryKey: ['lastRunPerProject'],
+    queryFn: getLastRunPerProject,
+    staleTime: 30_000,
+  });
+
   if (projectsLoading) {
     return (
       <div className="flex items-center justify-center py-20">
@@ -424,6 +445,9 @@ export function Dashboard() {
             {projects.map((project) => {
               const ckpt = checkpointMap[project.name];
               const hasCheckpoint = ckpt?.exists;
+              const sched = scheduleMap[project.name];
+              const lastRun = lastRuns?.[project.name];
+              const isProjectRunning = migrateStatus?.running && migrateStatus.project_name === project.name;
               return (
                 <div
                   key={project.name}
@@ -433,17 +457,51 @@ export function Dashboard() {
                     <h3 className="text-sm font-semibold text-gray-900 truncate">
                       {project.name}
                     </h3>
-                    {hasCheckpoint ? (
-                      <span className="px-1.5 py-0.5 rounded text-[10px] font-medium bg-amber-100 text-amber-700 ml-2 flex-shrink-0">
-                        checkpoint
-                      </span>
-                    ) : (
-                      <span className="px-1.5 py-0.5 rounded text-[10px] font-medium bg-gray-100 text-gray-500 ml-2 flex-shrink-0">
-                        idle
-                      </span>
-                    )}
+                    <div className="flex items-center gap-1.5 ml-2 flex-shrink-0">
+                      {/* Last run status indicator */}
+                      {lastRun && !isProjectRunning && (
+                        <span title={lastRun.status === 'completed' ? 'Last run succeeded' : 'Last run failed'}>
+                          {lastRun.status === 'completed' ? (
+                            <svg className="w-3.5 h-3.5 text-green-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M5 13l4 4L19 7" />
+                            </svg>
+                          ) : (
+                            <svg className="w-3.5 h-3.5 text-red-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M6 18L18 6M6 6l12 12" />
+                            </svg>
+                          )}
+                        </span>
+                      )}
+                      {/* Schedule clock icon */}
+                      {sched && (
+                        <span title={sched.status === 'active' ? `Scheduled: ${sched.cron}` : 'Schedule failed to start'}>
+                          <svg className={`w-3.5 h-3.5 ${sched.status === 'active' ? 'text-blue-500' : 'text-red-400'}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
+                          </svg>
+                        </span>
+                      )}
+                      {/* Running indicator */}
+                      {isProjectRunning && (
+                        <svg className="animate-spin w-3.5 h-3.5 text-indigo-500" fill="none" viewBox="0 0 24 24">
+                          <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+                          <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
+                        </svg>
+                      )}
+                      {/* Checkpoint badge — only when NOT running */}
+                      {hasCheckpoint && !isProjectRunning && (
+                        <span className="px-1.5 py-0.5 rounded text-[10px] font-medium bg-amber-100 text-amber-700">
+                          checkpoint
+                        </span>
+                      )}
+                    </div>
                   </div>
-                  {hasCheckpoint && (
+                  {sched?.next_run && (
+                    <p className="text-[11px] text-blue-500 mb-1">
+                      Next run: {new Date(sched.next_run).toLocaleString()}
+                    </p>
+                  )}
+                  {/* Checkpoint info — only when NOT running */}
+                  {hasCheckpoint && !isProjectRunning && (
                     <div className="mb-1.5 flex items-center justify-between">
                       <p className="text-[11px] text-amber-600">
                         {ckpt.tables_completed} / {ckpt.tables_total} tables completed
@@ -451,7 +509,7 @@ export function Dashboard() {
                       <div className="flex items-center gap-2">
                         <button
                           onClick={() => setRunDialogProject(project.name)}
-                          className="text-[10px] text-amber-700 hover:text-indigo-600 font-medium"
+                          className="text-[10px] text-amber-700 hover:text-indigo-600 font-medium cursor-pointer"
                         >
                           Resume
                         </button>
@@ -461,7 +519,7 @@ export function Dashboard() {
                               deleteCheckpointMutation.mutate(project.name);
                             }
                           }}
-                          className="text-[10px] text-amber-500 hover:text-red-600 font-medium"
+                          className="text-[10px] text-amber-500 hover:text-red-600 font-medium cursor-pointer"
                         >
                           Clear
                         </button>
@@ -471,7 +529,7 @@ export function Dashboard() {
                   <div className="flex items-center gap-2">
                     <button
                       onClick={() => setRunDialogProject(project.name)}
-                      className="text-xs text-indigo-600 hover:text-indigo-800 font-medium"
+                      className="text-xs text-indigo-600 hover:text-green-600 font-medium cursor-pointer"
                     >
                       Run
                     </button>
@@ -488,7 +546,7 @@ export function Dashboard() {
                           deleteMutation.mutate(project.name);
                         }
                       }}
-                      className="text-xs text-gray-400 hover:text-red-500 font-medium"
+                      className="text-xs text-gray-400 hover:text-red-500 font-medium cursor-pointer"
                     >
                       Delete
                     </button>

@@ -22,6 +22,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 
+from bani.ui.scheduler_registry import SchedulerRegistry
 from bani.ui.sse import SSEBroadcaster, sse_progress_endpoint
 
 logger = logging.getLogger(__name__)
@@ -64,10 +65,19 @@ class BaniUIServer:
         Returns:
             A fully-configured FastAPI instance.
         """
+        projects_dir = self.projects_dir
+
         @asynccontextmanager
         async def lifespan(app: FastAPI) -> AsyncIterator[None]:
+            # Startup: start scheduler registry for cron-enabled projects
+            registry = SchedulerRegistry(projects_dir)
+            app.state.scheduler_registry = registry
+            registry.scan_and_start_all()
+
             yield
-            # Shutdown: cancel any running migration gracefully
+
+            # Shutdown: stop all schedulers then cancel running migration
+            registry.stop_all()
             state = app.state.migration_state
             cancel_event = state.get("cancel_event")
             if isinstance(cancel_event, threading.Event) and state.get("running"):

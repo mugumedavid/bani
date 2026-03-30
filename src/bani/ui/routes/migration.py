@@ -599,6 +599,18 @@ async def list_runs() -> list[dict[str, Any]]:
     return RunLog().recent(50)  # type: ignore[return-value]
 
 
+@router.get("/runs/last-per-project")
+async def last_run_per_project() -> dict[str, Any]:
+    """Return the last run entry for each project.
+
+    Returns:
+        Dict mapping project_name to its last run log entry.
+    """
+    from bani.application.run_log import RunLog
+
+    return RunLog().last_run_per_project()  # type: ignore[return-value]
+
+
 @router.get("/runs/summary")
 async def run_summary() -> dict[str, Any]:
     """Return summary stats for the dashboard.
@@ -663,6 +675,19 @@ async def delete_checkpoint(project_name: str) -> dict[str, str]:
     mgr = CheckpointManager()
     mgr.clear(project_name)
     return {"detail": f"Checkpoint for '{project_name}' deleted"}
+
+
+@router.get("/schedules")
+async def list_schedules(request: Request) -> list[dict[str, Any]]:
+    """List all projects with enabled cron schedules.
+
+    Returns:
+        List of schedule info dicts with project, cron, next_run, status.
+    """
+    registry = getattr(request.app.state, "scheduler_registry", None)
+    if registry is None:
+        return []
+    return registry.list_schedules()
 
 
 @router.post("/migrate/cancel", status_code=202)

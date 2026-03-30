@@ -164,7 +164,9 @@ class TestSqlExecution:
         hook = HookConfig(
             name="vacuum",
             event="post",
-            command="sql:VACUUM ANALYZE",
+            command="VACUUM ANALYZE",
+            hook_type="sql",
+            target="target",
             timeout_seconds=60,
             on_failure="abort",
         )
@@ -186,7 +188,9 @@ class TestSqlExecution:
         hook = HookConfig(
             name="bad-sql",
             event="post",
-            command="sql:DROP TABLE important",
+            command="DROP TABLE important",
+            hook_type="sql",
+            target="target",
             timeout_seconds=60,
             on_failure="warn",
         )
@@ -200,7 +204,8 @@ class TestSqlExecution:
         hook = HookConfig(
             name="orphan-sql",
             event="pre",
-            command="sql:SELECT 1",
+            command="SELECT 1",
+            hook_type="sql",
             timeout_seconds=10,
             on_failure="warn",
         )
@@ -379,7 +384,9 @@ class TestVariableSubstitution:
         hook = HookConfig(
             name="alter-hook",
             event="post",
-            command="sql:ALTER TABLE {project_name}.foo DISABLE TRIGGER ALL",
+            command="ALTER TABLE {project_name}.foo DISABLE TRIGGER ALL",
+            hook_type="sql",
+            target="target",
             timeout_seconds=60,
             on_failure="abort",
         )

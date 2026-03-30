@@ -92,6 +92,20 @@ class RunLog:
         if self._path.exists():
             self._path.unlink()
 
+    def last_run_per_project(self) -> dict[str, dict[str, object]]:
+        """Return the most recent run entry for each project.
+
+        Returns:
+            Dict mapping project_name to its last run log entry.
+        """
+        entries = self._read_all()
+        result: dict[str, dict[str, object]] = {}
+        for entry in entries:
+            name = str(entry.get("project_name", ""))
+            if name:
+                result[name] = entry  # later entries overwrite earlier
+        return result
+
     def _read_all(self) -> list[dict[str, object]]:
         """Read all entries from the JSONL file.
 

@@ -182,4 +182,5 @@ class TestProjectCRUD:
             resp = await ac.get("/api/projects", headers=_headers)
         assert resp.status_code == 200
         names = [p["name"] for p in resp.json()]
-        assert names == ["alpha", "beta"]
+        # Sorted newest first (beta created after alpha)
+        assert names == ["beta", "alpha"]

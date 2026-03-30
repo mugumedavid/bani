@@ -409,6 +409,9 @@ class SchedulerService:
                     checkpoint=self._checkpoint,
                 )
 
+                # Wire scheduler stop event to orchestrator cancellation
+                orchestrator.set_cancel_event(self._stop_event)
+
                 # Use resume if a checkpoint exists
                 resume = self._checkpoint.load(self.project.name) is not None
 

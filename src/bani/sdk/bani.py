@@ -151,9 +151,14 @@ class BaniProject:
         source_cfg = self._project.source
         assert source_cfg is not None
 
+        pool_size = (
+            self._project.options.parallel_workers
+            if self._project.options
+            else 1
+        )
         source_connector_class = ConnectorRegistry.get(source_cfg.dialect)
         source = cast(type[SourceConnector], source_connector_class)()
-        source.connect(source_cfg)
+        source.connect(source_cfg, pool_size=pool_size)
 
         try:
             return preview_source(source, tables=tables, sample_size=sample_size)
