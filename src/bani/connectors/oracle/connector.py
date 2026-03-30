@@ -34,6 +34,7 @@ from bani.connectors.oracle.data_reader import OracleDataReader
 from bani.connectors.oracle.data_writer import OracleDataWriter
 from bani.connectors.oracle.schema_reader import OracleSchemaReader
 from bani.connectors.oracle.type_mapper import OracleTypeMapper
+from bani.connectors.pool import ConnectionPool
 from bani.domain.project import ConnectionConfig
 from bani.domain.schema import (
     DatabaseSchema,
@@ -58,11 +59,10 @@ class OracleConnector(SourceConnector, SinkConnector):
         """Initialize the Oracle connector."""
         self.connection: oracledb.Connection | None = None
         self._schema_reader: OracleSchemaReader | None = None
-        self._data_reader: OracleDataReader | None = None
-        self._data_writer: OracleDataWriter | None = None
+        self._pool: ConnectionPool[oracledb.Connection] | None = None
         self._owner: str = ""
 
-    def connect(self, config: ConnectionConfig) -> None:
+    def connect(self, config: ConnectionConfig, pool_size: int = 1) -> None:
         """Establish a connection to an Oracle database.
 
         Resolves credential environment variables and establishes the
@@ -72,6 +72,7 @@ class OracleConnector(SourceConnector, SinkConnector):
             config: Connection configuration with dialect="oracle".
                     Requires host, port, and either database (SID) or
                     service_name.
+            pool_size: Number of connections to create in the pool.
 
         Raises:
             ValueError: If required configuration is missing.
@@ -116,11 +117,21 @@ class OracleConnector(SourceConnector, SinkConnector):
         elif config.database:
             connect_kwargs["sid"] = config.database
 
-        # Establish connection
-        self.connection = oracledb.connect(**connect_kwargs)
+        self._config = config
+        self._pool_size = pool_size
+
+        # Create connection pool
+        self._pool = ConnectionPool(
+            factory=lambda: oracledb.connect(**connect_kwargs),
+            reset=lambda conn: conn.rollback(),
+            close=lambda conn: conn.close(),
+            size=pool_size,
+        )
+
+        # Primary connection for backward compat and schema reads
+        self.connection = self._pool.primary
 
         # Store the owner for schema-qualified identifiers
-        # Retrieve the actual user connected as (may differ from config)
         cursor = self.connection.cursor()
         try:
             cursor.execute("SELECT user FROM dual")
@@ -129,12 +140,8 @@ class OracleConnector(SourceConnector, SinkConnector):
         finally:
             cursor.close()
 
-        self._config = config  # Stored for reconnection
-
-        # Initialize helper objects
+        # Initialize schema reader on the primary connection
         self._schema_reader = OracleSchemaReader(self.connection, self._owner)
-        self._data_reader = OracleDataReader(self.connection, self._owner)
-        self._data_writer = OracleDataWriter(self.connection)
 
     def disconnect(self) -> None:
         """Close the database connection.
@@ -142,12 +149,11 @@ class OracleConnector(SourceConnector, SinkConnector):
         Raises:
             Exception: If disconnection fails.
         """
-        if self.connection is not None:
-            self.connection.close()
-            self.connection = None
-            self._schema_reader = None
-            self._data_reader = None
-            self._data_writer = None
+        if self._pool is not None:
+            self._pool.close_all()
+            self._pool = None
+        self.connection = None
+        self._schema_reader = None
 
     def introspect_schema(self) -> DatabaseSchema:
         """Introspect the complete database schema.
@@ -191,16 +197,18 @@ class OracleConnector(SourceConnector, SinkConnector):
             RuntimeError: If not connected.
             Exception: If reading fails.
         """
-        if self.connection is None or self._data_reader is None:
+        if self._pool is None:
             raise RuntimeError("Oracle connector is not connected")
 
-        return self._data_reader.read_table(
-            table_name=table_name,
-            schema_name=schema_name,
-            columns=columns,
-            filter_sql=filter_sql,
-            batch_size=batch_size,
-        )
+        with self._pool.acquire() as conn:
+            reader = OracleDataReader(conn, self._owner)
+            yield from reader.read_table(
+                table_name=table_name,
+                schema_name=schema_name,
+                columns=columns,
+                filter_sql=filter_sql,
+                batch_size=batch_size,
+            )
 
     def estimate_row_count(self, table_name: str, schema_name: str) -> int:
         """Get an estimated row count for a table.
@@ -216,10 +224,12 @@ class OracleConnector(SourceConnector, SinkConnector):
             RuntimeError: If not connected.
             Exception: If estimation fails.
         """
-        if self.connection is None or self._data_reader is None:
+        if self._pool is None:
             raise RuntimeError("Oracle connector is not connected")
 
-        return self._data_reader.estimate_row_count(table_name, schema_name)
+        with self._pool.acquire() as conn:
+            reader = OracleDataReader(conn, self._owner)
+            return reader.estimate_row_count(table_name, schema_name)
 
     def create_table(self, table_def: TableDefinition) -> None:
         """Create a table in the database.
@@ -233,7 +243,7 @@ class OracleConnector(SourceConnector, SinkConnector):
             RuntimeError: If not connected.
             Exception: If table creation fails.
         """
-        if self.connection is None:
+        if self._pool is None:
             raise RuntimeError("Oracle connector is not connected")
         if not table_def.columns:
             raise ValueError(f"Table {table_def.table_name} has no columns")
@@ -282,15 +292,16 @@ class OracleConnector(SourceConnector, SinkConnector):
             f"({col_list})"
         )
 
-        cursor = self.connection.cursor()
-        try:
+        with self._pool.acquire() as conn:
+            cursor = conn.cursor()
             try:
-                cursor.execute(drop_sql)
-            except Exception:
-                pass  # Table doesn't exist yet — that's fine
-            cursor.execute(create_sql)
-        finally:
-            cursor.close()
+                try:
+                    cursor.execute(drop_sql)
+                except Exception:
+                    pass  # Table doesn't exist yet — that's fine
+                cursor.execute(create_sql)
+            finally:
+                cursor.close()
 
     @staticmethod
     def _normalize_default(raw_default: str) -> str:
@@ -331,10 +342,12 @@ class OracleConnector(SourceConnector, SinkConnector):
             RuntimeError: If not connected.
             Exception: If writing fails.
         """
-        if self.connection is None or self._data_writer is None:
+        if self._pool is None:
             raise RuntimeError("Oracle connector is not connected")
 
-        return self._data_writer.write_batch(table_name, schema_name, batch)
+        with self._pool.acquire() as conn:
+            writer = OracleDataWriter(conn)
+            return writer.write_batch(table_name, schema_name, batch)
 
     def create_indexes(
         self,
@@ -353,32 +366,33 @@ class OracleConnector(SourceConnector, SinkConnector):
             RuntimeError: If not connected.
             Exception: If index creation fails.
         """
-        if self.connection is None:
+        if self._pool is None:
             raise RuntimeError("Oracle connector is not connected")
 
-        cursor = self.connection.cursor()
-        try:
-            for index in indexes:
-                unique_kw = "UNIQUE" if index.is_unique else ""
-                col_list = ", ".join(f'"{col}"' for col in index.columns)
+        with self._pool.acquire() as conn:
+            cursor = conn.cursor()
+            try:
+                for index in indexes:
+                    unique_kw = "UNIQUE" if index.is_unique else ""
+                    col_list = ", ".join(f'"{col}"' for col in index.columns)
 
-                create_idx_sql = (
-                    f"CREATE {unique_kw} INDEX "
-                    f'"{index.name}" ON "{schema_name}"."{table_name}" '
-                    f"({col_list})"
-                )
+                    create_idx_sql = (
+                        f"CREATE {unique_kw} INDEX "
+                        f'"{index.name}" ON "{schema_name}"."{table_name}" '
+                        f"({col_list})"
+                    )
 
-                try:
-                    cursor.execute(create_idx_sql)
-                except Exception as exc:
-                    # ORA-01408: column list already indexed (PK covers it)
-                    # ORA-00955: name already used (index name collision)
-                    exc_str = str(exc)
-                    if "ORA-01408" in exc_str or "ORA-00955" in exc_str:
-                        continue
-                    raise
-        finally:
-            cursor.close()
+                    try:
+                        cursor.execute(create_idx_sql)
+                    except Exception as exc:
+                        # ORA-01408: column list already indexed (PK covers it)
+                        # ORA-00955: name already used (index name collision)
+                        exc_str = str(exc)
+                        if "ORA-01408" in exc_str or "ORA-00955" in exc_str:
+                            continue
+                        raise
+            finally:
+                cursor.close()
 
     def create_foreign_keys(self, fks: tuple[ForeignKeyDefinition, ...]) -> None:
         """Create foreign key constraints.
@@ -390,49 +404,47 @@ class OracleConnector(SourceConnector, SinkConnector):
             RuntimeError: If not connected.
             Exception: If FK creation fails.
         """
-        if self.connection is None:
+        if self._pool is None:
             raise RuntimeError("Oracle connector is not connected")
 
-        cursor = self.connection.cursor()
-        try:
-            for fk in fks:
-                # Parse source table FQN
-                src_parts = fk.source_table.split(".")
-                src_schema = src_parts[0] if len(src_parts) > 1 else self._owner
-                src_table = src_parts[-1]
+        with self._pool.acquire() as conn:
+            cursor = conn.cursor()
+            try:
+                for fk in fks:
+                    # Parse source table FQN
+                    src_parts = fk.source_table.split(".")
+                    src_schema = src_parts[0] if len(src_parts) > 1 else self._owner
+                    src_table = src_parts[-1]
 
-                # Parse referenced table FQN
-                ref_parts = fk.referenced_table.split(".")
-                ref_schema = ref_parts[0] if len(ref_parts) > 1 else self._owner
-                ref_table = ref_parts[-1]
+                    # Parse referenced table FQN
+                    ref_parts = fk.referenced_table.split(".")
+                    ref_schema = ref_parts[0] if len(ref_parts) > 1 else self._owner
+                    ref_table = ref_parts[-1]
 
-                # Build column lists
-                src_cols = ", ".join(f'"{col}"' for col in fk.source_columns)
-                ref_cols = ", ".join(f'"{col}"' for col in fk.referenced_columns)
+                    # Build column lists
+                    src_cols = ", ".join(f'"{col}"' for col in fk.source_columns)
+                    ref_cols = ", ".join(f'"{col}"' for col in fk.referenced_columns)
 
-                # Build ALTER TABLE statement
-                # Oracle only supports ON DELETE CASCADE and ON DELETE SET NULL.
-                # NO ACTION / RESTRICT are the default — just omit them.
-                # Oracle requires constraint names to be unique per-schema.
-                # Prefix with source table to avoid collisions.
-                unique_name = f"{src_table}_{fk.name}"[:30]
+                    # Oracle requires constraint names to be unique per-schema.
+                    # Prefix with source table to avoid collisions.
+                    unique_name = f"{src_table}_{fk.name}"[:30]
 
-                alter_sql = (
-                    f'ALTER TABLE "{src_schema}"."{src_table}" '
-                    f'ADD CONSTRAINT "{unique_name}" FOREIGN KEY ({src_cols}) '
-                    f'REFERENCES "{ref_schema}"."{ref_table}" ({ref_cols})'
-                )
-                if fk.on_delete and fk.on_delete.upper() in (
-                    "CASCADE", "SET NULL",
-                ):
-                    alter_sql += f" ON DELETE {fk.on_delete}"
+                    alter_sql = (
+                        f'ALTER TABLE "{src_schema}"."{src_table}" '
+                        f'ADD CONSTRAINT "{unique_name}" FOREIGN KEY ({src_cols}) '
+                        f'REFERENCES "{ref_schema}"."{ref_table}" ({ref_cols})'
+                    )
+                    if fk.on_delete and fk.on_delete.upper() in (
+                        "CASCADE", "SET NULL",
+                    ):
+                        alter_sql += f" ON DELETE {fk.on_delete}"
 
-                try:
-                    cursor.execute(alter_sql)
-                except Exception:
-                    pass  # Skip FKs that fail (type mismatch, missing PK, etc.)
-        finally:
-            cursor.close()
+                    try:
+                        cursor.execute(alter_sql)
+                    except Exception:
+                        pass  # Skip FKs that fail (type mismatch, missing PK, etc.)
+            finally:
+                cursor.close()
 
     def execute_sql(self, sql_str: str) -> None:
         """Execute arbitrary SQL.
@@ -444,14 +456,15 @@ class OracleConnector(SourceConnector, SinkConnector):
             RuntimeError: If not connected.
             Exception: If execution fails.
         """
-        if self.connection is None:
+        if self._pool is None:
             raise RuntimeError("Oracle connector is not connected")
 
-        cursor = self.connection.cursor()
-        try:
-            cursor.execute(sql_str)
-        finally:
-            cursor.close()
+        with self._pool.acquire() as conn:
+            cursor = conn.cursor()
+            try:
+                cursor.execute(sql_str)
+            finally:
+                cursor.close()
 
     @staticmethod
     def _resolve_env_var(env_ref: str) -> str | None:

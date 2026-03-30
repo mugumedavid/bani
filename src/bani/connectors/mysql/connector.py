@@ -29,6 +29,7 @@ from bani.connectors.mysql.data_reader import MySQLDataReader
 from bani.connectors.mysql.data_writer import MySQLDataWriter
 from bani.connectors.mysql.schema_reader import MySQLSchemaReader
 from bani.connectors.mysql.type_mapper import MySQLTypeMapper
+from bani.connectors.pool import ConnectionPool
 from bani.domain.project import ConnectionConfig
 from bani.domain.schema import (
     DatabaseSchema,
@@ -65,11 +66,10 @@ class MySQLConnector(SourceConnector, SinkConnector):
         """Initialize the MySQL connector."""
         self.connection: pymysql.connections.Connection[Any] | None = None
         self._schema_reader: MySQLSchemaReader | None = None
-        self._data_reader: MySQLDataReader | None = None
-        self._data_writer: MySQLDataWriter | None = None
+        self._pool: ConnectionPool[pymysql.connections.Connection[Any]] | None = None
         self._database: str = ""
 
-    def connect(self, config: ConnectionConfig) -> None:
+    def connect(self, config: ConnectionConfig, pool_size: int = 1) -> None:
         """Establish a connection to a MySQL database.
 
         Resolves credential environment variables and establishes the
@@ -77,6 +77,7 @@ class MySQLConnector(SourceConnector, SinkConnector):
 
         Args:
             config: Connection configuration with dialect="mysql".
+            pool_size: Number of connections to create in the pool.
 
         Raises:
             ValueError: If required configuration is missing.
@@ -116,15 +117,23 @@ class MySQLConnector(SourceConnector, SinkConnector):
         if config.encrypt:
             connect_kwargs["ssl"] = {"ssl": True}
 
-        # Establish connection
-        self.connection = pymysql.connect(**connect_kwargs)
         self._database = config.database
-        self._config = config  # Stored for reconnection
+        self._config = config
+        self._pool_size = pool_size
 
-        # Initialize helper objects
+        # Create connection pool
+        self._pool = ConnectionPool(
+            factory=lambda: pymysql.connect(**connect_kwargs),
+            reset=lambda conn: conn.rollback(),
+            close=lambda conn: conn.close(),
+            size=pool_size,
+        )
+
+        # Primary connection for backward compat and schema reads
+        self.connection = self._pool.primary
+
+        # Initialize schema reader on the primary connection
         self._schema_reader = MySQLSchemaReader(self.connection, self._database)
-        self._data_reader = MySQLDataReader(self.connection)
-        self._data_writer = MySQLDataWriter(self.connection)
 
     def disconnect(self) -> None:
         """Close the database connection.
@@ -132,12 +141,11 @@ class MySQLConnector(SourceConnector, SinkConnector):
         Raises:
             Exception: If disconnection fails.
         """
-        if self.connection is not None:
-            self.connection.close()
-            self.connection = None
-            self._schema_reader = None
-            self._data_reader = None
-            self._data_writer = None
+        if self._pool is not None:
+            self._pool.close_all()
+            self._pool = None
+        self.connection = None
+        self._schema_reader = None
 
     def introspect_schema(self) -> DatabaseSchema:
         """Introspect the complete database schema.
@@ -181,16 +189,18 @@ class MySQLConnector(SourceConnector, SinkConnector):
             RuntimeError: If not connected.
             Exception: If reading fails.
         """
-        if self.connection is None or self._data_reader is None:
+        if self._pool is None:
             raise RuntimeError("MySQL connector is not connected")
 
-        return self._data_reader.read_table(
-            table_name=table_name,
-            schema_name=schema_name,
-            columns=columns,
-            filter_sql=filter_sql,
-            batch_size=batch_size,
-        )
+        with self._pool.acquire() as conn:
+            reader = MySQLDataReader(conn)
+            yield from reader.read_table(
+                table_name=table_name,
+                schema_name=schema_name,
+                columns=columns,
+                filter_sql=filter_sql,
+                batch_size=batch_size,
+            )
 
     def estimate_row_count(self, table_name: str, schema_name: str) -> int:
         """Get an estimated row count for a table.
@@ -206,10 +216,12 @@ class MySQLConnector(SourceConnector, SinkConnector):
             RuntimeError: If not connected.
             Exception: If estimation fails.
         """
-        if self.connection is None or self._data_reader is None:
+        if self._pool is None:
             raise RuntimeError("MySQL connector is not connected")
 
-        return self._data_reader.estimate_row_count(table_name, schema_name)
+        with self._pool.acquire() as conn:
+            reader = MySQLDataReader(conn)
+            return reader.estimate_row_count(table_name, schema_name)
 
     def create_table(self, table_def: TableDefinition) -> None:
         """Create a table in the database.
@@ -224,7 +236,7 @@ class MySQLConnector(SourceConnector, SinkConnector):
             RuntimeError: If not connected.
             Exception: If table creation fails.
         """
-        if self.connection is None:
+        if self._pool is None:
             raise RuntimeError("MySQL connector is not connected")
         if not table_def.columns:
             raise ValueError(f"Table {table_def.table_name} has no columns")
@@ -290,37 +302,39 @@ class MySQLConnector(SourceConnector, SinkConnector):
         # Drop FK constraints referencing this table, then drop + recreate
         schema = table_def.schema_name
         tname = table_def.table_name
-        with self.connection.cursor() as cur:
-            cur.execute("SET FOREIGN_KEY_CHECKS=0")
 
-            # Find and drop all FK constraints that reference this table
-            cur.execute(
-                "SELECT TABLE_NAME, CONSTRAINT_NAME "
-                "FROM information_schema.KEY_COLUMN_USAGE "
-                "WHERE REFERENCED_TABLE_SCHEMA = %s "
-                "AND REFERENCED_TABLE_NAME = %s",
-                (schema, tname),
-            )
-            for ref_table, fk_name in cur.fetchall():
-                try:
-                    cur.execute(
-                        f"ALTER TABLE `{schema}`.`{ref_table}` "
-                        f"DROP FOREIGN KEY `{fk_name}`"
-                    )
-                except Exception:
-                    pass  # already dropped or table gone
+        with self._pool.acquire() as conn:
+            with conn.cursor() as cur:
+                cur.execute("SET FOREIGN_KEY_CHECKS=0")
 
-            cur.execute(
-                f"DROP TABLE IF EXISTS `{schema}`.`{tname}`"
-            )
+                # Find and drop all FK constraints that reference this table
+                cur.execute(
+                    "SELECT TABLE_NAME, CONSTRAINT_NAME "
+                    "FROM information_schema.KEY_COLUMN_USAGE "
+                    "WHERE REFERENCED_TABLE_SCHEMA = %s "
+                    "AND REFERENCED_TABLE_NAME = %s",
+                    (schema, tname),
+                )
+                for ref_table, fk_name in cur.fetchall():
+                    try:
+                        cur.execute(
+                            f"ALTER TABLE `{schema}`.`{ref_table}` "
+                            f"DROP FOREIGN KEY `{fk_name}`"
+                        )
+                    except Exception:
+                        pass  # already dropped or table gone
 
-            create_sql = (
-                f"CREATE TABLE `{schema}`.`{tname}` "
-                f"({col_list}) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 "
-                f"COLLATE=utf8mb4_unicode_ci"
-            )
-            cur.execute(create_sql)
-            cur.execute("SET FOREIGN_KEY_CHECKS=1")
+                cur.execute(
+                    f"DROP TABLE IF EXISTS `{schema}`.`{tname}`"
+                )
+
+                create_sql = (
+                    f"CREATE TABLE `{schema}`.`{tname}` "
+                    f"({col_list}) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 "
+                    f"COLLATE=utf8mb4_unicode_ci"
+                )
+                cur.execute(create_sql)
+                cur.execute("SET FOREIGN_KEY_CHECKS=1")
 
     @staticmethod
     def _normalize_default(raw_default: str, mysql_type: str) -> str:
@@ -366,10 +380,12 @@ class MySQLConnector(SourceConnector, SinkConnector):
             RuntimeError: If not connected.
             Exception: If writing fails.
         """
-        if self.connection is None or self._data_writer is None:
+        if self._pool is None:
             raise RuntimeError("MySQL connector is not connected")
 
-        return self._data_writer.write_batch(table_name, schema_name, batch)
+        with self._pool.acquire() as conn:
+            writer = MySQLDataWriter(conn)
+            return writer.write_batch(table_name, schema_name, batch)
 
     def create_indexes(
         self,
@@ -388,41 +404,42 @@ class MySQLConnector(SourceConnector, SinkConnector):
             RuntimeError: If not connected.
             Exception: If index creation fails.
         """
-        if self.connection is None:
+        if self._pool is None:
             raise RuntimeError("MySQL connector is not connected")
 
-        with self.connection.cursor() as cur:
-            # Query column types so we can add prefix lengths for TEXT/BLOB
-            cur.execute(
-                "SELECT column_name, data_type "
-                "FROM information_schema.columns "
-                "WHERE table_schema = %s AND table_name = %s",
-                (schema_name, table_name),
-            )
-            col_type_map: dict[str, str] = {
-                row[0]: row[1].upper() for row in cur.fetchall()
-            }
-
-            text_types = {"TEXT", "TINYTEXT", "MEDIUMTEXT", "LONGTEXT",
-                          "BLOB", "TINYBLOB", "MEDIUMBLOB", "LONGBLOB"}
-
-            for index in indexes:
-                unique_kw = "UNIQUE" if index.is_unique else ""
-                col_parts = []
-                for col in index.columns:
-                    ctype = col_type_map.get(col, "")
-                    if ctype in text_types:
-                        col_parts.append(f"`{col}`(255)")
-                    else:
-                        col_parts.append(f"`{col}`")
-                col_list = ", ".join(col_parts)
-
-                create_idx_sql = (
-                    f"CREATE {unique_kw} INDEX `{index.name}` "
-                    f"ON `{schema_name}`.`{table_name}` ({col_list})"
+        with self._pool.acquire() as conn:
+            with conn.cursor() as cur:
+                # Query column types so we can add prefix lengths for TEXT/BLOB
+                cur.execute(
+                    "SELECT column_name, data_type "
+                    "FROM information_schema.columns "
+                    "WHERE table_schema = %s AND table_name = %s",
+                    (schema_name, table_name),
                 )
+                col_type_map: dict[str, str] = {
+                    row[0]: row[1].upper() for row in cur.fetchall()
+                }
 
-                cur.execute(create_idx_sql)
+                text_types = {"TEXT", "TINYTEXT", "MEDIUMTEXT", "LONGTEXT",
+                              "BLOB", "TINYBLOB", "MEDIUMBLOB", "LONGBLOB"}
+
+                for index in indexes:
+                    unique_kw = "UNIQUE" if index.is_unique else ""
+                    col_parts = []
+                    for col in index.columns:
+                        ctype = col_type_map.get(col, "")
+                        if ctype in text_types:
+                            col_parts.append(f"`{col}`(255)")
+                        else:
+                            col_parts.append(f"`{col}`")
+                    col_list = ", ".join(col_parts)
+
+                    create_idx_sql = (
+                        f"CREATE {unique_kw} INDEX `{index.name}` "
+                        f"ON `{schema_name}`.`{table_name}` ({col_list})"
+                    )
+
+                    cur.execute(create_idx_sql)
 
     def create_foreign_keys(self, fks: tuple[ForeignKeyDefinition, ...]) -> None:
         """Create foreign key constraints.
@@ -434,40 +451,41 @@ class MySQLConnector(SourceConnector, SinkConnector):
             RuntimeError: If not connected.
             Exception: If FK creation fails.
         """
-        if self.connection is None:
+        if self._pool is None:
             raise RuntimeError("MySQL connector is not connected")
 
-        with self.connection.cursor() as cur:
-            for fk in fks:
-                # Parse source table FQN
-                src_parts = fk.source_table.split(".")
-                src_schema = src_parts[0] if len(src_parts) > 1 else self._database
-                src_table = src_parts[-1]
+        with self._pool.acquire() as conn:
+            with conn.cursor() as cur:
+                for fk in fks:
+                    # Parse source table FQN
+                    src_parts = fk.source_table.split(".")
+                    src_schema = src_parts[0] if len(src_parts) > 1 else self._database
+                    src_table = src_parts[-1]
 
-                # Parse referenced table FQN
-                ref_parts = fk.referenced_table.split(".")
-                ref_schema = ref_parts[0] if len(ref_parts) > 1 else self._database
-                ref_table = ref_parts[-1]
+                    # Parse referenced table FQN
+                    ref_parts = fk.referenced_table.split(".")
+                    ref_schema = ref_parts[0] if len(ref_parts) > 1 else self._database
+                    ref_table = ref_parts[-1]
 
-                # Build column lists
-                src_cols = ", ".join(f"`{col}`" for col in fk.source_columns)
-                ref_cols = ", ".join(f"`{col}`" for col in fk.referenced_columns)
+                    # Build column lists
+                    src_cols = ", ".join(f"`{col}`" for col in fk.source_columns)
+                    ref_cols = ", ".join(f"`{col}`" for col in fk.referenced_columns)
 
-                # MySQL requires FK names to be unique per-database.
-                # Prefix with source table to avoid collisions.
-                unique_name = f"{src_table}_{fk.name}"[:64]
+                    # MySQL requires FK names to be unique per-database.
+                    # Prefix with source table to avoid collisions.
+                    unique_name = f"{src_table}_{fk.name}"[:64]
 
-                alter_sql = (
-                    f"ALTER TABLE `{src_schema}`.`{src_table}` "
-                    f"ADD CONSTRAINT `{unique_name}` FOREIGN KEY ({src_cols}) "
-                    f"REFERENCES `{ref_schema}`.`{ref_table}` ({ref_cols}) "
-                    f"ON DELETE {fk.on_delete} ON UPDATE {fk.on_update}"
-                )
+                    alter_sql = (
+                        f"ALTER TABLE `{src_schema}`.`{src_table}` "
+                        f"ADD CONSTRAINT `{unique_name}` FOREIGN KEY ({src_cols}) "
+                        f"REFERENCES `{ref_schema}`.`{ref_table}` ({ref_cols}) "
+                        f"ON DELETE {fk.on_delete} ON UPDATE {fk.on_update}"
+                    )
 
-                try:
-                    cur.execute(alter_sql)
-                except Exception:
-                    pass  # Skip FKs that fail (type mismatch, missing PK, etc.)
+                    try:
+                        cur.execute(alter_sql)
+                    except Exception:
+                        pass  # Skip FKs that fail (type mismatch, missing PK, etc.)
 
     def execute_sql(self, sql_str: str) -> None:
         """Execute arbitrary SQL.
@@ -479,11 +497,12 @@ class MySQLConnector(SourceConnector, SinkConnector):
             RuntimeError: If not connected.
             Exception: If execution fails.
         """
-        if self.connection is None:
+        if self._pool is None:
             raise RuntimeError("MySQL connector is not connected")
 
-        with self.connection.cursor() as cur:
-            cur.execute(sql_str)
+        with self._pool.acquire() as conn:
+            with conn.cursor() as cur:
+                cur.execute(sql_str)
 
     @staticmethod
     def _resolve_env_var(env_ref: str) -> str | None:

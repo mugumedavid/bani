@@ -9,11 +9,13 @@ from __future__ import annotations
 
 from abc import ABC, abstractmethod
 from collections.abc import Iterator
-from typing import TYPE_CHECKING
+from contextlib import contextmanager
+from typing import TYPE_CHECKING, Any
 
 if TYPE_CHECKING:
-    import pyarrow as pa
+    import pyarrow as pa  # type: ignore[import-untyped]
 
+from bani.connectors.pool import ConnectionPool
 from bani.domain.project import ConnectionConfig
 from bani.domain.schema import (
     DatabaseSchema,
@@ -31,12 +33,15 @@ class SourceConnector(ABC):
     details like SQL dialects and driver APIs.
     """
 
+    _pool: ConnectionPool[Any] | None = None
+
     @abstractmethod
-    def connect(self, config: ConnectionConfig) -> None:
+    def connect(self, config: ConnectionConfig, pool_size: int = 1) -> None:
         """Establish a connection to the source database.
 
         Args:
             config: Connection configuration with resolved credentials.
+            pool_size: Number of connections to create in the pool.
 
         Raises:
             Exception: If the connection fails.
@@ -60,13 +65,27 @@ class SourceConnector(ABC):
         fresh one.  Useful for recovering from network timeouts.
         """
         config = getattr(self, "_config", None)
+        pool_size = getattr(self, "_pool_size", 1)
         if config is None:
             raise RuntimeError("Cannot reconnect: no stored config")
         try:
             self.disconnect()
         except Exception:
             pass
-        self.connect(config)
+        self.connect(config, pool_size=pool_size)
+
+    @contextmanager
+    def checkout(self) -> Iterator[Any]:
+        """Check out a connection from the pool.
+
+        Falls back to yielding ``self.connection`` when no pool is
+        configured (backward compatibility).
+        """
+        if self._pool is not None:
+            with self._pool.acquire() as conn:
+                yield conn
+        else:
+            yield getattr(self, "connection", None)
 
     @abstractmethod
     def introspect_schema(self) -> DatabaseSchema:
@@ -142,12 +161,15 @@ class SinkConnector(ABC):
     DML details.
     """
 
+    _pool: ConnectionPool[Any] | None = None
+
     @abstractmethod
-    def connect(self, config: ConnectionConfig) -> None:
+    def connect(self, config: ConnectionConfig, pool_size: int = 1) -> None:
         """Establish a connection to the target database.
 
         Args:
             config: Connection configuration with resolved credentials.
+            pool_size: Number of connections to create in the pool.
 
         Raises:
             Exception: If the connection fails.
@@ -171,13 +193,27 @@ class SinkConnector(ABC):
         fresh one.  Useful for recovering from network timeouts.
         """
         config = getattr(self, "_config", None)
+        pool_size = getattr(self, "_pool_size", 1)
         if config is None:
             raise RuntimeError("Cannot reconnect: no stored config")
         try:
             self.disconnect()
         except Exception:
             pass
-        self.connect(config)
+        self.connect(config, pool_size=pool_size)
+
+    @contextmanager
+    def checkout(self) -> Iterator[Any]:
+        """Check out a connection from the pool.
+
+        Falls back to yielding ``self.connection`` when no pool is
+        configured (backward compatibility).
+        """
+        if self._pool is not None:
+            with self._pool.acquire() as conn:
+                yield conn
+        else:
+            yield getattr(self, "connection", None)
 
     @abstractmethod
     def create_table(self, table_def: TableDefinition) -> None:

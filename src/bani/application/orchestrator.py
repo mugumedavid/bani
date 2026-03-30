@@ -9,13 +9,15 @@ import threading
 import time
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from dataclasses import dataclass
-from typing import TYPE_CHECKING, Any
+from datetime import datetime, timezone
+from typing import TYPE_CHECKING
 
 import pyarrow as pa  # type: ignore[import-untyped]
 
 from bani.application.checkpoint import CheckpointManager
 from bani.application.progress import ProgressTracker
 from bani.application.quarantine import QuarantineManager
+from bani.application.run_log import RunLog, RunLogEntry
 from bani.application.schema_remap import SchemaRemapper
 from bani.connectors.base import SinkConnector, SourceConnector
 from bani.domain.dependency import DependencyResolver
@@ -98,6 +100,7 @@ class MigrationOrchestrator:
             MigrationResult with summary statistics.
         """
         start_time = time.time()
+        run_start = datetime.now(timezone.utc).isoformat()
         errors: list[str] = []
         tables_completed = 0
         tables_failed = 0
@@ -129,6 +132,11 @@ class MigrationOrchestrator:
             # Introspect source schema
             source_schema = self.source.introspect_schema()
 
+            # Store original source schema names for read_table calls
+            self._source_schema_map: dict[str, str] = {
+                t.table_name: t.schema_name for t in source_schema.tables
+            }
+
             # Apply cross-dialect schema remapping if needed
             if (
                 self.project.source
@@ -149,9 +157,7 @@ class MigrationOrchestrator:
 
             # Create or validate checkpoint
             if not resume:
-                checkpoint.create(
-                    self.project.name, project_hash, ordered_tables
-                )
+                checkpoint.create(self.project.name, project_hash, ordered_tables)
 
             # Emit migration started
             self.tracker.migration_started(
@@ -203,6 +209,25 @@ class MigrationOrchestrator:
             total_rows_written=total_rows_written,
             duration_seconds=duration,
         )
+
+        # Append to run history log
+        try:
+            run_log = RunLog()
+            run_log.append(
+                RunLogEntry(
+                    project_name=self.project.name,
+                    started_at=run_start,
+                    finished_at=datetime.now(timezone.utc).isoformat(),
+                    status="completed" if tables_failed == 0 else "failed",
+                    tables_completed=tables_completed,
+                    tables_failed=tables_failed,
+                    total_rows=total_rows_written,
+                    duration_seconds=duration,
+                    error="; ".join(errors) if errors else None,
+                )
+            )
+        except Exception:
+            logger.debug("Failed to write run log entry", exc_info=True)
 
         return MigrationResult(
             project_name=self.project.name,
@@ -265,16 +290,12 @@ class MigrationOrchestrator:
 
             for table_name in ordered_tables:
                 # Skip completed tables when resuming
-                if resume and checkpoint.is_table_completed(
-                    project_name, table_name
-                ):
+                if resume and checkpoint.is_table_completed(project_name, table_name):
                     logger.info(
                         "Skipping completed table '%s' (resume mode)",
                         table_name,
                     )
-                    results.append(
-                        _TableTransferResult(table_name, True, 0, 0)
-                    )
+                    results.append(_TableTransferResult(table_name, True, 0, 0))
                     continue
 
                 table = source_schema.get_table("", table_name.split(".")[-1])
@@ -298,9 +319,7 @@ class MigrationOrchestrator:
                     continue
 
                 # Mark as in_progress in checkpoint
-                checkpoint.update_table_status(
-                    project_name, table_name, "in_progress"
-                )
+                checkpoint.update_table_status(project_name, table_name, "in_progress")
 
                 future = executor.submit(self._transfer_table, table)
                 futures[future] = table_name
@@ -328,6 +347,17 @@ class MigrationOrchestrator:
                     )
 
         return results
+
+    def _source_schema_for(self, table: TableDefinition) -> str:
+        """Return the original source schema name for reading from source DB.
+
+        After schema remapping, table.schema_name is the TARGET schema
+        (e.g. 'dbo'). For reading from the source, we need the original
+        name (e.g. 'public').
+        """
+        return getattr(self, '_source_schema_map', {}).get(
+            table.table_name, table.schema_name
+        )
 
     def _should_chunk(self, table: TableDefinition) -> bool:
         """Determine whether a table qualifies for chunk-level parallelism.
@@ -360,9 +390,9 @@ class MigrationOrchestrator:
     ) -> tuple[int, int] | None:
         """Get min and max values of the primary key column.
 
-        Uses the source connector's connection directly to execute a
-        ``SELECT MIN/MAX`` query.  Returns ``None`` on any failure so
-        the caller can fall back to non-chunked transfer.
+        Uses the source connector's pool to check out a connection and
+        execute a ``SELECT MIN/MAX`` query.  Returns ``None`` on any
+        failure so the caller can fall back to non-chunked transfer.
 
         Args:
             table: The table definition.
@@ -372,16 +402,12 @@ class MigrationOrchestrator:
             ``(min_val, max_val)`` tuple, or ``None`` if the range
             cannot be determined.
         """
-        conn: Any = getattr(self.source, "connection", None)
-        if conn is None:
-            return None
-
         try:
             # Standard SQL — works across PostgreSQL, MySQL, MSSQL, Oracle, SQLite.
             # We use the simplest identifier quoting (double quotes) which is
             # ANSI standard and supported by PG, Oracle, SQLite.  MySQL accepts
             # them when ANSI_QUOTES is on; for MySQL we also fall back on failure.
-            schema = table.schema_name
+            schema = self._source_schema_for(table)
             tbl = table.table_name
             if schema:
                 fqn = f'"{schema}"."{tbl}"'
@@ -389,12 +415,13 @@ class MigrationOrchestrator:
                 fqn = f'"{tbl}"'
             sql = f'SELECT MIN("{pk_col}"), MAX("{pk_col}") FROM {fqn}'
 
-            cur = conn.cursor()
-            try:
-                cur.execute(sql)
-                row = cur.fetchone()
-            finally:
-                cur.close()
+            with self.source.checkout() as conn:
+                cur = conn.cursor()
+                try:
+                    cur.execute(sql)
+                    row = cur.fetchone()
+                finally:
+                    cur.close()
 
             if row is None or row[0] is None or row[1] is None:
                 return None
@@ -491,7 +518,7 @@ class MigrationOrchestrator:
 
             for batch in self.source.read_table(
                 table.table_name,
-                table.schema_name,
+                self._source_schema_for(table),
                 filter_sql=filter_sql,
                 batch_size=batch_size,
             ):
@@ -620,7 +647,9 @@ class MigrationOrchestrator:
                 except Exception as retry_exc:
                     result = _TableTransferResult(
                         table.fully_qualified_name,
-                        False, 0, 0,
+                        False,
+                        0,
+                        0,
                         f"Failed after reconnect: {retry_exc!s}",
                     )
             else:
@@ -717,7 +746,7 @@ class MigrationOrchestrator:
                 try:
                     for batch in self.source.read_table(
                         table.table_name,
-                        table.schema_name,
+                        self._source_schema_for(table),
                         batch_size=batch_size,
                     ):
                         batch_queue.put(batch)
@@ -842,10 +871,7 @@ class MigrationOrchestrator:
             on: ``True`` to enable, ``False`` to disable.
         """
         state = "ON" if on else "OFF"
-        sql = (
-            f"SET IDENTITY_INSERT [{table.schema_name}]"
-            f".[{table.table_name}] {state}"
-        )
+        sql = f"SET IDENTITY_INSERT [{table.schema_name}].[{table.table_name}] {state}"
         try:
             self.sink.execute_sql(sql)
         except Exception:

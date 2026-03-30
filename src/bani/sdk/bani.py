@@ -79,22 +79,29 @@ class BaniProject:
         assert source_cfg is not None
         assert target_cfg is not None
 
+        # Determine pool size from project options
+        pool_size = (
+            self._project.options.parallel_workers
+            if self._project.options
+            else 4
+        )
+
         # Create source connector and connect
         source_connector_class = ConnectorRegistry.get(source_cfg.dialect)
         source = cast(type[SourceConnector], source_connector_class)()
-        source.connect(source_cfg)
+        source.connect(source_cfg, pool_size=pool_size)
 
         # Create sink connector and connect
         sink_connector_class = ConnectorRegistry.get(target_cfg.dialect)
         sink = cast(type[SinkConnector], sink_connector_class)()
-        sink.connect(target_cfg)
+        sink.connect(target_cfg, pool_size=pool_size)
 
         try:
             # Create progress tracker if callback provided
             tracker = None
             if on_progress:
                 tracker = ProgressTracker()
-                # Wire up the callback to the tracker's events if needed
+                tracker.add_listener(on_progress)
 
             orchestrator = MigrationOrchestrator(
                 self._project, source, sink, tracker=tracker

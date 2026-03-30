@@ -51,6 +51,7 @@ from bani.connectors.mssql.data_reader import MSSQLDataReader
 from bani.connectors.mssql.data_writer import MSSQLDataWriter
 from bani.connectors.mssql.schema_reader import MSSQLSchemaReader
 from bani.connectors.mssql.type_mapper import MSSQLTypeMapper
+from bani.connectors.pool import ConnectionPool
 from bani.domain.project import ConnectionConfig
 from bani.domain.schema import (
     DatabaseSchema,
@@ -91,12 +92,11 @@ class MSSQLConnector(SourceConnector, SinkConnector):
         """Initialize the MSSQL connector."""
         self.connection: Any = None
         self._schema_reader: MSSQLSchemaReader | None = None
-        self._data_reader: MSSQLDataReader | None = None
-        self._data_writer: MSSQLDataWriter | None = None
+        self._pool: ConnectionPool[Any] | None = None
         self._database: str = ""
         self._driver: str = "pymssql"
 
-    def connect(self, config: ConnectionConfig) -> None:
+    def connect(self, config: ConnectionConfig, pool_size: int = 1) -> None:
         """Establish a connection to an MSSQL database.
 
         Tries pyodbc first (for fast_executemany support), then falls
@@ -104,6 +104,7 @@ class MSSQLConnector(SourceConnector, SinkConnector):
 
         Args:
             config: Connection configuration with dialect="mssql".
+            pool_size: Number of connections to create in the pool.
 
         Raises:
             ValueError: If required configuration is missing.
@@ -119,38 +120,53 @@ class MSSQLConnector(SourceConnector, SinkConnector):
 
         port = config.port if config.port > 0 else 1433
 
-        # Try pyodbc first for fast_executemany support
+        self._database = config.database
+        self._config = config
+        self._pool_size = pool_size
+
+        # Determine which driver to use by testing a single connection
+        driver = "pymssql"
         if pyodbc_module is not None:
             try:
-                self.connection = self._connect_pyodbc(
-                    config.host, port, config.database,
-                    username, password,
+                test_conn = self._connect_pyodbc(
+                    config.host, port, config.database, username, password,
                 )
-                self._driver = "pyodbc"
-                _log.info("MSSQL: connected via pyodbc (fast_executemany)")
+                test_conn.close()
+                driver = "pyodbc"
+                _log.info("MSSQL: using pyodbc (fast_executemany)")
             except Exception as exc:
                 _log.info(
                     "MSSQL: pyodbc connection failed (%s), "
                     "falling back to pymssql",
                     exc,
                 )
-                self.connection = None
 
-        # Fall back to pymssql
-        if self.connection is None:
-            self.connection = self._connect_pymssql(
-                config.host, port, config.database,
-                username, password, config.encrypt,
-            )
-            self._driver = "pymssql"
-            _log.info("MSSQL: connected via pymssql")
+        self._driver = driver
 
-        self._database = config.database
-        self._config = config  # Stored for reconnection
+        # Build pool factory based on chosen driver
+        if driver == "pyodbc":
+            def factory() -> Any:
+                return self._connect_pyodbc(
+                    config.host, port, config.database, username, password,
+                )
+        else:
+            def factory() -> Any:
+                return self._connect_pymssql(
+                    config.host, port, config.database,
+                    username, password, config.encrypt,
+                )
+
+        self._pool = ConnectionPool(
+            factory=factory,
+            reset=lambda conn: conn.rollback(),
+            close=lambda conn: conn.close(),
+            size=pool_size,
+        )
+
+        # Primary connection for backward compat and schema reads
+        self.connection = self._pool.primary
 
         self._schema_reader = MSSQLSchemaReader(self.connection, self._database)
-        self._data_reader = MSSQLDataReader(self.connection, self._driver)
-        self._data_writer = MSSQLDataWriter(self.connection, self._driver)
 
     @staticmethod
     def _connect_pyodbc(
@@ -230,12 +246,11 @@ class MSSQLConnector(SourceConnector, SinkConnector):
         Raises:
             Exception: If disconnection fails.
         """
-        if self.connection is not None:
-            self.connection.close()
-            self.connection = None
-            self._schema_reader = None
-            self._data_reader = None
-            self._data_writer = None
+        if self._pool is not None:
+            self._pool.close_all()
+            self._pool = None
+        self.connection = None
+        self._schema_reader = None
 
     def introspect_schema(self) -> DatabaseSchema:
         """Introspect the complete database schema.
@@ -279,16 +294,18 @@ class MSSQLConnector(SourceConnector, SinkConnector):
             RuntimeError: If not connected.
             Exception: If reading fails.
         """
-        if self.connection is None or self._data_reader is None:
+        if self._pool is None:
             raise RuntimeError("MSSQL connector is not connected")
 
-        return self._data_reader.read_table(
-            table_name=table_name,
-            schema_name=schema_name,
-            columns=columns,
-            filter_sql=filter_sql,
-            batch_size=batch_size,
-        )
+        with self._pool.acquire() as conn:
+            reader = MSSQLDataReader(conn, self._driver)
+            yield from reader.read_table(
+                table_name=table_name,
+                schema_name=schema_name,
+                columns=columns,
+                filter_sql=filter_sql,
+                batch_size=batch_size,
+            )
 
     def estimate_row_count(self, table_name: str, schema_name: str) -> int:
         """Get an estimated row count for a table.
@@ -304,10 +321,12 @@ class MSSQLConnector(SourceConnector, SinkConnector):
             RuntimeError: If not connected.
             Exception: If estimation fails.
         """
-        if self.connection is None or self._data_reader is None:
+        if self._pool is None:
             raise RuntimeError("MSSQL connector is not connected")
 
-        return self._data_reader.estimate_row_count(table_name, schema_name)
+        with self._pool.acquire() as conn:
+            reader = MSSQLDataReader(conn, self._driver)
+            return reader.estimate_row_count(table_name, schema_name)
 
     def create_table(self, table_def: TableDefinition) -> None:
         """Create a table in the database.
@@ -321,7 +340,7 @@ class MSSQLConnector(SourceConnector, SinkConnector):
             RuntimeError: If not connected.
             Exception: If table creation fails.
         """
-        if self.connection is None:
+        if self._pool is None:
             raise RuntimeError("MSSQL connector is not connected")
         if not table_def.columns:
             raise ValueError(f"Table {table_def.table_name} has no columns")
@@ -392,10 +411,11 @@ class MSSQLConnector(SourceConnector, SinkConnector):
             f"({col_list})"
         )
 
-        with self.connection.cursor() as cur:
-            cur.execute(drop_fks_sql)
-            cur.execute(drop_sql)
-            cur.execute(create_sql)
+        with self._pool.acquire() as conn:
+            with conn.cursor() as cur:
+                cur.execute(drop_fks_sql)
+                cur.execute(drop_sql)
+                cur.execute(create_sql)
 
     def write_batch(
         self, table_name: str, schema_name: str, batch: pa.RecordBatch
@@ -414,10 +434,12 @@ class MSSQLConnector(SourceConnector, SinkConnector):
             RuntimeError: If not connected.
             Exception: If writing fails.
         """
-        if self.connection is None or self._data_writer is None:
+        if self._pool is None:
             raise RuntimeError("MSSQL connector is not connected")
 
-        return self._data_writer.write_batch(table_name, schema_name, batch)
+        with self._pool.acquire() as conn:
+            writer = MSSQLDataWriter(conn, self._driver)
+            return writer.write_batch(table_name, schema_name, batch)
 
     @staticmethod
     def _normalize_default(raw_default: str, mssql_type: str) -> str:
@@ -478,40 +500,41 @@ class MSSQLConnector(SourceConnector, SinkConnector):
             RuntimeError: If not connected.
             Exception: If index creation fails.
         """
-        if self.connection is None:
+        if self._pool is None:
             raise RuntimeError("MSSQL connector is not connected")
 
-        with self.connection.cursor() as cur:
-            for index in indexes:
-                # MSSQL cannot index NVARCHAR(MAX) / VARBINARY(MAX).
-                # Narrow indexed MAX columns to a bounded length first.
-                self._narrow_max_columns_for_index(
-                    cur, schema_name, table_name, index.columns
-                )
-
-                unique_kw = "UNIQUE" if index.is_unique else ""
-                col_list = ", ".join(f"[{col}]" for col in index.columns)
-
-                create_idx_sql = (
-                    f"CREATE {unique_kw} INDEX [{index.name}] "
-                    f"ON [{schema_name}].[{table_name}] ({col_list})"
-                )
-
-                # MSSQL treats NULLs as duplicates in unique indexes
-                # (unlike PostgreSQL). Add a WHERE filter to exclude
-                # NULLs so the unique constraint behaves like PG.
-                if index.is_unique:
-                    not_null_filter = " AND ".join(
-                        f"[{col}] IS NOT NULL" for col in index.columns
+        with self._pool.acquire() as conn:
+            with conn.cursor() as cur:
+                for index in indexes:
+                    # MSSQL cannot index NVARCHAR(MAX) / VARBINARY(MAX).
+                    # Narrow indexed MAX columns to a bounded length first.
+                    self._narrow_max_columns_for_index(
+                        cur, schema_name, table_name, index.columns
                     )
-                    create_idx_sql += f" WHERE {not_null_filter}"
 
-                try:
-                    cur.execute(create_idx_sql)
-                except Exception:
-                    # Index may fail for other reasons (e.g. data
-                    # incompatibility). Skip and continue.
-                    pass
+                    unique_kw = "UNIQUE" if index.is_unique else ""
+                    col_list = ", ".join(f"[{col}]" for col in index.columns)
+
+                    create_idx_sql = (
+                        f"CREATE {unique_kw} INDEX [{index.name}] "
+                        f"ON [{schema_name}].[{table_name}] ({col_list})"
+                    )
+
+                    # MSSQL treats NULLs as duplicates in unique indexes
+                    # (unlike PostgreSQL). Add a WHERE filter to exclude
+                    # NULLs so the unique constraint behaves like PG.
+                    if index.is_unique:
+                        not_null_filter = " AND ".join(
+                            f"[{col}] IS NOT NULL" for col in index.columns
+                        )
+                        create_idx_sql += f" WHERE {not_null_filter}"
+
+                    try:
+                        cur.execute(create_idx_sql)
+                    except Exception:
+                        # Index may fail for other reasons (e.g. data
+                        # incompatibility). Skip and continue.
+                        pass
 
     def _narrow_max_columns_for_index(
         self,
@@ -554,20 +577,6 @@ class MSSQLConnector(SourceConnector, SinkConnector):
                     f"ALTER COLUMN [{col_name}] VARBINARY(900) {null_kw}"
                 )
 
-    def _reconnect(self) -> None:
-        """Re-establish the connection using the stored config.
-
-        Used to recover from broken connections (e.g. TCP timeout)
-        during long-running operations like FK creation.
-        """
-        try:
-            self.connection.close()
-        except Exception:
-            pass
-        self.connection = None
-        self.connect(self._config)
-        _log.info("MSSQL: reconnected after broken connection")
-
     def create_foreign_keys(self, fks: tuple[ForeignKeyDefinition, ...]) -> None:
         """Create foreign key constraints.
 
@@ -581,7 +590,7 @@ class MSSQLConnector(SourceConnector, SinkConnector):
         Raises:
             RuntimeError: If not connected.
         """
-        if self.connection is None:
+        if self._pool is None:
             raise RuntimeError("MSSQL connector is not connected")
 
         consecutive_conn_failures = 0
@@ -618,8 +627,9 @@ class MSSQLConnector(SourceConnector, SinkConnector):
             )
 
             try:
-                with self.connection.cursor() as cur:
-                    cur.execute(alter_sql)
+                with self._pool.acquire() as conn:
+                    with conn.cursor() as cur:
+                        cur.execute(alter_sql)
                 consecutive_conn_failures = 0  # Reset on success
             except Exception as exc:
                 exc_str = str(exc)
@@ -632,19 +642,9 @@ class MSSQLConnector(SourceConnector, SinkConnector):
                     consecutive_conn_failures += 1
                     _log.warning(
                         "Connection broken during FK creation "
-                        "(%d/%d), reconnecting...",
-                        consecutive_conn_failures, max_conn_failures,
+                        "(%d/%d): %s",
+                        consecutive_conn_failures, max_conn_failures, exc,
                     )
-                    try:
-                        self._reconnect()
-                        with self.connection.cursor() as cur:
-                            cur.execute(alter_sql)
-                        consecutive_conn_failures = 0  # Reconnect + retry worked
-                    except Exception as retry_exc:
-                        _log.warning(
-                            "FK %s on %s.%s skipped after reconnect: %s",
-                            unique_name, src_schema, src_table, retry_exc,
-                        )
                 else:
                     _log.warning(
                         "FK %s on %s.%s skipped: %s",
@@ -661,11 +661,12 @@ class MSSQLConnector(SourceConnector, SinkConnector):
             RuntimeError: If not connected.
             Exception: If execution fails.
         """
-        if self.connection is None:
+        if self._pool is None:
             raise RuntimeError("MSSQL connector is not connected")
 
-        with self.connection.cursor() as cur:
-            cur.execute(sql_str)
+        with self._pool.acquire() as conn:
+            with conn.cursor() as cur:
+                cur.execute(sql_str)
 
     @staticmethod
     def _resolve_env_var(env_ref: str) -> str | None:

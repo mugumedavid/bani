@@ -23,6 +23,7 @@ register_dialect_defaults("postgresql", DialectDefaultConfig(
     timestamp_expression="NOW()",
     temporal_keywords=("timestamp", "date", "time", "interval"),
 ))
+from bani.connectors.pool import ConnectionPool
 from bani.connectors.postgresql.data_reader import PostgreSQLDataReader
 from bani.connectors.postgresql.data_writer import PostgreSQLDataWriter
 from bani.connectors.postgresql.schema_reader import PostgreSQLSchemaReader
@@ -48,10 +49,9 @@ class PostgreSQLConnector(SourceConnector, SinkConnector):
         """Initialize the PostgreSQL connector."""
         self.connection: psycopg.Connection[tuple[Any, ...]] | None = None
         self._schema_reader: PostgreSQLSchemaReader | None = None
-        self._data_reader: PostgreSQLDataReader | None = None
-        self._data_writer: PostgreSQLDataWriter | None = None
+        self._pool: ConnectionPool[psycopg.Connection[tuple[Any, ...]]] | None = None
 
-    def connect(self, config: ConnectionConfig) -> None:
+    def connect(self, config: ConnectionConfig, pool_size: int = 1) -> None:
         """Establish a connection to a PostgreSQL database.
 
         Resolves credential environment variables and establishes the
@@ -59,6 +59,7 @@ class PostgreSQLConnector(SourceConnector, SinkConnector):
 
         Args:
             config: Connection configuration with dialect="postgresql".
+            pool_size: Number of connections to create in the pool.
 
         Raises:
             ValueError: If required configuration is missing.
@@ -108,14 +109,22 @@ class PostgreSQLConnector(SourceConnector, SinkConnector):
 
         conninfo = " ".join(conninfo_parts)
 
-        # Establish connection
-        self.connection = psycopg.connect(conninfo, autocommit=True)
-        self._config = config  # Stored for reconnection
+        self._config = config
+        self._pool_size = pool_size
 
-        # Initialize helper objects
+        # Create connection pool
+        self._pool = ConnectionPool(
+            factory=lambda: psycopg.connect(conninfo, autocommit=True),
+            reset=lambda conn: conn.rollback(),
+            close=lambda conn: conn.close(),
+            size=pool_size,
+        )
+
+        # Primary connection for backward compat and schema reads
+        self.connection = self._pool.primary
+
+        # Initialize schema reader on the primary connection
         self._schema_reader = PostgreSQLSchemaReader(self.connection)
-        self._data_reader = PostgreSQLDataReader(self.connection)
-        self._data_writer = PostgreSQLDataWriter(self.connection)
 
     def disconnect(self) -> None:
         """Close the database connection.
@@ -123,12 +132,11 @@ class PostgreSQLConnector(SourceConnector, SinkConnector):
         Raises:
             Exception: If disconnection fails.
         """
-        if self.connection is not None:
-            self.connection.close()
-            self.connection = None
-            self._schema_reader = None
-            self._data_reader = None
-            self._data_writer = None
+        if self._pool is not None:
+            self._pool.close_all()
+            self._pool = None
+        self.connection = None
+        self._schema_reader = None
 
     def introspect_schema(self) -> DatabaseSchema:
         """Introspect the complete database schema.
@@ -172,16 +180,18 @@ class PostgreSQLConnector(SourceConnector, SinkConnector):
             RuntimeError: If not connected.
             Exception: If reading fails.
         """
-        if self.connection is None or self._data_reader is None:
+        if self._pool is None:
             raise RuntimeError("PostgreSQL connector is not connected")
 
-        return self._data_reader.read_table(
-            table_name=table_name,
-            schema_name=schema_name,
-            columns=columns,
-            filter_sql=filter_sql,
-            batch_size=batch_size,
-        )
+        with self._pool.acquire() as conn:
+            reader = PostgreSQLDataReader(conn)
+            yield from reader.read_table(
+                table_name=table_name,
+                schema_name=schema_name,
+                columns=columns,
+                filter_sql=filter_sql,
+                batch_size=batch_size,
+            )
 
     def estimate_row_count(self, table_name: str, schema_name: str) -> int:
         """Get an estimated row count for a table.
@@ -197,10 +207,12 @@ class PostgreSQLConnector(SourceConnector, SinkConnector):
             RuntimeError: If not connected.
             Exception: If estimation fails.
         """
-        if self.connection is None or self._data_reader is None:
+        if self._pool is None:
             raise RuntimeError("PostgreSQL connector is not connected")
 
-        return self._data_reader.estimate_row_count(table_name, schema_name)
+        with self._pool.acquire() as conn:
+            reader = PostgreSQLDataReader(conn)
+            return reader.estimate_row_count(table_name, schema_name)
 
     def create_table(self, table_def: TableDefinition) -> None:
         """Create a table in the database.
@@ -215,7 +227,7 @@ class PostgreSQLConnector(SourceConnector, SinkConnector):
             RuntimeError: If not connected.
             Exception: If table creation fails.
         """
-        if self.connection is None:
+        if self._pool is None:
             raise RuntimeError("PostgreSQL connector is not connected")
         if not table_def.columns:
             raise ValueError(f"Table {table_def.table_name} has no columns")
@@ -282,9 +294,10 @@ class PostgreSQLConnector(SourceConnector, SinkConnector):
             f"({col_list})"
         )
 
-        with self.connection.cursor() as cur:
-            cur.execute(drop_sql)
-            cur.execute(create_sql)
+        with self._pool.acquire() as conn:
+            with conn.cursor() as cur:
+                cur.execute(drop_sql)
+                cur.execute(create_sql)
 
     def write_batch(
         self, table_name: str, schema_name: str, batch: pa.RecordBatch
@@ -303,10 +316,12 @@ class PostgreSQLConnector(SourceConnector, SinkConnector):
             RuntimeError: If not connected.
             Exception: If writing fails.
         """
-        if self.connection is None or self._data_writer is None:
+        if self._pool is None:
             raise RuntimeError("PostgreSQL connector is not connected")
 
-        return self._data_writer.write_batch(table_name, schema_name, batch)
+        with self._pool.acquire() as conn:
+            writer = PostgreSQLDataWriter(conn)
+            return writer.write_batch(table_name, schema_name, batch)
 
     def create_indexes(
         self, table_name: str, schema_name: str, indexes: tuple[IndexDefinition, ...]
@@ -322,25 +337,26 @@ class PostgreSQLConnector(SourceConnector, SinkConnector):
             RuntimeError: If not connected.
             Exception: If index creation fails.
         """
-        if self.connection is None:
+        if self._pool is None:
             raise RuntimeError("PostgreSQL connector is not connected")
 
-        with self.connection.cursor() as cur:
-            for index in indexes:
-                # Build CREATE INDEX statement
-                unique_kw = "UNIQUE" if index.is_unique else ""
-                col_list = ", ".join(f'"{col}"' for col in index.columns)
+        with self._pool.acquire() as conn:
+            with conn.cursor() as cur:
+                for index in indexes:
+                    # Build CREATE INDEX statement
+                    unique_kw = "UNIQUE" if index.is_unique else ""
+                    col_list = ", ".join(f'"{col}"' for col in index.columns)
 
-                create_idx_sql = (
-                    f'CREATE {unique_kw} INDEX "{index.name}" '
-                    f'ON "{schema_name}"."{table_name}" ({col_list})'
-                )
+                    create_idx_sql = (
+                        f'CREATE {unique_kw} INDEX "{index.name}" '
+                        f'ON "{schema_name}"."{table_name}" ({col_list})'
+                    )
 
-                # Add filter expression if present
-                if index.filter_expression:
-                    create_idx_sql += f" WHERE {index.filter_expression}"
+                    # Add filter expression if present
+                    if index.filter_expression:
+                        create_idx_sql += f" WHERE {index.filter_expression}"
 
-                cur.execute(create_idx_sql)
+                    cur.execute(create_idx_sql)
 
     def create_foreign_keys(self, fks: tuple[ForeignKeyDefinition, ...]) -> None:
         """Create foreign key constraints.
@@ -352,34 +368,35 @@ class PostgreSQLConnector(SourceConnector, SinkConnector):
             RuntimeError: If not connected.
             Exception: If FK creation fails.
         """
-        if self.connection is None:
+        if self._pool is None:
             raise RuntimeError("PostgreSQL connector is not connected")
 
-        with self.connection.cursor() as cur:
-            for fk in fks:
-                # Parse source table FQN
-                src_parts = fk.source_table.split(".")
-                src_schema = src_parts[0] if len(src_parts) > 1 else "public"
-                src_table = src_parts[-1]
+        with self._pool.acquire() as conn:
+            with conn.cursor() as cur:
+                for fk in fks:
+                    # Parse source table FQN
+                    src_parts = fk.source_table.split(".")
+                    src_schema = src_parts[0] if len(src_parts) > 1 else "public"
+                    src_table = src_parts[-1]
 
-                # Parse referenced table FQN
-                ref_parts = fk.referenced_table.split(".")
-                ref_schema = ref_parts[0] if len(ref_parts) > 1 else "public"
-                ref_table = ref_parts[-1]
+                    # Parse referenced table FQN
+                    ref_parts = fk.referenced_table.split(".")
+                    ref_schema = ref_parts[0] if len(ref_parts) > 1 else "public"
+                    ref_table = ref_parts[-1]
 
-                # Build column lists
-                src_cols = ", ".join(f'"{col}"' for col in fk.source_columns)
-                ref_cols = ", ".join(f'"{col}"' for col in fk.referenced_columns)
+                    # Build column lists
+                    src_cols = ", ".join(f'"{col}"' for col in fk.source_columns)
+                    ref_cols = ", ".join(f'"{col}"' for col in fk.referenced_columns)
 
-                # Build ALTER TABLE statement
-                alter_sql = (
-                    f'ALTER TABLE "{src_schema}"."{src_table}" '
-                    f'ADD CONSTRAINT "{fk.name}" FOREIGN KEY ({src_cols}) '
-                    f'REFERENCES "{ref_schema}"."{ref_table}" ({ref_cols}) '
-                    f"ON DELETE {fk.on_delete} ON UPDATE {fk.on_update}"
-                )
+                    # Build ALTER TABLE statement
+                    alter_sql = (
+                        f'ALTER TABLE "{src_schema}"."{src_table}" '
+                        f'ADD CONSTRAINT "{fk.name}" FOREIGN KEY ({src_cols}) '
+                        f'REFERENCES "{ref_schema}"."{ref_table}" ({ref_cols}) '
+                        f"ON DELETE {fk.on_delete} ON UPDATE {fk.on_update}"
+                    )
 
-                cur.execute(alter_sql)
+                    cur.execute(alter_sql)
 
     def execute_sql(self, sql_str: str) -> None:
         """Execute arbitrary SQL.
@@ -391,11 +408,12 @@ class PostgreSQLConnector(SourceConnector, SinkConnector):
             RuntimeError: If not connected.
             Exception: If execution fails.
         """
-        if self.connection is None:
+        if self._pool is None:
             raise RuntimeError("PostgreSQL connector is not connected")
 
-        with self.connection.cursor() as cur:
-            cur.execute(sql_str)
+        with self._pool.acquire() as conn:
+            with conn.cursor() as cur:
+                cur.execute(sql_str)
 
     @staticmethod
     def _normalize_default(raw_default: str, pg_type: str) -> str:

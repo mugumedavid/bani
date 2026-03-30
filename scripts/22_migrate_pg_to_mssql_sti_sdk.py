@@ -1,14 +1,11 @@
 #!/usr/bin/env python3
 """Real-world migration: PostgreSQL (DHIS STI) -> MSSQL (STI_SOURCE).
 
-Same migration as script 21, but uses Bani's SDK features:
-  - ProjectBuilder for declarative project configuration
-  - ConnectorRegistry for dialect-driven connector discovery
-  - DependencyResolver for FK-safe table ordering
-  - ProgressTracker for structured progress events
+Uses the same code path as the UI/API: ProjectBuilder -> BaniProject.run()
+which delegates to MigrationOrchestrator.execute().
 
-Source: 192.168.100.46:5434/dhis_sti (PostgreSQL)
-Target: 192.168.100.46:1433/STI_SOURCE (MSSQL)
+Source: 172.20.10.4:5434/dhis_sti (PostgreSQL)
+Target: 172.20.10.4:1433/STI_SOURCE (MSSQL)
 
 Usage:
     python scripts/22_migrate_pg_to_mssql_sti_sdk.py
@@ -17,58 +14,42 @@ from __future__ import annotations
 
 import os
 import sys
-import time
-from dataclasses import replace as dc_replace
-from typing import cast
+from typing import Any
 
-from bani.application.progress import ProgressTracker
-from bani.connectors.base import SinkConnector, SourceConnector
-from bani.connectors.registry import ConnectorRegistry
-from bani.domain.dependency import DependencyResolver
-from bani.domain.schema import DatabaseSchema, TableDefinition
+from bani.application.progress import (
+    BatchComplete,
+    MigrationComplete,
+    MigrationStarted,
+    TableComplete,
+    TableStarted,
+)
+from bani.sdk.bani import BaniProject
 from bani.sdk.project_builder import ProjectBuilder
 
 
-def _remap_for_mssql(schema: DatabaseSchema, target_schema: str) -> DatabaseSchema:
-    """Remap a PG-introspected schema for MSSQL compatibility.
-
-    - Rewrites schema_name (e.g. public -> dbo)
-    - Strips PG-specific check constraints
-    - Drops tables with no columns
-    - Remaps FK references to the target schema
-    """
-
-    def _remap_fqn(fqn: str) -> str:
-        return f"{target_schema}.{fqn.split('.')[-1]}"
-
-    tables: list[TableDefinition] = []
-    for t in schema.tables:
-        if not t.columns:
-            continue
-        remapped_fks = tuple(
-            dc_replace(
-                fk,
-                source_table=_remap_fqn(fk.source_table),
-                referenced_table=_remap_fqn(fk.referenced_table),
-            )
-            for fk in t.foreign_keys
-        )
-        tables.append(
-            dc_replace(
-                t,
-                schema_name=target_schema,
-                foreign_keys=remapped_fks,
-                check_constraints=(),
-            )
-        )
-
-    return DatabaseSchema(tables=tuple(tables), source_dialect=schema.source_dialect)
+def _on_progress(event: Any) -> None:
+    """Print progress events to stdout."""
+    if isinstance(event, MigrationStarted):
+        print(f"\n[migration] {event.source_dialect} -> {event.target_dialect}, "
+              f"{event.table_count} tables")
+    elif isinstance(event, TableStarted):
+        est = f" (~{event.estimated_rows} rows)" if event.estimated_rows else ""
+        print(f"  [table] {event.table_name} started{est}")
+    elif isinstance(event, BatchComplete):
+        print(f"    [batch] {event.table_name} batch {event.batch_number}: "
+              f"{event.rows_written} rows written")
+    elif isinstance(event, TableComplete):
+        print(f"  [table] {event.table_name} done: "
+              f"{event.total_rows_written} rows, {event.batch_count} batches")
+    elif isinstance(event, MigrationComplete):
+        print(f"\n[migration] done in {event.duration_seconds:.1f}s — "
+              f"{event.tables_completed} ok, {event.tables_failed} failed, "
+              f"{event.total_rows_written} rows")
 
 
 def main() -> int:
-    """Run the migration using Bani SDK features."""
+    """Run the migration using the same core path as the API."""
 
-    # -- 1. Declarative project via ProjectBuilder -----------------------
     os.environ["SOURCE_USER"] = "postgres"
     os.environ["SOURCE_PASS"] = "Password@123"
     os.environ["TARGET_USER"] = "sa"
@@ -78,7 +59,7 @@ def main() -> int:
         ProjectBuilder("dhis_sti_to_mssql")
         .source(
             "postgresql",
-            host="192.168.100.46",
+            host="172.20.10.4",
             port=5434,
             database="dhis_sti",
             username_env="SOURCE_USER",
@@ -86,7 +67,7 @@ def main() -> int:
         )
         .target(
             "mssql",
-            host="192.168.100.46",
+            host="172.20.10.4",
             port=1433,
             database="STI_SOURCE",
             username_env="TARGET_USER",
@@ -96,165 +77,31 @@ def main() -> int:
         .build()
     )
 
-    # -- 2. Connector discovery via registry -----------------------------
-    assert project.source is not None and project.target is not None
+    bp = BaniProject(project)
 
-    source = cast(SourceConnector, ConnectorRegistry.get(project.source.dialect)())
-    source.connect(project.source)
-
-    sink = cast(SinkConnector, ConnectorRegistry.get(project.target.dialect)())
-    sink.connect(project.target)
-
-    # Show which MSSQL driver is active
-    mssql_driver = getattr(sink, "_driver", "unknown")
-    print(f"MSSQL driver: {mssql_driver}"
-          f"{' (fast_executemany)' if mssql_driver == 'pyodbc' else ' (inline INSERT)'}")
-
-    tracker = ProgressTracker()
-    start = time.time()
-
-    try:
-        print(f"Project: {project.name}")
-        print("=" * 55)
-
-        # -- 3. Introspect & remap --------------------------------------
-        print("Introspecting PostgreSQL schema...")
-        raw_schema = source.introspect_schema()
-        schema = _remap_for_mssql(raw_schema, target_schema="dbo")
-
-        print(f"Found {len(schema.tables)} tables")
-        for tbl in schema.tables:
-            print(
-                f"  {tbl.table_name}: {len(tbl.columns)} cols, "
-                f"~{tbl.row_count_estimate} rows"
-            )
-
-        # -- 4. Dependency-safe ordering ---------------------------------
-        resolver = DependencyResolver()
-        resolution = resolver.resolve(schema)
-        ordered = resolution.ordered_tables
-        deferred_fks = resolution.deferred_fks
-        print(f"\nTable order resolved ({len(ordered)} tables, "
-              f"{len(deferred_fks)} deferred FKs)")
-
-        tracker.migration_started(
-            project_name=project.name,
-            source_dialect="postgresql",
-            target_dialect="mssql",
-            table_count=len(ordered),
-        )
-
-        # Build a lookup from FQN -> TableDefinition
-        table_map = {t.fully_qualified_name: t for t in schema.tables}
-
-        # -- 5. Create tables in dependency order ------------------------
-        print("\nCreating tables on MSSQL...")
-        for fqn in ordered:
-            table = table_map.get(fqn)
-            if table is None:
-                continue
-            try:
-                sink.create_table(table)
-                print(f"  created {table.table_name}")
-            except Exception as exc:
-                print(f"  FAILED {table.table_name}: {exc}", file=sys.stderr)
-                raise
-
-        # -- 6. Transfer data (with IDENTITY INSERT handling) ------------
-        print("\nTransferring data...")
-        total_rows = 0
-        source_schema = "public"
-
-        for fqn in ordered:
-            table = table_map.get(fqn)
-            if table is None:
-                continue
-
-            try:
-                has_identity = any(c.is_auto_increment for c in table.columns)
-                if has_identity:
-                    with sink.connection.cursor() as cur:  # type: ignore[union-attr]
-                        cur.execute(
-                            f"SET IDENTITY_INSERT [{table.schema_name}]"
-                            f".[{table.table_name}] ON"
-                        )
-
-                row_count = 0
-                batch_num = 0
-                for batch in source.read_table(
-                    table.table_name, source_schema, batch_size=1000
-                ):
-                    sink.write_batch(table.table_name, table.schema_name, batch)
-                    row_count += batch.num_rows
-                    batch_num += 1
-
-                if has_identity:
-                    with sink.connection.cursor() as cur:  # type: ignore[union-attr]
-                        cur.execute(
-                            f"SET IDENTITY_INSERT [{table.schema_name}]"
-                            f".[{table.table_name}] OFF"
-                        )
-
-                tracker.table_complete(fqn, row_count, row_count, batch_num)
-                total_rows += row_count
-                print(f"  {table.table_name}: {row_count} rows")
-            except Exception as exc:
-                print(f"  {table.table_name}: SKIPPED ({exc})")
-                continue
-
-        # -- 7. Create indexes -------------------------------------------
-        print("\nCreating indexes...")
-        for table in schema.tables:
-            if table.indexes:
-                try:
-                    sink.create_indexes(
-                        table.table_name, table.schema_name, table.indexes
-                    )
-                    print(f"  {table.table_name}: {len(table.indexes)} indexes")
-                except Exception as exc:
-                    print(f"  {table.table_name}: FAILED ({exc})", file=sys.stderr)
-
-        # -- 8. Create foreign keys (non-deferred first, then deferred) --
-        deferred_names = {fk.name for fk in deferred_fks}
-        print("\nCreating foreign keys...")
-        for table in schema.tables:
-            # Skip FKs that the resolver deferred (they go in the second pass)
-            non_deferred = tuple(
-                fk for fk in table.foreign_keys if fk.name not in deferred_names
-            )
-            if non_deferred:
-                try:
-                    sink.create_foreign_keys(non_deferred)
-                    print(f"  {table.table_name}: {len(non_deferred)} FKs")
-                except Exception as exc:
-                    print(f"  {table.table_name}: FAILED ({exc})", file=sys.stderr)
-
-        if deferred_fks:
-            print(f"  Creating {len(deferred_fks)} deferred FKs...")
-            sink.create_foreign_keys(deferred_fks)
-
-        # -- 9. Verification ---------------------------------------------
-        duration = time.time() - start
-        tracker.migration_complete(
-            project_name=project.name,
-            tables_completed=len(ordered),
-            tables_failed=0,
-            total_rows_read=total_rows,
-            total_rows_written=total_rows,
-            duration_seconds=duration,
-        )
-
-        print(f"\n{'=' * 55}")
-        print(f"Migration complete: {len(ordered)} tables, "
-              f"{total_rows} rows in {duration:.1f}s")
-        return 0
-
-    except Exception as e:
-        print(f"\nError: {e}", file=sys.stderr)
+    is_valid, errors = bp.validate()
+    if not is_valid:
+        print(f"Validation failed: {'; '.join(errors)}", file=sys.stderr)
         return 1
-    finally:
-        source.disconnect()
-        sink.disconnect()
+
+    print(f"Project: {project.name}")
+    print("=" * 55)
+
+    result = bp.run(on_progress=_on_progress)
+
+    print(f"\n{'=' * 55}")
+    print(f"Tables completed: {result.tables_completed}")
+    print(f"Tables failed:    {result.tables_failed}")
+    print(f"Rows read:        {result.total_rows_read}")
+    print(f"Rows written:     {result.total_rows_written}")
+    print(f"Duration:         {result.duration_seconds:.1f}s")
+
+    if result.errors:
+        print(f"\nErrors ({len(result.errors)}):")
+        for err in result.errors:
+            print(f"  - {err}")
+
+    return 0 if result.tables_failed == 0 else 1
 
 
 if __name__ == "__main__":

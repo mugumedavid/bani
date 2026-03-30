@@ -13,7 +13,6 @@ SQLite-specific notes:
 
 from __future__ import annotations
 
-import re
 import sqlite3
 from collections.abc import Iterator
 
@@ -31,6 +30,7 @@ register_dialect_defaults("sqlite", DialectDefaultConfig(
     temporal_keywords=("date", "datetime", "timestamp", "time"),
     reject_function_calls=True,  # SQLite only accepts constant expressions
 ))
+from bani.connectors.pool import ConnectionPool
 from bani.connectors.sqlite.data_reader import SQLiteDataReader
 from bani.connectors.sqlite.data_writer import SQLiteDataWriter
 from bani.connectors.sqlite.schema_reader import SQLiteSchemaReader
@@ -42,6 +42,27 @@ from bani.domain.schema import (
     IndexDefinition,
     TableDefinition,
 )
+
+
+def _create_sqlite_connection(database: str) -> sqlite3.Connection:
+    """Create and configure a SQLite connection.
+
+    Args:
+        database: File path or ':memory:'.
+
+    Returns:
+        A configured sqlite3.Connection.
+    """
+    conn = sqlite3.connect(database, check_same_thread=False)
+
+    # Performance pragmas
+    if database != ":memory:":
+        conn.execute("PRAGMA journal_mode = WAL")
+    conn.execute("PRAGMA synchronous = NORMAL")
+    conn.execute("PRAGMA cache_size = -64000")
+    conn.execute("PRAGMA foreign_keys = ON")
+
+    return conn
 
 
 class SQLiteConnector(SourceConnector, SinkConnector):
@@ -58,11 +79,10 @@ class SQLiteConnector(SourceConnector, SinkConnector):
         """Initialize the SQLite connector."""
         self.connection: sqlite3.Connection | None = None
         self._schema_reader: SQLiteSchemaReader | None = None
-        self._data_reader: SQLiteDataReader | None = None
-        self._data_writer: SQLiteDataWriter | None = None
+        self._pool: ConnectionPool[sqlite3.Connection] | None = None
         self._database: str = ""
 
-    def connect(self, config: ConnectionConfig) -> None:
+    def connect(self, config: ConnectionConfig, pool_size: int = 1) -> None:
         """Establish a connection to a SQLite database.
 
         Uses the 'database' field from config as the file path.
@@ -72,6 +92,7 @@ class SQLiteConnector(SourceConnector, SinkConnector):
         Args:
             config: Connection configuration with dialect="sqlite".
                 The 'database' field is the file path or ':memory:'.
+            pool_size: Number of connections to create in the pool.
 
         Raises:
             ValueError: If required configuration is missing.
@@ -84,26 +105,22 @@ class SQLiteConnector(SourceConnector, SinkConnector):
             )
 
         self._database = config.database
+        self._config = config
+        self._pool_size = pool_size
 
-        # Establish connection
-        self.connection = sqlite3.connect(config.database)
+        # Create connection pool
+        self._pool = ConnectionPool(
+            factory=lambda: _create_sqlite_connection(config.database),
+            reset=lambda conn: conn.rollback(),
+            close=lambda conn: conn.close(),
+            size=pool_size,
+        )
 
-        # Performance pragmas — set before any other operations
-        # WAL improves write concurrency; only applies to file-based databases
-        if config.database != ":memory:":
-            self.connection.execute("PRAGMA journal_mode = WAL")
-        # synchronous = NORMAL avoids fsync on every transaction
-        self.connection.execute("PRAGMA synchronous = NORMAL")
-        # 64 MB page cache (negative value = size in KB)
-        self.connection.execute("PRAGMA cache_size = -64000")
+        # Primary connection for backward compat and schema reads
+        self.connection = self._pool.primary
 
-        # Enable foreign keys (OFF by default in SQLite)
-        self.connection.execute("PRAGMA foreign_keys = ON")
-
-        # Initialize helper objects
+        # Initialize schema reader on the primary connection
         self._schema_reader = SQLiteSchemaReader(self.connection)
-        self._data_reader = SQLiteDataReader(self.connection)
-        self._data_writer = SQLiteDataWriter(self.connection)
 
     def disconnect(self) -> None:
         """Close the database connection.
@@ -111,12 +128,11 @@ class SQLiteConnector(SourceConnector, SinkConnector):
         Raises:
             Exception: If disconnection fails.
         """
-        if self.connection is not None:
-            self.connection.close()
-            self.connection = None
-            self._schema_reader = None
-            self._data_reader = None
-            self._data_writer = None
+        if self._pool is not None:
+            self._pool.close_all()
+            self._pool = None
+        self.connection = None
+        self._schema_reader = None
 
     def introspect_schema(self) -> DatabaseSchema:
         """Introspect the complete database schema.
@@ -160,16 +176,18 @@ class SQLiteConnector(SourceConnector, SinkConnector):
             RuntimeError: If not connected.
             Exception: If reading fails.
         """
-        if self.connection is None or self._data_reader is None:
+        if self._pool is None:
             raise RuntimeError("SQLite connector is not connected")
 
-        return self._data_reader.read_table(
-            table_name=table_name,
-            schema_name=schema_name,
-            columns=columns,
-            filter_sql=filter_sql,
-            batch_size=batch_size,
-        )
+        with self._pool.acquire() as conn:
+            reader = SQLiteDataReader(conn)
+            yield from reader.read_table(
+                table_name=table_name,
+                schema_name=schema_name,
+                columns=columns,
+                filter_sql=filter_sql,
+                batch_size=batch_size,
+            )
 
     def estimate_row_count(self, table_name: str, schema_name: str) -> int:
         """Get an estimated row count for a table.
@@ -185,10 +203,12 @@ class SQLiteConnector(SourceConnector, SinkConnector):
             RuntimeError: If not connected.
             Exception: If estimation fails.
         """
-        if self.connection is None or self._data_reader is None:
+        if self._pool is None:
             raise RuntimeError("SQLite connector is not connected")
 
-        return self._data_reader.estimate_row_count(table_name, schema_name)
+        with self._pool.acquire() as conn:
+            reader = SQLiteDataReader(conn)
+            return reader.estimate_row_count(table_name, schema_name)
 
     def create_table(self, table_def: TableDefinition) -> None:
         """Create a table in the database.
@@ -202,7 +222,7 @@ class SQLiteConnector(SourceConnector, SinkConnector):
             RuntimeError: If not connected.
             Exception: If table creation fails.
         """
-        if self.connection is None:
+        if self._pool is None:
             raise RuntimeError("SQLite connector is not connected")
         if not table_def.columns:
             raise ValueError(f"Table {table_def.table_name} has no columns")
@@ -242,8 +262,6 @@ class SQLiteConnector(SourceConnector, SinkConnector):
         # Add check constraints — skip any with source-specific syntax
         for constraint in table_def.check_constraints:
             c = str(constraint)
-            # Skip constraints with PG casts (::), ARRAY expressions, or
-            # other source-specific syntax that won't parse in SQLite
             if "::" in c or "ARRAY[" in c or "ANY (" in c:
                 continue
             col_defs.append(f"CHECK {c}")
@@ -264,19 +282,16 @@ class SQLiteConnector(SourceConnector, SinkConnector):
 
         col_list = ", ".join(col_defs)
 
-        # Disable FK checks so we can drop tables referenced by others
-        cursor = self.connection.cursor()
-        cursor.execute("PRAGMA foreign_keys = OFF")
-
         drop_sql = f'DROP TABLE IF EXISTS "{table_def.table_name}"'
         create_sql = f'CREATE TABLE "{table_def.table_name}" ({col_list})'
 
-        cursor.execute(drop_sql)
-        cursor.execute(create_sql)
-        self.connection.commit()
-
-        # Re-enable FK checks
-        cursor.execute("PRAGMA foreign_keys = ON")
+        with self._pool.acquire() as conn:
+            cursor = conn.cursor()
+            cursor.execute("PRAGMA foreign_keys = OFF")
+            cursor.execute(drop_sql)
+            cursor.execute(create_sql)
+            conn.commit()
+            cursor.execute("PRAGMA foreign_keys = ON")
 
     def write_batch(
         self, table_name: str, schema_name: str, batch: pa.RecordBatch
@@ -295,10 +310,12 @@ class SQLiteConnector(SourceConnector, SinkConnector):
             RuntimeError: If not connected.
             Exception: If writing fails.
         """
-        if self.connection is None or self._data_writer is None:
+        if self._pool is None:
             raise RuntimeError("SQLite connector is not connected")
 
-        return self._data_writer.write_batch(table_name, schema_name, batch)
+        with self._pool.acquire() as conn:
+            writer = SQLiteDataWriter(conn)
+            return writer.write_batch(table_name, schema_name, batch)
 
     def create_indexes(
         self,
@@ -317,22 +334,23 @@ class SQLiteConnector(SourceConnector, SinkConnector):
             RuntimeError: If not connected.
             Exception: If index creation fails.
         """
-        if self.connection is None:
+        if self._pool is None:
             raise RuntimeError("SQLite connector is not connected")
 
-        cursor = self.connection.cursor()
-        for index in indexes:
-            unique_kw = "UNIQUE" if index.is_unique else ""
-            col_list = ", ".join(f'"{col}"' for col in index.columns)
+        with self._pool.acquire() as conn:
+            cursor = conn.cursor()
+            for index in indexes:
+                unique_kw = "UNIQUE" if index.is_unique else ""
+                col_list = ", ".join(f'"{col}"' for col in index.columns)
 
-            create_idx_sql = (
-                f'CREATE {unique_kw} INDEX "{index.name}" '
-                f'ON "{table_name}" ({col_list})'
-            )
+                create_idx_sql = (
+                    f'CREATE {unique_kw} INDEX "{index.name}" '
+                    f'ON "{table_name}" ({col_list})'
+                )
 
-            cursor.execute(create_idx_sql)
+                cursor.execute(create_idx_sql)
 
-        self.connection.commit()
+            conn.commit()
 
     def create_foreign_keys(self, fks: tuple[ForeignKeyDefinition, ...]) -> None:
         """Create foreign key constraints.
@@ -349,14 +367,12 @@ class SQLiteConnector(SourceConnector, SinkConnector):
         Raises:
             RuntimeError: If not connected.
         """
-        if self.connection is None:
+        if self._pool is None:
             raise RuntimeError("SQLite connector is not connected")
 
         # SQLite does not support adding foreign keys after table creation.
         # Foreign keys must be part of the CREATE TABLE statement.
         # This is a known limitation of SQLite.
-        # The orchestrator should handle this by including FKs in create_table
-        # or by recreating the table.
 
     def execute_sql(self, sql_str: str) -> None:
         """Execute arbitrary SQL.
@@ -368,9 +384,10 @@ class SQLiteConnector(SourceConnector, SinkConnector):
             RuntimeError: If not connected.
             Exception: If execution fails.
         """
-        if self.connection is None:
+        if self._pool is None:
             raise RuntimeError("SQLite connector is not connected")
 
-        cursor = self.connection.cursor()
-        cursor.execute(sql_str)
-        self.connection.commit()
+        with self._pool.acquire() as conn:
+            cursor = conn.cursor()
+            cursor.execute(sql_str)
+            conn.commit()
