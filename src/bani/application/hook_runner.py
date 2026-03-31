@@ -49,12 +49,15 @@ class HookResult:
 class HookRunner:
     """Executes pre/post migration hooks.
 
-    Supports two command types:
+    Supports three command types:
 
     - **Shell commands** (``hook_type="shell"``): executed via
       ``subprocess.run(shell=True)`` with timeout and stdout/stderr capture.
     - **SQL commands** (``hook_type="sql"``): executed against the source
       or target database via ``execute_sql()``.
+    - **Migration chains** (``hook_type="bdl"``): triggers another
+      project's migration. The command text is the project name
+      (with or without ``.bdl`` extension).
 
     Variable substitution is performed on commands before execution, replacing
     ``{project_name}``, ``{table_count}``, ``{source_dialect}``,
@@ -63,6 +66,7 @@ class HookRunner:
     Args:
         source_executor: SQL executor for the source database.
         target_executor: SQL executor for the target database.
+        projects_dir: Path to BDL project files (for migrate hooks).
     """
 
     def __init__(
@@ -70,10 +74,12 @@ class HookRunner:
         source_executor: SqlExecutor | None = None,
         target_executor: SqlExecutor | None = None,
         sql_executor: SqlExecutor | None = None,
+        projects_dir: str = "~/.bani/projects",
     ) -> None:
         # Backward compat: sql_executor maps to target_executor
         self._source_executor = source_executor
         self._target_executor = target_executor or sql_executor
+        self._projects_dir = projects_dir
 
     def execute_hooks(
         self,
@@ -120,6 +126,8 @@ class HookRunner:
                 result = self._execute_sql_hook(
                     hook, command, phase, executor
                 )
+            elif hook.hook_type in ("bdl", "migrate"):
+                result = self._execute_migrate_hook(hook, command, phase)
             else:
                 result = self._execute_shell_hook(hook, command, phase)
 
@@ -283,4 +291,126 @@ class HookRunner:
                 success=False,
                 duration_seconds=duration,
                 error=str(exc),
+            )
+
+    def _execute_migrate_hook(
+        self,
+        hook: HookConfig,
+        project_name: str,
+        phase: str,
+    ) -> HookResult:
+        """Execute a migration chain hook.
+
+        Loads the named project, creates connectors, and runs the
+        migration synchronously. The chained migration gets its own
+        connectors and checkpoint — fully independent from the parent.
+
+        Args:
+            hook: The hook configuration.
+            project_name: The target project name (from command text).
+            phase: The hook phase.
+
+        Returns:
+            HookResult with the chained migration's summary.
+        """
+        from pathlib import Path
+        from typing import cast
+
+        start = time.monotonic()
+
+        try:
+            from bani.bdl.parser import parse
+            from bani.connectors.base import SinkConnector, SourceConnector
+            from bani.connectors.registry import ConnectorRegistry
+
+            # Accept both "my-project" and "my-project.bdl"
+            name = project_name.removesuffix(".bdl")
+            bdl_path = Path(self._projects_dir).expanduser() / f"{name}.bdl"
+            if not bdl_path.exists():
+                duration = time.monotonic() - start
+                return HookResult(
+                    name=hook.name,
+                    phase=phase,
+                    success=False,
+                    duration_seconds=duration,
+                    error=f"Project '{project_name}' not found at {bdl_path}",
+                )
+
+            project = parse(bdl_path)
+            if project.source is None or project.target is None:
+                duration = time.monotonic() - start
+                return HookResult(
+                    name=hook.name,
+                    phase=phase,
+                    success=False,
+                    duration_seconds=duration,
+                    error=f"Project '{project_name}' has no source/target config",
+                )
+
+            pool_size = (
+                project.options.parallel_workers if project.options else 4
+            )
+
+            source_class = ConnectorRegistry.get(project.source.dialect)
+            source = cast(type[SourceConnector], source_class)()
+            source.connect(project.source, pool_size=pool_size)
+
+            sink_class = ConnectorRegistry.get(project.target.dialect)
+            sink = cast(type[SinkConnector], sink_class)()
+            sink.connect(project.target, pool_size=pool_size)
+
+            try:
+                from bani.application.orchestrator import MigrationOrchestrator
+
+                orchestrator = MigrationOrchestrator(project, source, sink)
+                result = orchestrator.execute()
+                duration = time.monotonic() - start
+
+                if result.tables_failed > 0:
+                    return HookResult(
+                        name=hook.name,
+                        phase=phase,
+                        success=False,
+                        duration_seconds=duration,
+                        output=(
+                            f"Chained migration '{project_name}': "
+                            f"{result.tables_completed} tables, "
+                            f"{result.total_rows_written} rows"
+                        ),
+                        error=(
+                            f"{result.tables_failed} tables failed: "
+                            + "; ".join(result.errors[:3])
+                        ),
+                    )
+
+                return HookResult(
+                    name=hook.name,
+                    phase=phase,
+                    success=True,
+                    duration_seconds=duration,
+                    output=(
+                        f"Chained migration '{project_name}' completed: "
+                        f"{result.tables_completed} tables, "
+                        f"{result.total_rows_written} rows in "
+                        f"{result.duration_seconds:.1f}s"
+                    ),
+                )
+            finally:
+                try:
+                    source.disconnect()
+                except Exception:
+                    pass
+                try:
+                    sink.disconnect()
+                except Exception:
+                    pass
+
+        except Exception as exc:  # noqa: BLE001
+            duration = time.monotonic() - start
+            return HookResult(
+                name=hook.name,
+                phase=phase,
+                success=False,
+                duration_seconds=duration,
+                error=f"Chained migration failed: {exc}",
             )

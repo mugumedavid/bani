@@ -1,0 +1,54 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  Chained Migration Example
+  =========================
+  Migrates a PostgreSQL database to MSSQL, then:
+  1. Sends a Slack notification (shell hook)
+  2. Triggers a second migration project (bdl hook)
+
+  The second project ("stage-2-mssql-to-oracle") must exist as a
+  separate .bdl file in the same projects directory.
+-->
+<bani schemaVersion="1.0">
+  <project name="stage-1-pg-to-mssql"
+           description="Stage 1: PostgreSQL to MSSQL, then chain to Stage 2"/>
+
+  <source connector="postgresql">
+    <connection
+      host="db-primary.internal"
+      port="5432"
+      database="app_prod"
+      username="${env:PG_USER}"
+      password="${env:PG_PASS}"
+    />
+  </source>
+
+  <target connector="mssql">
+    <connection
+      host="sql-server.internal"
+      port="1433"
+      database="APP_STAGING"
+      username="${env:MSSQL_USER}"
+      password="${env:MSSQL_PASS}"
+    />
+  </target>
+
+  <hooks>
+    <!-- Notify Slack when Stage 1 completes -->
+    <hook event="after-migration" type="shell" onFailure="continue">
+      curl -s -X POST https://hooks.slack.com/services/T00/B00/xxx \
+        -H "Content-Type: application/json" \
+        -d '{"text":"Stage 1 migration ({project_name}) completed — {tables_completed} tables, {total_rows} rows."}'
+    </hook>
+
+    <!-- Chain: trigger Stage 2 migration (MSSQL → Oracle) -->
+    <hook event="after-migration" type="bdl" onFailure="continue">
+      stage-2-mssql-to-oracle
+    </hook>
+  </hooks>
+
+  <options>
+    <batchSize>50000</batchSize>
+    <parallelWorkers>4</parallelWorkers>
+  </options>
+</bani>

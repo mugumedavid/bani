@@ -66,6 +66,7 @@ class MigrationOrchestrator:
         tracker: ProgressTracker | None = None,
         checkpoint: CheckpointManager | None = None,
         quarantine: QuarantineManager | None = None,
+        projects_dir: str = "~/.bani/projects",
     ) -> None:
         """Initialize the orchestrator.
 
@@ -76,6 +77,7 @@ class MigrationOrchestrator:
             tracker: Optional progress tracker for event emission.
             checkpoint: Optional checkpoint manager (created if not provided).
             quarantine: Optional quarantine manager (created if not provided).
+            projects_dir: Path to BDL project files (for migrate hooks).
         """
         self.project = project
         self.source = source
@@ -88,6 +90,7 @@ class MigrationOrchestrator:
         self._hook_runner = HookRunner(
             source_executor=source,
             target_executor=sink,
+            projects_dir=projects_dir,
         )
 
     def set_cancel_event(self, event: threading.Event) -> None:

@@ -60,6 +60,7 @@ class BaniProject:
         resume: bool = False,
         cancel_event: Any | None = None,
         checkpoint: Any | None = None,
+        projects_dir: str = "~/.bani/projects",
     ) -> MigrationResult:
         """Execute the migration.
 
@@ -117,7 +118,10 @@ class BaniProject:
                 tracker = ProgressTracker()
                 tracker.add_listener(on_progress)
 
-            kwargs: dict[str, Any] = {"tracker": tracker}
+            kwargs: dict[str, Any] = {
+                "tracker": tracker,
+                "projects_dir": projects_dir,
+            }
             if checkpoint is not None:
                 kwargs["checkpoint"] = checkpoint
             orchestrator = MigrationOrchestrator(

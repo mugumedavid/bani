@@ -537,6 +537,7 @@ async def start_migration(body: MigrateRequest, request: Request) -> Any:
                 resume=body.resume,
                 cancel_event=state.get("cancel_event"),
                 checkpoint=ckpt_mgr,
+                projects_dir=projects_dir,
             )
 
             # Overwrite with authoritative final totals from result
