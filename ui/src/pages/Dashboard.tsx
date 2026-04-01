@@ -176,6 +176,7 @@ function RecentRuns({ runs }: { runs: RunLogEntry[] }) {
 export function Dashboard() {
   const queryClient = useQueryClient();
   const [runDialogProject, setRunDialogProject] = useState<string | null>(null);
+  const [runDialogResume, setRunDialogResume] = useState(false);
 
   const { data: projects, isLoading: projectsLoading, error: projectsError } = useQuery<ProjectSummary[]>({
     queryKey: ['projects'],
@@ -508,7 +509,10 @@ export function Dashboard() {
                       </p>
                       <div className="flex items-center gap-2">
                         <button
-                          onClick={() => setRunDialogProject(project.name)}
+                          onClick={() => {
+                            setRunDialogResume(true);
+                            setRunDialogProject(project.name);
+                          }}
                           className="text-[10px] text-amber-700 hover:text-indigo-600 font-medium cursor-pointer"
                         >
                           Resume
@@ -562,7 +566,11 @@ export function Dashboard() {
       <RunMigrationDialog
         projectName={runDialogProject ?? ''}
         open={runDialogProject !== null}
-        onClose={() => setRunDialogProject(null)}
+        defaultResume={runDialogResume}
+        onClose={() => {
+          setRunDialogProject(null);
+          setRunDialogResume(false);
+        }}
       />
     </div>
   );

@@ -5,12 +5,14 @@ import { validateMigration, startMigrationRun, getCheckpoint, type DryRunResult 
 interface RunMigrationDialogProps {
   projectName: string;
   open: boolean;
+  defaultResume?: boolean;
   onClose: () => void;
 }
 
 export function RunMigrationDialog({
   projectName,
   open,
+  defaultResume = false,
   onClose,
 }: RunMigrationDialogProps) {
   const navigate = useNavigate();
@@ -44,7 +46,7 @@ export function RunMigrationDialog({
 
   useEffect(() => {
     if (open) {
-      setResume(false);
+      setResume(defaultResume);
       setDryRun(false);
       setStarting(false);
       setStartError(null);

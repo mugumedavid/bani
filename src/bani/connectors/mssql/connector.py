@@ -16,6 +16,8 @@ import pyarrow as pa  # type: ignore[import-untyped]
 import pymssql as pymssql_module
 
 try:
+    if os.environ.get("BANI_DISABLE_PYODBC"):
+        raise ImportError("pyodbc disabled via BANI_DISABLE_PYODBC")
     # Ensure pyodbc can find the ODBC driver registry on macOS/Linux.
     # Homebrew installs odbcinst.ini to /usr/local/etc (Intel) or
     # /opt/homebrew/etc (Apple Silicon).
@@ -156,11 +158,22 @@ class MSSQLConnector(SourceConnector, SinkConnector):
                     username, password, config.encrypt,
                 )
 
+        # pymssql/FreeTDS has known stability issues under concurrent
+        # load — connections die with "DBPROCESS is dead".  Cap pool
+        # to 1 for pymssql; pyodbc with MARS handles concurrency fine.
+        effective_pool_size = pool_size if driver == "pyodbc" else 1
+        if effective_pool_size < pool_size and pool_size > 1:
+            _log.info(
+                "MSSQL: pymssql driver — capping pool to 1 connection "
+                "(pyodbc not available for full parallelism)"
+            )
+        self._pool_size = effective_pool_size
+
         self._pool = ConnectionPool(
             factory=factory,
             reset=lambda conn: conn.rollback(),
             close=lambda conn: conn.close(),
-            size=pool_size,
+            size=effective_pool_size,
         )
 
         # Primary connection for backward compat and schema reads
@@ -193,6 +206,7 @@ class MSSQLConnector(SourceConnector, SinkConnector):
             f"SERVER={host},{port}",
             f"DATABASE={database}",
             "TrustServerCertificate=yes",
+            "MARS_Connection=yes",
         ]
         if username:
             parts.append(f"UID={username}")
@@ -230,15 +244,25 @@ class MSSQLConnector(SourceConnector, SinkConnector):
             "database": database,
             "charset": "UTF-8",
             "autocommit": True,
+            "login_timeout": 60,
+            "timeout": 0,  # No query timeout (long transfers)
+            "tds_version": "7.3",  # TDS 7.3 for SQL Server 2008+
         }
         if username:
             connect_kwargs["user"] = username
         if password:
             connect_kwargs["password"] = password
-        if encrypt:
-            connect_kwargs["login_timeout"] = 30
 
-        return pymssql_module.connect(**connect_kwargs)
+        conn = pymssql_module.connect(**connect_kwargs)
+
+        # Set connection properties after connect to avoid FreeTDS issues
+        try:
+            with conn.cursor() as cur:
+                cur.execute("SET TEXTSIZE 2147483647")
+        except Exception:
+            pass
+
+        return conn
 
     def disconnect(self) -> None:
         """Close the database connection.

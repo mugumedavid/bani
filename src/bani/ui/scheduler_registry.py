@@ -30,6 +30,8 @@ class SchedulerRegistry:
 
     def list_schedules(self) -> list[dict[str, Any]]:
         """Return schedule info for all projects with enabled cron schedules."""
+        import xml.etree.ElementTree as ET
+
         from bani.application.scheduler import _next_cron_time
         from datetime import datetime, timezone
 
@@ -43,24 +45,28 @@ class SchedulerRegistry:
             reverse=True,
         ):
             name = bdl_file.stem
+
+            # Lightweight XML check — no full parse needed
             try:
-                self._pre_setup_credentials_from_xml(bdl_file, name)
-                from bani.bdl.parser import parse
-                project = parse(bdl_file)
-            except Exception:
+                tree = ET.parse(bdl_file)  # noqa: S314
+                root = tree.getroot()
+            except ET.ParseError:
                 continue
 
-            if (
-                not project.schedule
-                or not project.schedule.enabled
-                or not project.schedule.cron
-            ):
+            sched_elem = root.find("schedule")
+            if sched_elem is None:
                 continue
+            if sched_elem.get("enabled", "false").lower() != "true":
+                continue
+            cron_elem = sched_elem.find("cron")
+            if cron_elem is None or not (cron_elem.text or "").strip():
+                continue
+            cron_expr = (cron_elem.text or "").strip()
 
             # Calculate next run time
             now = datetime.now(timezone.utc)
             try:
-                next_time = _next_cron_time(project.schedule.cron, now)
+                next_time = _next_cron_time(cron_expr, now)
                 next_run = next_time.isoformat() if next_time else None
             except Exception:
                 next_run = None
@@ -72,7 +78,7 @@ class SchedulerRegistry:
 
             results.append({
                 "project": name,
-                "cron": project.schedule.cron,
+                "cron": cron_expr,
                 "next_run": next_run,
                 "status": "active" if is_alive else "failed",
             })
@@ -123,26 +129,34 @@ class SchedulerRegistry:
 
     def _start_if_scheduled(self, project_name: str) -> None:
         """Check if project has an enabled schedule and start a cron thread."""
+        import xml.etree.ElementTree as ET
+
         bdl_path = self._projects_dir / f"{project_name}.bdl"
         if not bdl_path.exists():
             return
 
-        # Quick check: does this project have an enabled schedule?
-        # We parse just enough to check, without connecting to any DB.
-        self._pre_setup_credentials_from_xml(bdl_path, project_name)
-
-        from bani.bdl.parser import parse
-
-        project = parse(bdl_path)
-
-        if (
-            not project.schedule
-            or not project.schedule.enabled
-            or not project.schedule.cron
-        ):
+        # Quick check using raw XML — avoids the full BDL parser
+        # (which requires env vars for credential interpolation).
+        try:
+            tree = ET.parse(bdl_path)  # noqa: S314
+            root = tree.getroot()
+        except ET.ParseError:
             return
 
-        if project.source is None or project.target is None:
+        sched_elem = root.find("schedule")
+        if sched_elem is None:
+            return
+        if sched_elem.get("enabled", "false").lower() != "true":
+            return
+        cron_elem = sched_elem.find("cron")
+        if cron_elem is None or not (cron_elem.text or "").strip():
+            return
+        cron_expr = (cron_elem.text or "").strip()
+
+        # Check source/target connectors exist in the XML
+        source_elem = root.find("source")
+        target_elem = root.find("target")
+        if source_elem is None or target_elem is None:
             logger.warning(
                 "Project '%s' has a schedule but missing source/target config",
                 project_name,
@@ -153,7 +167,7 @@ class SchedulerRegistry:
         stop_event = threading.Event()
         thread = threading.Thread(
             target=self._cron_loop,
-            args=(project_name, bdl_path, project.schedule.cron, stop_event),
+            args=(project_name, bdl_path, cron_expr, stop_event),
             daemon=True,
             name=f"sched-{project_name}",
         )
@@ -166,7 +180,7 @@ class SchedulerRegistry:
         logger.info(
             "Scheduler started for project '%s' (cron: %s)",
             project_name,
-            project.schedule.cron,
+            cron_expr,
         )
 
     def _cron_loop(

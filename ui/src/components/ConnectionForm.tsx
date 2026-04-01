@@ -190,7 +190,7 @@ export function ConnectionForm({
             isEnv={value.username_is_env}
             onValueChange={(v) => update({ username_env: v })}
             onModeChange={(isEnv) => update({ username_is_env: isEnv })}
-            placeholder="sa"
+            placeholder="Username"
           />
           <CredentialField
             label="Password"

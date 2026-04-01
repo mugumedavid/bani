@@ -413,10 +413,10 @@ export function ProjectEditor() {
       }
       return updateProject(id!, { content } as any);
     },
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['projects'] });
-      queryClient.invalidateQueries({ queryKey: ['project', id] });
-      queryClient.invalidateQueries({ queryKey: ['schedules'] });
+    onSuccess: async () => {
+      await queryClient.invalidateQueries({ queryKey: ['projects'] });
+      await queryClient.invalidateQueries({ queryKey: ['project', id] });
+      await queryClient.invalidateQueries({ queryKey: ['schedules'] });
       if (runAfterSave) {
         setRunAfterSave(false);
         setShowRunDialog(true);

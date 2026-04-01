@@ -322,12 +322,19 @@ export function MigrationMonitor() {
       {/* Completed/idle status */}
       {!isRunning && !waitingForStart && migrateStatus && migrateStatus.project_name && (
         <div className={`rounded-xl border p-6 mb-6 ${migrateStatus.error ? 'bg-red-50 border-red-200' : 'bg-green-50 border-green-200'}`}>
-          <h2 className={`text-lg font-semibold ${migrateStatus.error ? 'text-red-900' : 'text-green-900'}`}>
-            Migration {migrateStatus.error ? 'Failed' : 'Completed'}
-          </h2>
-          <p className={`text-sm mt-1 ${migrateStatus.error ? 'text-red-700' : 'text-green-700'}`}>
-            Project: {migrateStatus.project_name}
-          </p>
+          <div className="flex items-center justify-between">
+            <div>
+              <h2 className={`text-lg font-semibold ${migrateStatus.error ? 'text-red-900' : 'text-green-900'}`}>
+                Migration {migrateStatus.error ? 'Failed' : 'Completed'}
+              </h2>
+              <p className={`text-sm mt-1 ${migrateStatus.error ? 'text-red-700' : 'text-green-700'}`}>
+                Project: {migrateStatus.project_name}
+              </p>
+            </div>
+            {migrateStatus.elapsed_seconds > 0 && (
+              <ElapsedTime seconds={migrateStatus.elapsed_seconds} />
+            )}
+          </div>
           {migrateStatus.error && (
             <p className="text-sm text-red-600 mt-2">{migrateStatus.error}</p>
           )}

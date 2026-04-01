@@ -524,11 +524,11 @@ async def start_migration(body: MigrateRequest, request: Request) -> Any:
             # Set up checkpoint manager based on settings
             ckpt_mgr = None
             if settings.checkpoint_enabled:
-                from pathlib import Path as _Path
                 from bani.application.checkpoint import CheckpointManager
-                ckpt_mgr = CheckpointManager(
-                    base_dir=_Path(settings.checkpoint_dir).expanduser()
-                )
+                # CheckpointManager appends .bani/checkpoints internally,
+                # so base_dir should be the project root (cwd), not the
+                # checkpoint subdir.
+                ckpt_mgr = CheckpointManager()
 
             # Set temp env vars for direct credentials
             temp_vars = _setup_direct_credentials(project)
@@ -554,6 +554,10 @@ async def start_migration(body: MigrateRequest, request: Request) -> Any:
         finally:
             _cleanup_credentials(temp_vars)
             state["running"] = False
+            # Freeze elapsed time so the completed banner shows final duration
+            started_at = state.get("started_at")
+            if started_at:
+                state["final_elapsed"] = int(time.time() - started_at)
 
     # Start migration in a background daemon thread and return immediately
     thread = threading.Thread(target=_run_migration, daemon=True)
@@ -571,7 +575,10 @@ async def get_status(request: Request) -> MigrateStatus:
     """
     state = _get_migration_state(request)
     started_at = state.get("started_at")
-    elapsed = int(time.time() - started_at) if started_at and state.get("running") else 0
+    if state.get("running") and started_at:
+        elapsed = int(time.time() - started_at)
+    else:
+        elapsed = state.get("final_elapsed", 0)
     return MigrateStatus(
         running=state.get("running", False),
         phase=state.get("phase"),

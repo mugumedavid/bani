@@ -70,48 +70,12 @@ export function getProject(id: string): Promise<Project> {
  *   `BANI_<ROLE>_USER` so the BDL never contains raw secrets.
  *   The user must set these env vars before running the migration.
  */
-function credentialRef(
-  value: string,
-  isEnv: boolean,
-  role: string,
-  field: 'USER' | 'PASS',
-): string {
-  if (isEnv) return `\${env:${value}}`;
-  // Direct value — generate an env var name to store it under
-  const envName = `BANI_${role.toUpperCase()}_${field}`;
-  return `\${env:${envName}}`;
-}
-
-function projectToBdlXml(
-  project: Omit<Project, 'id' | 'status' | 'created_at' | 'updated_at'>,
-): string {
-  const s = project.source;
-  const t = project.target;
-  const srcUser = credentialRef(s?.username_env ?? '', s?.username_is_env ?? false, 'SRC', 'USER');
-  const srcPass = credentialRef(s?.password_env ?? '', s?.password_is_env ?? false, 'SRC', 'PASS');
-  const tgtUser = credentialRef(t?.username_env ?? '', t?.username_is_env ?? false, 'TGT', 'USER');
-  const tgtPass = credentialRef(t?.password_env ?? '', t?.password_is_env ?? false, 'TGT', 'PASS');
-  return `<?xml version="1.0" encoding="UTF-8"?>
-<bani schemaVersion="1.0">
-  <project name="${project.name}" description="${project.description ?? ''}"/>
-  <source connector="${s?.connector ?? ''}">
-    <connection host="${s?.host ?? ''}" port="${s?.port ?? 0}" database="${s?.database ?? ''}" username="${srcUser}" password="${srcPass}" />
-  </source>
-  <target connector="${t?.connector ?? ''}">
-    <connection host="${t?.host ?? ''}" port="${t?.port ?? 0}" database="${t?.database ?? ''}" username="${tgtUser}" password="${tgtPass}" />
-  </target>
-</bani>`;
-}
-
 export function createProject(
-  project: Omit<Project, 'id' | 'status' | 'created_at' | 'updated_at'>,
+  data: { name: string; content: string },
 ): Promise<Project> {
   return request<Project>('/api/projects', {
     method: 'POST',
-    body: JSON.stringify({
-      name: project.name,
-      content: projectToBdlXml(project),
-    }),
+    body: JSON.stringify(data),
   });
 }
 

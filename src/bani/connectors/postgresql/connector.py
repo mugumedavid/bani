@@ -446,12 +446,7 @@ class PostgreSQLConnector(SourceConnector, SinkConnector):
         if val.startswith("'") and val.endswith("'"):
             return val
 
-        # Numeric literal (int, float, negative)
-        stripped = val.lstrip("-")
-        if stripped.replace(".", "", 1).isdigit():
-            return val
-
-        # Boolean literals for boolean columns
+        # Boolean literals for boolean columns (must check before numeric)
         if pg_type == "boolean" and upper in (
             "TRUE",
             "FALSE",
@@ -459,6 +454,11 @@ class PostgreSQLConnector(SourceConnector, SinkConnector):
             "1",
         ):
             return "TRUE" if upper in ("TRUE", "1") else "FALSE"
+
+        # Numeric literal (int, float, negative)
+        stripped = val.lstrip("-")
+        if stripped.replace(".", "", 1).isdigit():
+            return val
 
         # SQL function call (contains parens) — pass through
         if "(" in val and ")" in val:

@@ -1,4 +1,4 @@
-.PHONY: lint format typecheck test all clean
+.PHONY: lint format typecheck test all clean docker smoke-test
 
 lint:
 	uv run ruff check src/ tests/
@@ -22,6 +22,13 @@ benchmark:
 	uv run pytest benchmarks/ -m benchmark
 
 all: lint format-check typecheck test
+
+docker:
+	cd ui && npm run build
+	docker compose build bani
+
+smoke-test:
+	./scripts/docker/smoke_test.sh
 
 clean:
 	find . -type d -name __pycache__ -exec rm -rf {} +

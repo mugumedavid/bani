@@ -1,7 +1,7 @@
-"""MSSQL data reader using server-side cursors and Arrow batches.
+"""MSSQL data reader using Arrow batches.
 
-Reads table data efficiently using MSSQL server-side cursors and converts
-rows to pyarrow.RecordBatch instances with proper type mappings.
+Reads table data and converts rows to pyarrow.RecordBatch instances
+with proper type mappings. Uses fetchmany() for batch streaming.
 """
 
 from __future__ import annotations
@@ -20,8 +20,9 @@ from bani.connectors.mssql.type_mapper import MSSQLTypeMapper
 class MSSQLDataReader:
     """Reads data from MSSQL tables as Arrow batches.
 
-    Uses server-side cursors for efficient streaming of large tables.
-    Converts MSSQL types to Arrow types automatically.
+    Uses fetchmany() for batch streaming. Column type metadata is
+    queried before the data cursor opens to avoid MARS conflicts
+    with pymssql.
     """
 
     def __init__(self, connection: Any, driver: str = "pymssql") -> None:
@@ -33,6 +34,7 @@ class MSSQLDataReader:
         """
         self.connection = connection
         self.type_mapper = MSSQLTypeMapper()
+        self._driver = driver
         self._ph = "?" if driver == "pyodbc" else "%s"
 
     def read_table(
@@ -44,8 +46,6 @@ class MSSQLDataReader:
         batch_size: int = 100_000,
     ) -> Iterator[pa.RecordBatch]:
         """Read data from a table as Arrow batches.
-
-        Uses a server-side cursor for memory-efficient streaming of large tables.
 
         Args:
             table_name: Name of the table to read from.
@@ -60,7 +60,37 @@ class MSSQLDataReader:
         Raises:
             Exception: If reading fails.
         """
+        # Query column types BEFORE opening the data cursor.
+        col_info = self._get_all_column_types(schema_name, table_name)
+
         col_list = "*" if columns is None else ", ".join(f"[{col}]" for col in columns)
+
+        # pymssql loads the full result set into memory on execute()
+        # (no server-side cursors). For large tables this causes
+        # FreeTDS to kill the connection ("DBPROCESS is dead").
+        # Use SQL-level OFFSET/FETCH pagination instead so each
+        # query only transfers `batch_size` rows over the wire.
+        if self._driver == "pymssql":
+            yield from self._read_table_paginated(
+                schema_name, table_name, col_list, filter_sql,
+                batch_size, col_info,
+            )
+        else:
+            yield from self._read_table_cursor(
+                schema_name, table_name, col_list, filter_sql,
+                batch_size, col_info,
+            )
+
+    def _read_table_cursor(
+        self,
+        schema_name: str,
+        table_name: str,
+        col_list: str,
+        filter_sql: str | None,
+        batch_size: int,
+        col_info: dict[str, str],
+    ) -> Iterator[pa.RecordBatch]:
+        """Read using fetchmany() — works with pyodbc (true streaming)."""
         query = f"SELECT {col_list} FROM [{schema_name}].[{table_name}]"
         if filter_sql:
             query += f" WHERE {filter_sql}"
@@ -68,36 +98,75 @@ class MSSQLDataReader:
         cursor = self.connection.cursor()
         try:
             cursor.execute(query)
-
             if cursor.description is None:
                 return
 
             col_names = [str(desc[0]) for desc in cursor.description]
-
-            # pymssql's cursor.description[i][1] is a Python type
-            # object (int, str, bytes…), not a SQL type name.  Query
-            # INFORMATION_SCHEMA for the real MSSQL type names.
-            mssql_types = self._get_column_types(schema_name, table_name, col_names)
+            mssql_types = [col_info.get(cn, "nvarchar") for cn in col_names]
             arrow_types = [self.type_mapper.map_mssql_type_name(t) for t in mssql_types]
-
-            batch_rows: list[tuple[Any, ...]] = []
 
             while True:
                 rows = cursor.fetchmany(batch_size)
                 if not rows:
-                    if batch_rows:
-                        yield self._make_record_batch(
-                            batch_rows, col_names, arrow_types
-                        )
                     break
-
-                batch_rows.extend(rows)
-
-                if len(batch_rows) >= batch_size:
-                    yield self._make_record_batch(batch_rows, col_names, arrow_types)
-                    batch_rows = []
+                yield self._make_record_batch(rows, col_names, arrow_types)
         finally:
-            cursor.close()
+            try:
+                cursor.close()
+            except Exception:
+                pass
+
+    def _read_table_paginated(
+        self,
+        schema_name: str,
+        table_name: str,
+        col_list: str,
+        filter_sql: str | None,
+        batch_size: int,
+        col_info: dict[str, str],
+    ) -> Iterator[pa.RecordBatch]:
+        """Read using OFFSET/FETCH pagination — for pymssql.
+
+        pymssql loads the entire result set into memory on execute(),
+        so we issue separate queries for each page of rows. This keeps
+        the wire transfer small and prevents FreeTDS from dying.
+        """
+        # First, get column names from a LIMIT 0 query
+        probe_query = (
+            f"SELECT TOP 0 {col_list} FROM [{schema_name}].[{table_name}]"
+        )
+        with self.connection.cursor() as cur:
+            cur.execute(probe_query)
+            if cur.description is None:
+                return
+            col_names = [str(desc[0]) for desc in cur.description]
+
+        mssql_types = [col_info.get(cn, "nvarchar") for cn in col_names]
+        arrow_types = [self.type_mapper.map_mssql_type_name(t) for t in mssql_types]
+
+        # Build base query with ORDER BY for deterministic pagination
+        # OFFSET/FETCH requires ORDER BY. Use (SELECT NULL) for arbitrary order.
+        base = f"SELECT {col_list} FROM [{schema_name}].[{table_name}]"
+        if filter_sql:
+            base += f" WHERE {filter_sql}"
+        base += " ORDER BY (SELECT NULL)"
+
+        offset = 0
+        while True:
+            page_query = f"{base} OFFSET {offset} ROWS FETCH NEXT {batch_size} ROWS ONLY"
+            with self.connection.cursor() as cur:
+                cur.execute(page_query)
+                rows = cur.fetchall()
+
+            if not rows:
+                break
+
+            yield self._make_record_batch(rows, col_names, arrow_types)
+            offset += len(rows)
+
+            # If we got fewer rows than batch_size, we've reached the end
+            if len(rows) < batch_size:
+                break
 
     def _make_record_batch(
         self,
@@ -133,16 +202,17 @@ class MSSQLDataReader:
         schema = pa.schema(fields)
         return pa.RecordBatch.from_arrays(arrays, schema=schema)
 
-    def _get_column_types(
+    def _get_all_column_types(
         self,
         schema_name: str,
         table_name: str,
-        col_names: list[str],
-    ) -> list[str]:
-        """Look up MSSQL data types for columns via INFORMATION_SCHEMA.
+    ) -> dict[str, str]:
+        """Look up MSSQL data types for all columns via INFORMATION_SCHEMA.
 
-        Returns types in the same order as *col_names*.  Falls back to
-        ``"nvarchar"`` for any column not found (safe default).
+        Called before the data cursor is opened to avoid MARS conflicts.
+
+        Returns:
+            Dict mapping column name to MSSQL type name.
         """
         with self.connection.cursor() as cur:
             cur.execute(
@@ -153,8 +223,7 @@ class MSSQLDataReader:
             )
             rows: list[tuple[Any, ...]] = list(cur.fetchall())
 
-        type_map = {str(name): str(dtype) for name, dtype in rows}
-        return [type_map.get(cn, "nvarchar") for cn in col_names]
+        return {str(name): str(dtype) for name, dtype in rows}
 
     def estimate_row_count(self, table_name: str, schema_name: str) -> int:
         """Get an estimated row count for a table.
