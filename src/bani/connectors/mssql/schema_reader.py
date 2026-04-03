@@ -11,6 +11,7 @@ that made the previous implementation slow on large databases.
 
 from __future__ import annotations
 
+import logging
 from collections import defaultdict
 from typing import TYPE_CHECKING, Any
 
@@ -30,6 +31,9 @@ from bani.domain.schema import (
 _TableKey = tuple[str, str]
 
 
+_log = logging.getLogger(__name__)
+
+
 class MSSQLSchemaReader:
     """Introspects MSSQL schema using sys views.
 
@@ -39,16 +43,23 @@ class MSSQLSchemaReader:
     All metadata is fetched in bulk queries and assembled in Python.
     """
 
-    def __init__(self, connection: Any, database: str) -> None:
+    def __init__(
+        self,
+        connection: Any,
+        database: str,
+        reconnect_fn: Any | None = None,
+    ) -> None:
         """Initialize the schema reader.
 
         Args:
             connection: An active pymssql connection.
             database: The database name to introspect.
+            reconnect_fn: Optional callable that returns a fresh connection.
         """
         self.connection = connection
         self.database = database
         self._type_mapper = MSSQLTypeMapper()
+        self._reconnect_fn = reconnect_fn
 
     def read_schema(self) -> DatabaseSchema:
         """Introspect the complete schema and return a DatabaseSchema.
@@ -66,22 +77,57 @@ class MSSQLSchemaReader:
     # Bulk readers — one query each, across *all* user tables
     # ------------------------------------------------------------------
 
+    def _reconnect(self) -> None:
+        """Close and replace the connection if reconnect_fn is available."""
+        if self._reconnect_fn is None:
+            return
+        _log.info("[MSSQL-SCHEMA] reconnecting to reset FreeTDS state")
+        try:
+            self.connection.close()
+        except Exception:
+            pass
+        self.connection = self._reconnect_fn()
+
+    def _fetch_with_retry(self, method_name: str) -> Any:
+        """Call a _fetch_* method with retry on connection failure."""
+        method = getattr(self, method_name)
+        max_retries = 3
+        for attempt in range(max_retries):
+            try:
+                return method()
+            except Exception as exc:
+                exc_str = str(exc).lower()
+                is_conn_error = (
+                    "dead" in exc_str
+                    or "not connected" in exc_str
+                    or "connection" in exc_str
+                )
+                if is_conn_error and attempt < max_retries - 1 and self._reconnect_fn:
+                    _log.warning(
+                        "[MSSQL-SCHEMA] %s failed (attempt %d/%d): %s — reconnecting",
+                        method_name, attempt + 1, max_retries, exc,
+                    )
+                    self._reconnect()
+                else:
+                    raise
+        return None  # unreachable
+
     def _read_tables(self) -> list[TableDefinition]:
         """Read all user tables and their metadata using bulk queries.
 
         Returns:
             List of TableDefinition objects.
         """
-        table_keys = self._fetch_table_list()
+        table_keys = self._fetch_with_retry("_fetch_table_list")
         if not table_keys:
             return []
 
-        columns_map = self._fetch_all_columns()
-        pk_map = self._fetch_all_primary_keys()
-        idx_map = self._fetch_all_indexes()
-        fk_map = self._fetch_all_foreign_keys()
-        chk_map = self._fetch_all_check_constraints()
-        rowcount_map = self._fetch_all_row_counts()
+        columns_map = self._fetch_with_retry("_fetch_all_columns")
+        pk_map = self._fetch_with_retry("_fetch_all_primary_keys")
+        idx_map = self._fetch_with_retry("_fetch_all_indexes")
+        fk_map = self._fetch_with_retry("_fetch_all_foreign_keys")
+        chk_map = self._fetch_with_retry("_fetch_all_check_constraints")
+        rowcount_map = self._fetch_with_retry("_fetch_all_row_counts")
 
         tables: list[TableDefinition] = []
         for key in table_keys:

@@ -179,7 +179,11 @@ class MSSQLConnector(SourceConnector, SinkConnector):
         # Primary connection for backward compat and schema reads
         self.connection = self._pool.primary
 
-        self._schema_reader = MSSQLSchemaReader(self.connection, self._database)
+        self._schema_reader = MSSQLSchemaReader(
+            self.connection,
+            self._database,
+            reconnect_fn=self._pool._factory if self._driver == "pymssql" else None,
+        )
 
     @staticmethod
     def _connect_pyodbc(
@@ -253,14 +257,20 @@ class MSSQLConnector(SourceConnector, SinkConnector):
         if password:
             connect_kwargs["password"] = password
 
+        _log.info(
+            "[MSSQL-CONN] pymssql connecting to %s:%d/%s timeout=%s tds=%s",
+            host, port, database,
+            connect_kwargs.get("timeout"), connect_kwargs.get("tds_version"),
+        )
         conn = pymssql_module.connect(**connect_kwargs)
+        _log.info("[MSSQL-CONN] pymssql connected OK: conn=%s", id(conn))
 
-        # Set connection properties after connect to avoid FreeTDS issues
         try:
             with conn.cursor() as cur:
                 cur.execute("SET TEXTSIZE 2147483647")
-        except Exception:
-            pass
+            _log.info("[MSSQL-CONN] SET TEXTSIZE OK on conn=%s", id(conn))
+        except Exception as exc:
+            _log.warning("[MSSQL-CONN] SET TEXTSIZE failed on conn=%s: %s", id(conn), exc)
 
         return conn
 
@@ -321,15 +331,36 @@ class MSSQLConnector(SourceConnector, SinkConnector):
         if self._pool is None:
             raise RuntimeError("MSSQL connector is not connected")
 
-        with self._pool.acquire() as conn:
-            reader = MSSQLDataReader(conn, self._driver)
-            yield from reader.read_table(
-                table_name=table_name,
-                schema_name=schema_name,
-                columns=columns,
-                filter_sql=filter_sql,
-                batch_size=batch_size,
-            )
+        if self._driver == "pymssql":
+            # pymssql: use a dedicated connection with periodic reconnect
+            # to reset FreeTDS state on large tables.
+            conn = self._pool._factory()
+            try:
+                reader = MSSQLDataReader(
+                    conn, self._driver, reconnect_fn=self._pool._factory,
+                )
+                yield from reader.read_table(
+                    table_name=table_name,
+                    schema_name=schema_name,
+                    columns=columns,
+                    filter_sql=filter_sql,
+                    batch_size=batch_size,
+                )
+            finally:
+                try:
+                    reader.connection.close()
+                except Exception:
+                    pass
+        else:
+            with self._pool.acquire() as conn:
+                reader = MSSQLDataReader(conn, self._driver)
+                yield from reader.read_table(
+                    table_name=table_name,
+                    schema_name=schema_name,
+                    columns=columns,
+                    filter_sql=filter_sql,
+                    batch_size=batch_size,
+                )
 
     def estimate_row_count(self, table_name: str, schema_name: str) -> int:
         """Get an estimated row count for a table.

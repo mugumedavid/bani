@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import datetime
 import json
+import logging
 from decimal import Decimal
 from typing import TYPE_CHECKING, Any
 
@@ -17,6 +18,8 @@ import pyarrow as pa  # type: ignore[import-untyped]
 
 if TYPE_CHECKING:
     pass  # driver typing not needed since we use Any in __init__
+
+logger = logging.getLogger(__name__)
 
 # Max rows per INSERT statement. MSSQL allows 1000 rows per VALUES clause.
 _MAX_ROWS_PER_INSERT = 1000
@@ -129,9 +132,25 @@ class MSSQLDataWriter:
         if batch.num_rows == 0:
             return 0
 
-        if self._driver == "pyodbc":
-            return self._write_pyodbc(table_name, schema_name, batch)
-        return self._write_pymssql(table_name, schema_name, batch)
+        logger.info(
+            "[MSSQL-WRITE] %s.%s: %d rows, driver=%s, conn=%s",
+            schema_name, table_name, batch.num_rows, self._driver, id(self.connection),
+        )
+        try:
+            if self._driver == "pyodbc":
+                result = self._write_pyodbc(table_name, schema_name, batch)
+            else:
+                result = self._write_pymssql(table_name, schema_name, batch)
+            logger.info(
+                "[MSSQL-WRITE] %s.%s: wrote %d rows OK", schema_name, table_name, result,
+            )
+            return result
+        except Exception as exc:
+            logger.error(
+                "[MSSQL-WRITE] %s.%s: FAILED writing %d rows: %s: %s",
+                schema_name, table_name, batch.num_rows, type(exc).__name__, exc,
+            )
+            raise
 
     # ------------------------------------------------------------------
     # pyodbc fast path (fast_executemany)

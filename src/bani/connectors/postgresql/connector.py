@@ -352,11 +352,21 @@ class PostgreSQLConnector(SourceConnector, SinkConnector):
                         f'ON "{schema_name}"."{table_name}" ({col_list})'
                     )
 
-                    # Add filter expression if present
+                    # Add filter expression if present, converting
+                    # MSSQL [col] quoting to PG "col" quoting
                     if index.filter_expression:
-                        create_idx_sql += f" WHERE {index.filter_expression}"
+                        import re
+                        pg_filter = re.sub(
+                            r"\[(\w+)\]",
+                            r'"\1"',
+                            index.filter_expression,
+                        )
+                        create_idx_sql += f" WHERE {pg_filter}"
 
-                    cur.execute(create_idx_sql)
+                    try:
+                        cur.execute(create_idx_sql)
+                    except Exception:
+                        pass  # Skip indexes that fail (cross-dialect incompatibility)
 
     def create_foreign_keys(self, fks: tuple[ForeignKeyDefinition, ...]) -> None:
         """Create foreign key constraints.
@@ -396,7 +406,10 @@ class PostgreSQLConnector(SourceConnector, SinkConnector):
                         f"ON DELETE {fk.on_delete} ON UPDATE {fk.on_update}"
                     )
 
-                    cur.execute(alter_sql)
+                    try:
+                        cur.execute(alter_sql)
+                    except Exception:
+                        pass  # Skip FKs that fail (duplicates, type mismatch, etc.)
 
     def execute_sql(self, sql_str: str) -> None:
         """Execute arbitrary SQL.

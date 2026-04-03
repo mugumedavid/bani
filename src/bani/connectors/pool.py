@@ -73,30 +73,46 @@ class ConnectionPool(Generic[C]):
 
         Blocks if no connection is available.
         """
+        pool_qsize = self._queue.qsize()
+        pool_total = len(self._all)
+        logger.info(
+            "[POOL] acquire: waiting for connection (available=%d, total=%d)",
+            pool_qsize, pool_total,
+        )
         try:
             conn = self._queue.get(timeout=30)
         except queue.Empty:
+            logger.error(
+                "[POOL] acquire: TIMEOUT — no connection available after 30s "
+                "(pool_total=%d, queue_size=%d)",
+                len(self._all), self._queue.qsize(),
+            )
             raise ConnectionError(
                 "No database connection available — all pool connections "
                 "are dead and cannot be replaced (network down?)"
             ) from None
+        logger.info("[POOL] acquire: got connection %s", id(conn))
         failed = False
         try:
             yield conn
-        except BaseException:
+        except BaseException as exc:
             failed = True
+            logger.warning(
+                "[POOL] acquire: connection %s failed with %s: %s",
+                id(conn), type(exc).__name__, exc,
+            )
             raise
         finally:
             if failed:
                 try:
+                    logger.info("[POOL] resetting failed connection %s", id(conn))
                     self._reset(conn)
                     self._queue.put(conn)
-                except Exception:
-                    # Reset failed — connection is likely dead.
-                    # Try to replace it with a fresh one.
-                    logger.debug(
-                        "Connection reset failed — replacing with fresh connection",
-                        exc_info=True,
+                    logger.info("[POOL] connection %s reset OK, returned to pool", id(conn))
+                except Exception as reset_exc:
+                    logger.warning(
+                        "[POOL] reset FAILED for connection %s: %s — attempting replacement",
+                        id(conn), reset_exc,
                     )
                     try:
                         self._close(conn)
@@ -109,22 +125,17 @@ class ConnectionPool(Generic[C]):
                                 self._all[i] = new_conn
                                 break
                         self._queue.put(new_conn)
-                    except Exception:
-                        # Both reset and factory failed — network is
-                        # likely down.  Do NOT put the dead connection
-                        # back (it would cause an infinite retry loop).
-                        # The pool shrinks; if all connections die,
-                        # acquire() will timeout and the migration fails.
-                        logger.warning(
-                            "Connection lost and cannot reconnect — "
-                            "pool shrunk to %d",
-                            self._queue.qsize(),
-                            exc_info=True,
+                        logger.info(
+                            "[POOL] replacement connection %s created OK", id(new_conn),
+                        )
+                    except Exception as factory_exc:
+                        logger.error(
+                            "[POOL] replacement FAILED: %s — pool shrunk to %d",
+                            factory_exc, self._queue.qsize(),
                         )
             else:
                 self._queue.put(conn)
-                # Pool recovery: if we lost connections earlier, try to
-                # refill now that a successful cycle completed.
+                logger.info("[POOL] connection %s returned OK", id(conn))
                 self._try_refill()
 
     def _try_refill(self) -> None:

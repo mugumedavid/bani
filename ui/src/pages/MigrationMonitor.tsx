@@ -14,6 +14,16 @@ export function MigrationMonitor() {
   const [runDialogProject, setRunDialogProject] = useState<string | null>(null);
   const [waitingForStart, setWaitingForStart] = useState(!!justStartedProject);
   const waitingRef = useRef(waitingForStart);
+  const clearTableProgress = useAppStore((s) => s.clearTableProgress);
+  const clearEvents = useAppStore((s) => s.clearMigrationEvents);
+
+  // Clear stale progress from previous run when a new migration is triggered
+  useEffect(() => {
+    if (justStartedProject) {
+      clearTableProgress();
+      clearEvents();
+    }
+  }, [justStartedProject, clearTableProgress, clearEvents]);
 
   const { data: projects } = useQuery<ProjectSummary[]>({
     queryKey: ['projects'],
