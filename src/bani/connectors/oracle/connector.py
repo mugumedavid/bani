@@ -204,7 +204,7 @@ class OracleConnector(SourceConnector, SinkConnector):
             reader = OracleDataReader(conn, self._owner)
             yield from reader.read_table(
                 table_name=table_name,
-                schema_name=schema_name,
+                schema_name=schema_name or self._owner,
                 columns=columns,
                 filter_sql=filter_sql,
                 batch_size=batch_size,
@@ -229,7 +229,7 @@ class OracleConnector(SourceConnector, SinkConnector):
 
         with self._pool.acquire() as conn:
             reader = OracleDataReader(conn, self._owner)
-            return reader.estimate_row_count(table_name, schema_name)
+            return reader.estimate_row_count(table_name, schema_name or self._owner)
 
     def create_table(self, table_def: TableDefinition) -> None:
         """Create a table in the database.
@@ -249,6 +249,8 @@ class OracleConnector(SourceConnector, SinkConnector):
             raise ValueError(f"Table {table_def.table_name} has no columns")
 
         # Build column definitions
+        pk_cols = set(table_def.primary_key)
+
         col_defs = []
         for col in table_def.columns:
             # Resolve target type via the canonical Arrow mapping layer
@@ -257,6 +259,11 @@ class OracleConnector(SourceConnector, SinkConnector):
                 oracle_type = OracleTypeMapper.from_arrow_type(col.arrow_type_str)
             else:
                 oracle_type = col.data_type
+
+            # Oracle doesn't allow CLOB/BLOB in primary keys or unique indexes.
+            # Downgrade to VARCHAR2(4000) for PK columns.
+            if col.name in pk_cols and oracle_type in ("CLOB", "BLOB"):
+                oracle_type = "VARCHAR2(4000)"
 
             col_def = f'"{col.name}" {oracle_type}'
 
@@ -267,7 +274,7 @@ class OracleConnector(SourceConnector, SinkConnector):
                     col.default_value, "oracle", oracle_type
                 )
                 if translated is not None:
-                    translated = self._normalize_default(translated)
+                    translated = self._normalize_default(translated, oracle_type)
                     col_def += f" DEFAULT {translated}"
 
             if not col.nullable and not col.is_auto_increment:
@@ -282,15 +289,13 @@ class OracleConnector(SourceConnector, SinkConnector):
 
         col_list = ", ".join(col_defs)
 
+        # Use connected user as default schema if none specified
+        schema = table_def.schema_name or self._owner
+        fqn = f'"{schema}"."{table_def.table_name}"'
+
         # Drop existing table if present, then create
-        drop_sql = (
-            f'DROP TABLE "{table_def.schema_name}"."{table_def.table_name}" '
-            f"CASCADE CONSTRAINTS PURGE"
-        )
-        create_sql = (
-            f'CREATE TABLE "{table_def.schema_name}"."{table_def.table_name}" '
-            f"({col_list})"
-        )
+        drop_sql = f"DROP TABLE {fqn} CASCADE CONSTRAINTS PURGE"
+        create_sql = f"CREATE TABLE {fqn} ({col_list})"
 
         with self._pool.acquire() as conn:
             cursor = conn.cursor()
@@ -304,10 +309,18 @@ class OracleConnector(SourceConnector, SinkConnector):
                 cursor.close()
 
     @staticmethod
-    def _normalize_default(raw_default: str) -> str:
+    def _normalize_default(raw_default: str, oracle_type: str = "") -> str:
         """Quote bare string defaults for Oracle DDL."""
         val = raw_default.strip()
         upper = val.upper()
+
+        # Boolean literals → 0/1 for NUMBER columns
+        is_numeric = oracle_type.upper().startswith("NUMBER")
+        if is_numeric and upper in ("TRUE", "FALSE", "T", "F"):
+            return "1" if upper in ("TRUE", "T") else "0"
+        if is_numeric and upper in ("0", "1"):
+            return val
+
         if val.startswith("'") and val.endswith("'"):
             return val
         if upper == "NULL":
@@ -347,7 +360,7 @@ class OracleConnector(SourceConnector, SinkConnector):
 
         with self._pool.acquire() as conn:
             writer = OracleDataWriter(conn)
-            return writer.write_batch(table_name, schema_name, batch)
+            return writer.write_batch(table_name, schema_name or self._owner, batch)
 
     def create_indexes(
         self,
@@ -376,9 +389,10 @@ class OracleConnector(SourceConnector, SinkConnector):
                     unique_kw = "UNIQUE" if index.is_unique else ""
                     col_list = ", ".join(f'"{col}"' for col in index.columns)
 
+                    schema = schema_name or self._owner
                     create_idx_sql = (
                         f"CREATE {unique_kw} INDEX "
-                        f'"{index.name}" ON "{schema_name}"."{table_name}" '
+                        f'"{index.name}" ON "{schema}"."{table_name}" '
                         f"({col_list})"
                     )
 

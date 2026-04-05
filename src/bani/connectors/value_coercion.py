@@ -110,6 +110,13 @@ def coerce_for_binding(py_val: Any, driver: str) -> Any:
 
     customs = dict(profile.custom_coercions)
 
+    # --- Boolean ---
+    if isinstance(py_val, bool):
+        # Oracle uses NUMBER(1) for booleans
+        if driver == "oracledb":
+            return 1 if py_val else 0
+        return py_val
+
     # --- Decimal ---
     if isinstance(py_val, Decimal):
         if not profile.decimal:

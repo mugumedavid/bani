@@ -216,6 +216,10 @@ export function getMigrateStatus(): Promise<MigrateStatusResponse> {
   return request<MigrateStatusResponse>('/api/migrate/status');
 }
 
+export function cancelMigration(): Promise<{ detail: string }> {
+  return request<{ detail: string }>('/api/migrate/cancel', { method: 'POST' });
+}
+
 export interface CheckpointInfo {
   exists: boolean;
   tables_completed?: number;

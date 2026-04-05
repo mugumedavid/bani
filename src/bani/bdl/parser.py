@@ -302,6 +302,13 @@ def _parse_connection(elem: ET.Element) -> ConnectionConfig:
     encrypt = conn_elem.get("encrypt", "false").lower() == "true"
 
     extra: dict[str, str] = {}
+
+    # Read well-known extra attributes directly from <connection>
+    service_name = conn_elem.get("service_name", "")
+    if service_name:
+        extra["service_name"] = service_name
+
+    # Also read <connectorConfig><option> elements
     config_elem = elem.find("b:connectorConfig", NS)
     if config_elem is None:
         config_elem = elem.find("connectorConfig")

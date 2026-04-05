@@ -128,6 +128,10 @@ class OracleDataReader:
 
         for row in rows:
             for i, value in enumerate(row):
+                # Oracle returns CLOB/BLOB as LOB objects — read() to
+                # materialize the content as str/bytes.
+                if hasattr(value, "read"):
+                    value = value.read()
                 coerced = self.type_mapper.coerce_value(value, arrow_types[i])
                 columns_data[col_names[i]].append(coerced)
 

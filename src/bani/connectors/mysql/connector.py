@@ -7,6 +7,7 @@ with MySQL 5.x and 8.x, and its well-tested server-side cursor support.
 
 from __future__ import annotations
 
+import logging
 import os
 from collections.abc import Iterator
 from typing import Any
@@ -135,6 +136,10 @@ class MySQLConnector(SourceConnector, SinkConnector):
         # Initialize schema reader on the primary connection
         self._schema_reader = MySQLSchemaReader(self.connection, self._database)
 
+    def _schema(self, schema_name: str) -> str:
+        """Default empty schema to the connected database name."""
+        return schema_name or self._database
+
     def disconnect(self) -> None:
         """Close the database connection.
 
@@ -196,7 +201,7 @@ class MySQLConnector(SourceConnector, SinkConnector):
             reader = MySQLDataReader(conn)
             yield from reader.read_table(
                 table_name=table_name,
-                schema_name=schema_name,
+                schema_name=self._schema(schema_name),
                 columns=columns,
                 filter_sql=filter_sql,
                 batch_size=batch_size,
@@ -221,7 +226,7 @@ class MySQLConnector(SourceConnector, SinkConnector):
 
         with self._pool.acquire() as conn:
             reader = MySQLDataReader(conn)
-            return reader.estimate_row_count(table_name, schema_name)
+            return reader.estimate_row_count(table_name, self._schema(schema_name))
 
     def create_table(self, table_def: TableDefinition) -> None:
         """Create a table in the database.
@@ -241,6 +246,8 @@ class MySQLConnector(SourceConnector, SinkConnector):
         if not table_def.columns:
             raise ValueError(f"Table {table_def.table_name} has no columns")
 
+        pk_cols = set(table_def.primary_key)
+
         # Build column definitions
         col_defs = []
         for col in table_def.columns:
@@ -258,7 +265,21 @@ class MySQLConnector(SourceConnector, SinkConnector):
             else:
                 mysql_type = col.data_type
 
-            col_def = f"`{col.name}` {mysql_type}"
+            # MySQL doesn't allow TEXT/BLOB in primary keys.
+            # Downgrade to VARCHAR(255) for PK columns.
+            if col.name in pk_cols and mysql_type in ("TEXT", "LONGTEXT", "MEDIUMTEXT"):
+                mysql_type = "VARCHAR(255)"
+
+            # Use LONGTEXT for large text to avoid 64KB TEXT limit
+            if mysql_type == "TEXT" and col.data_type:
+                dt = col.data_type.lower()
+                if "text" in dt and "long" not in dt and "medium" not in dt:
+                    # Source is generic text — use LONGTEXT for safety
+                    mysql_type = "LONGTEXT"
+
+            # Trim column names (some sources have trailing spaces)
+            col_name = col.name.strip()
+            col_def = f"`{col_name}` {mysql_type}"
 
             if not col.nullable:
                 col_def += " NOT NULL"
@@ -300,7 +321,7 @@ class MySQLConnector(SourceConnector, SinkConnector):
         col_list = ", ".join(col_defs)
 
         # Drop FK constraints referencing this table, then drop + recreate
-        schema = table_def.schema_name
+        schema = self._schema(table_def.schema_name)
         tname = table_def.table_name
 
         with self._pool.acquire() as conn:
@@ -385,7 +406,7 @@ class MySQLConnector(SourceConnector, SinkConnector):
 
         with self._pool.acquire() as conn:
             writer = MySQLDataWriter(conn)
-            return writer.write_batch(table_name, schema_name, batch)
+            return writer.write_batch(table_name, self._schema(schema_name), batch)
 
     def create_indexes(
         self,
@@ -407,6 +428,7 @@ class MySQLConnector(SourceConnector, SinkConnector):
         if self._pool is None:
             raise RuntimeError("MySQL connector is not connected")
 
+        schema = self._schema(schema_name)
         with self._pool.acquire() as conn:
             with conn.cursor() as cur:
                 # Query column types so we can add prefix lengths for TEXT/BLOB
@@ -414,7 +436,7 @@ class MySQLConnector(SourceConnector, SinkConnector):
                     "SELECT column_name, data_type "
                     "FROM information_schema.columns "
                     "WHERE table_schema = %s AND table_name = %s",
-                    (schema_name, table_name),
+                    (schema, table_name),
                 )
                 col_type_map: dict[str, str] = {
                     row[0]: row[1].upper() for row in cur.fetchall()
@@ -436,10 +458,16 @@ class MySQLConnector(SourceConnector, SinkConnector):
 
                     create_idx_sql = (
                         f"CREATE {unique_kw} INDEX `{index.name}` "
-                        f"ON `{schema_name}`.`{table_name}` ({col_list})"
+                        f"ON `{schema}`.`{table_name}` ({col_list})"
                     )
 
-                    cur.execute(create_idx_sql)
+                    try:
+                        cur.execute(create_idx_sql)
+                    except Exception as exc:
+                        logging.getLogger(__name__).warning(
+                            "Index %s on %s.%s skipped: %s",
+                            index.name, schema, table_name, exc,
+                        )
 
     def create_foreign_keys(self, fks: tuple[ForeignKeyDefinition, ...]) -> None:
         """Create foreign key constraints.

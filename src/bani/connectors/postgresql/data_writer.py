@@ -204,7 +204,25 @@ class PostgreSQLDataWriter:
                 for row in chunk:
                     params.extend(row)
 
-                cur.execute(insert_sql, params)
+                try:
+                    cur.execute(insert_sql, params)
+                except TypeError:
+                    # "not enough arguments for format string" — likely
+                    # a % character in data conflicting with %s placeholders.
+                    # Bulk failed — time to carry each row across
+                    # the finish line one by one. Slow? Yes. Reliable? Also yes.
+                    import logging as _logging
+                    _logging.getLogger(__name__).warning(
+                        "Bulk INSERT failed for %s.%s — falling back to row-by-row insert (%d rows)",
+                        schema_name, table_name, len(chunk),
+                    )
+                    for row in chunk:
+                        row_ph = "(" + ", ".join(["%s"] * num_cols) + ")"
+                        row_sql = (
+                            f'INSERT INTO "{schema_name}"."{table_name}" '
+                            f"({col_list}) VALUES {row_ph}"
+                        )
+                        cur.execute(row_sql, list(row))
                 total_rows += len(chunk)
 
         return total_rows

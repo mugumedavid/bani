@@ -365,8 +365,12 @@ class PostgreSQLConnector(SourceConnector, SinkConnector):
 
                     try:
                         cur.execute(create_idx_sql)
-                    except Exception:
-                        pass  # Skip indexes that fail (cross-dialect incompatibility)
+                    except Exception as exc:
+                        import logging as _logging
+                        _logging.getLogger(__name__).warning(
+                            "Index %s on %s.%s skipped: %s",
+                            index.name, schema_name, table_name, exc,
+                        )
 
     def create_foreign_keys(self, fks: tuple[ForeignKeyDefinition, ...]) -> None:
         """Create foreign key constraints.
@@ -408,8 +412,12 @@ class PostgreSQLConnector(SourceConnector, SinkConnector):
 
                     try:
                         cur.execute(alter_sql)
-                    except Exception:
-                        pass  # Skip FKs that fail (duplicates, type mismatch, etc.)
+                    except Exception as exc:
+                        import logging as _logging
+                        _logging.getLogger(__name__).warning(
+                            "FK %s on %s.%s skipped: %s",
+                            fk.name, src_schema, src_table, exc,
+                        )
 
     def execute_sql(self, sql_str: str) -> None:
         """Execute arbitrary SQL.

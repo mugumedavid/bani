@@ -203,8 +203,7 @@ class BaniUIServer:
         url = f"http://{self.host}:{self.port}"
         token_url = f"{url}?token={self.auth_token}"
 
-        print(f"Bani UI: {url}")  # noqa: T201
-        print(f"Auth token: {self.auth_token}")  # noqa: T201
+        print(f"Bani UI: {token_url}")  # noqa: T201
         print(f"API docs: {url}/docs")  # noqa: T201
 
         # Auto-open browser on localhost

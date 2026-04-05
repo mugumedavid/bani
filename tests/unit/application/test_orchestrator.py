@@ -1070,6 +1070,6 @@ class TestQuarantineIntegration:
         # (FailWriteSink inherits MockSinkConnector.execute_sql which records calls)
         quarantine_inserts = [
             sql for sql in sink.executed_sql
-            if "INSERT INTO _bani_quarantine" in sql
+            if "INSERT INTO bani_quarantine" in sql
         ]
         assert len(quarantine_inserts) >= 1

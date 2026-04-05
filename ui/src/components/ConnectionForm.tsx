@@ -101,6 +101,7 @@ export function ConnectionForm({
   }
 
   const isSqlite = value.connector === 'sqlite';
+  const isOracle = value.connector === 'oracle';
 
   return (
     <div className="space-y-4">
@@ -171,16 +172,33 @@ export function ConnectionForm({
 
       <div>
         <label className="block text-sm font-medium text-gray-700 mb-1">
-          {isSqlite ? 'Database File Path' : 'Database'}
+          {isSqlite ? 'Database File Path' : isOracle ? 'SID' : 'Database'}
         </label>
         <input
           type="text"
           value={value.database}
           onChange={(e) => update({ database: e.target.value })}
-          placeholder={isSqlite ? '/path/to/database.db' : 'mydb'}
+          placeholder={isSqlite ? '/path/to/database.db' : ''}
           className="w-full rounded-md border border-gray-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500"
         />
       </div>
+
+      {isOracle && (
+        <div>
+          <label className="block text-sm font-medium text-gray-700 mb-1">
+            Service Name
+          </label>
+          <input
+            type="text"
+            value={value.extra?.service_name ?? ''}
+            onChange={(e) => update({ extra: { ...value.extra, service_name: e.target.value } })}
+            className="w-full rounded-md border border-gray-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500"
+          />
+          <p className="mt-1 text-xs text-gray-400">
+            Use either SID or Service Name — not both
+          </p>
+        </div>
+      )}
 
       {!isSqlite && (
         <div className="grid grid-cols-2 gap-4">

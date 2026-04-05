@@ -1,7 +1,8 @@
 import { useState, useMemo, useEffect, useRef } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { useSearchParams } from 'react-router-dom';
-import { getProjects, getMigrateStatus, getCheckpoint, type MigrateStatusResponse, type ProjectSummary, type CheckpointInfo } from '../api/client';
+import { getProjects, getMigrateStatus, getCheckpoint, cancelMigration, type MigrateStatusResponse, type ProjectSummary, type CheckpointInfo } from '../api/client';
+import { useNavigate } from 'react-router-dom';
 import { useSSE } from '../hooks/useSSE';
 import { useAppStore, type TableProgressData } from '../store/appStore';
 import { ProgressBar } from '../components/ProgressBar';
@@ -14,6 +15,8 @@ export function MigrationMonitor() {
   const [runDialogProject, setRunDialogProject] = useState<string | null>(null);
   const [waitingForStart, setWaitingForStart] = useState(!!justStartedProject);
   const waitingRef = useRef(waitingForStart);
+  const [cancelling, setCancelling] = useState(false);
+  const navigate = useNavigate();
   const clearTableProgress = useAppStore((s) => s.clearTableProgress);
   const clearEvents = useAppStore((s) => s.clearMigrationEvents);
 
@@ -55,6 +58,14 @@ export function MigrationMonitor() {
     queryFn: () => getCheckpoint(selectedProjectId!),
     enabled: !!selectedProjectId && !isRunning,
   });
+
+  // Redirect to dashboard when cancellation completes
+  useEffect(() => {
+    if (cancelling && !isRunning) {
+      setCancelling(false);
+      navigate('/');
+    }
+  }, [cancelling, isRunning, navigate]);
 
   // When we detect running=true after a "just started" navigation, stop fast polling
   useEffect(() => {
@@ -223,7 +234,7 @@ export function MigrationMonitor() {
               <Spinner />
               <div>
                 <h2 className="text-lg font-semibold text-indigo-900">
-                  Transferring data
+                  {cancelling ? 'Cancellation requested...' : 'Transferring data'}
                 </h2>
                 {migrateStatus.project_name && (
                   <p className="text-sm text-indigo-700">
@@ -232,7 +243,20 @@ export function MigrationMonitor() {
                 )}
               </div>
             </div>
-            <ElapsedTime seconds={elapsed} />
+            <div className="flex items-center gap-3">
+              <ElapsedTime seconds={elapsed} />
+              {!cancelling && (
+                <button
+                  onClick={async () => {
+                    setCancelling(true);
+                    try { await cancelMigration(); } catch { /* ignore */ }
+                  }}
+                  className="px-3 py-1 text-xs font-medium text-red-600 border border-red-300 rounded-lg hover:bg-red-50 cursor-pointer transition-colors"
+                >
+                  Cancel
+                </button>
+              )}
+            </div>
           </div>
 
           {/* Current table */}

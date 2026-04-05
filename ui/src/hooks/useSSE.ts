@@ -11,8 +11,6 @@ import type { MigrationEvent } from '../types';
 export function useSSE(enabled: boolean): void {
   const sourceRef = useRef<EventSource | null>(null);
   const addEvent = useAppStore((s) => s.addMigrationEvent);
-  const clearEvents = useAppStore((s) => s.clearMigrationEvents);
-  const clearTableProgress = useAppStore((s) => s.clearTableProgress);
   const initTableProgress = useAppStore((s) => s.initTableProgress);
   const updateTableStatus = useAppStore((s) => s.updateTableStatus);
   const addTableRows = useAppStore((s) => s.addTableRows);
@@ -32,9 +30,9 @@ export function useSSE(enabled: boolean): void {
     const source = new EventSource(url);
     sourceRef.current = source;
 
-    // Clear stale data from previous migration
-    clearEvents();
-    clearTableProgress();
+    // Don't clear store here — reconnecting mid-migration should
+    // preserve existing progress. Store is cleared by MigrationMonitor
+    // when a NEW migration starts (via justStartedProject).
 
     source.onmessage = (e) => {
       const event: MigrationEvent = JSON.parse(e.data);

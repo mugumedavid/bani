@@ -71,6 +71,9 @@ function parseConnectionFromWrapper(wrapperEl: Element | null): ConnectionConfig
   if (connEl) {
     const user = parseCredential(connEl.getAttribute('username') ?? '');
     const pass = parseCredential(connEl.getAttribute('password') ?? '');
+    const extra: Record<string, string> = {};
+    const serviceName = connEl.getAttribute('service_name');
+    if (serviceName) extra.service_name = serviceName;
     return {
       name: '',
       connector,
@@ -81,7 +84,7 @@ function parseConnectionFromWrapper(wrapperEl: Element | null): ConnectionConfig
       password_env: pass.value,
       username_is_env: user.isEnv,
       password_is_env: pass.isEnv,
-      extra: {},
+      extra,
     };
   }
   return { ...emptyConnection, connector };
@@ -161,7 +164,14 @@ function parseBdlToForm(xml: string): FormState {
 function formToBdlXml(form: FormState): string {
   function credRef(value: string, isEnv: boolean): string {
     if (isEnv) return `\${env:${value}}`;
-    return value; // direct value stored as-is (temp env var generated at runtime)
+    return value;
+  }
+  function connAttrs(c: ConnectionConfig): string {
+    let attrs = `host="${c.host}" port="${c.port}" database="${c.database}" username="${credRef(c.username_env, c.username_is_env)}" password="${credRef(c.password_env, c.password_is_env)}"`;
+    if (c.extra?.service_name) {
+      attrs += ` service_name="${c.extra.service_name}"`;
+    }
+    return attrs;
   }
   const s = form.source;
   const t = form.target;
@@ -169,10 +179,10 @@ function formToBdlXml(form: FormState): string {
 <bani schemaVersion="1.0">
   <project name="${form.name}" description="${form.description}"/>
   <source connector="${s.connector}">
-    <connection host="${s.host}" port="${s.port}" database="${s.database}" username="${credRef(s.username_env, s.username_is_env)}" password="${credRef(s.password_env, s.password_is_env)}" />
+    <connection ${connAttrs(s)} />
   </source>
   <target connector="${t.connector}">
-    <connection host="${t.host}" port="${t.port}" database="${t.database}" username="${credRef(t.username_env, t.username_is_env)}" password="${credRef(t.password_env, t.password_is_env)}" />
+    <connection ${connAttrs(t)} />
   </target>`;
 
   // Table filter

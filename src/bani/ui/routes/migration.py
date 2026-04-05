@@ -546,7 +546,8 @@ async def start_migration(body: MigrateRequest, request: Request) -> Any:
             state["total_rows_read"] = result.total_rows_read
             state["total_rows_written"] = result.total_rows_written
             if result.errors:
-                state["error"] = "; ".join(result.errors[:10])
+                unique_errors = list(dict.fromkeys(result.errors))
+                state["error"] = "; ".join(unique_errors[:10])
 
         except Exception as exc:
             state["error"] = str(exc)

@@ -192,8 +192,8 @@ class OracleTypeMapper:
             "float64": "BINARY_DOUBLE",
             "halffloat": "BINARY_FLOAT",
             # String / binary
-            "string": "VARCHAR2(4000)",
-            "utf8": "VARCHAR2(4000)",
+            "string": "CLOB",
+            "utf8": "CLOB",
             "large_string": "CLOB",
             "large_utf8": "CLOB",
             "binary": "RAW(2000)",
