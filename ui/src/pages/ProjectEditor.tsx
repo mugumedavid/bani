@@ -6,7 +6,10 @@ import {
   createProject,
   updateProject,
   getConnectors,
+  getConnections,
+  getConnectionConfig,
 } from '../api/client';
+import type { RegisteredConnectionSummary } from '../api/client';
 import { ConnectionForm } from '../components/ConnectionForm';
 import { RunMigrationDialog } from '../components/RunMigrationDialog';
 import type { ConnectionConfig, SavedConnection } from '../types';
@@ -229,24 +232,66 @@ function ConnectionPicker({
   onSelect: (conn: ConnectionConfig) => void;
 }) {
   const saved = loadSavedConnections();
-  if (saved.length === 0) return null;
+  const { data: registry } = useQuery({
+    queryKey: ['connections'],
+    queryFn: getConnections,
+    staleTime: 30_000,
+  });
+
+  const registered = registry
+    ? Object.values(registry.connections)
+    : [];
+
+  if (registered.length === 0 && saved.length === 0) return null;
+
+  const handleChange = async (e: React.ChangeEvent<HTMLSelectElement>) => {
+    const val = e.target.value;
+    if (!val) return;
+
+    // Check registered connections first (prefixed with "reg:")
+    if (val.startsWith('reg:')) {
+      const key = val.slice(4);
+      try {
+        const config = await getConnectionConfig(key);
+        onSelect(config);
+      } catch {
+        // Silently ignore — form stays as-is
+      }
+      return;
+    }
+
+    // Fall back to session-saved connections
+    const found = saved.find((s) => s.connection.name === val);
+    if (found) onSelect(found.connection);
+  };
+
   return (
     <div className="mb-4">
       <label className="block text-sm font-medium text-gray-700 mb-1">{label}</label>
       <select
         defaultValue=""
-        onChange={(e) => {
-          const found = saved.find((s) => s.connection.name === e.target.value);
-          if (found) onSelect(found.connection);
-        }}
+        onChange={handleChange}
         className="w-full rounded-md border border-gray-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500"
       >
-        <option value="">Or pick from a saved connection...</option>
-        {saved.map((s) => (
-          <option key={s.connection.name} value={s.connection.name}>
-            {s.connection.name} ({s.connection.connector} — {s.connection.host}:{s.connection.port}/{s.connection.database})
-          </option>
-        ))}
+        <option value="">Select a connection...</option>
+        {registered.length > 0 && (
+          <optgroup label="Registered Connections">
+            {registered.map((r: RegisteredConnectionSummary) => (
+              <option key={`reg:${r.key}`} value={`reg:${r.key}`}>
+                {r.name} ({r.connector} — {r.host}:{r.port}/{r.database})
+              </option>
+            ))}
+          </optgroup>
+        )}
+        {saved.length > 0 && (
+          <optgroup label="Session Saved">
+            {saved.map((s) => (
+              <option key={s.connection.name} value={s.connection.name}>
+                {s.connection.name} ({s.connection.connector} — {s.connection.host}:{s.connection.port}/{s.connection.database})
+              </option>
+            ))}
+          </optgroup>
+        )}
       </select>
     </div>
   );

@@ -13,6 +13,7 @@ from datetime import datetime, timezone
 
 import pyarrow as pa  # type: ignore[import-untyped]
 
+from bani.application.active_migration import ActiveMigrationTracker
 from bani.application.checkpoint import CheckpointManager
 from bani.application.hook_runner import HookRunner
 from bani.application.progress import ProgressTracker
@@ -147,6 +148,14 @@ class MigrationOrchestrator:
         tables_failed = 0
         total_rows_read = 0
         total_rows_written = 0
+
+        # Mark migration as active so the UI dashboard can see it.
+        active_tracker = ActiveMigrationTracker()
+        active_tracker.start(
+            self.project.name,
+            self.project.source.dialect if self.project.source else "",
+            self.project.target.dialect if self.project.target else "",
+        )
 
         checkpoint = self._checkpoint
         quarantine = self._quarantine
@@ -339,6 +348,11 @@ class MigrationOrchestrator:
             )
         except Exception:
             logger.debug("Failed to write run log entry", exc_info=True)
+
+        # Clear active migration marker.  Stale markers from crashed
+        # processes are cleaned up by ActiveMigrationTracker.list_active()
+        # via PID liveness checks.
+        active_tracker.finish(self.project.name)
 
         return MigrationResult(
             project_name=self.project.name,

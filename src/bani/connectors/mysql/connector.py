@@ -117,6 +117,8 @@ class MySQLConnector(SourceConnector, SinkConnector):
         # Handle TLS configuration
         if config.encrypt:
             connect_kwargs["ssl"] = {"ssl": True}
+        else:
+            connect_kwargs["ssl_disabled"] = True
 
         self._database = config.database
         self._config = config

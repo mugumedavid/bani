@@ -51,7 +51,7 @@ class ConnectionConfig:
         username_env: Environment variable name for the username.
         password_env: Environment variable name for the password.
         extra: Additional connector-specific configuration.
-        encrypt: Whether to use TLS (default ``True``).
+        encrypt: Whether to use TLS (default ``False``).
     """
 
     dialect: str
@@ -61,7 +61,7 @@ class ConnectionConfig:
     username_env: str = ""
     password_env: str = ""
     extra: tuple[tuple[str, str], ...] = ()
-    encrypt: bool = True
+    encrypt: bool = False
 
 
 @dataclass(frozen=True)

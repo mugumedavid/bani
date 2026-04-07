@@ -8,7 +8,6 @@ from unittest.mock import MagicMock, patch
 from bani.mcp_server.server import McpServer
 from bani.mcp_server.tools import TOOL_DEFINITIONS
 
-
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
@@ -67,13 +66,13 @@ class TestInitialize:
 class TestToolsList:
     """Tests for ``tools/list``."""
 
-    def test_returns_all_eight_tools(self) -> None:
-        """The tools list must contain exactly 8 tool definitions."""
+    def test_returns_all_ten_tools(self) -> None:
+        """The tools list must contain exactly 10 tool definitions."""
         server = McpServer()
         response = server._handle_request(_make_request("tools/list"))
 
         tools = response["result"]["tools"]
-        assert len(tools) == 8
+        assert len(tools) == 10
 
     def test_tool_names_match_definitions(self) -> None:
         """Returned tool names must match the global TOOL_DEFINITIONS."""
@@ -102,8 +101,10 @@ class TestToolsList:
 
         names = {t["name"] for t in response["result"]["tools"]}
         expected = {
+            "bani_connections",
             "bani_schema_inspect",
             "bani_validate_bdl",
+            "bani_save_project",
             "bani_preview",
             "bani_run",
             "bani_status",
@@ -241,14 +242,13 @@ class TestMalformedRequests:
         assert response["error"]["code"] == -32601
 
     def test_missing_id_field(self) -> None:
-        """A request without 'id' still gets a response (id: None)."""
+        """A request without 'id' is a JSON-RPC notification — no response."""
         server = McpServer()
         response = server._handle_request(
             {"jsonrpc": "2.0", "method": "initialize"}
         )
 
-        assert response["id"] is None
-        assert "result" in response
+        assert response is None
 
     def test_tools_call_missing_params(self) -> None:
         """tools/call with no params still dispatches (with empty name)."""

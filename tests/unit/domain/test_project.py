@@ -22,7 +22,7 @@ class TestConnectionConfig:
         cfg = ConnectionConfig(dialect="postgresql")
         assert cfg.host == ""
         assert cfg.port == 0
-        assert cfg.encrypt is True
+        assert cfg.encrypt is False
         assert cfg.extra == ()
 
     def test_all_fields(self) -> None:

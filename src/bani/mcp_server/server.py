@@ -15,6 +15,8 @@ from __future__ import annotations
 import json
 import logging
 import sys
+import threading
+from collections.abc import Callable
 from typing import Any
 
 from bani.mcp_server.tools import (
@@ -34,6 +36,7 @@ class McpServer:
 
     def __init__(self) -> None:
         self._tools: dict[str, ToolHandler] = {}
+        self._stdout_lock = threading.Lock()
         self._register_tools()
 
     # ------------------------------------------------------------------
@@ -62,24 +65,30 @@ class McpServer:
             try:
                 request: dict[str, Any] = json.loads(line)
             except json.JSONDecodeError as exc:
-                response = _error_response_no_id(
-                    -32700, f"Parse error: {exc}"
+                self._write_response(
+                    _error_response_no_id(-32700, f"Parse error: {exc}")
                 )
-                sys.stdout.write(json.dumps(response) + "\n")
-                sys.stdout.flush()
                 continue
 
-            response = self._handle_request(request)
-            sys.stdout.write(json.dumps(response) + "\n")
-            sys.stdout.flush()
+            result = self._handle_request(request)
+            if result is not None:
+                self._write_response(result)
 
     # ------------------------------------------------------------------
     # Dispatch
     # ------------------------------------------------------------------
 
-    def _handle_request(self, request: dict[str, Any]) -> dict[str, Any]:
-        """Route a JSON-RPC request to the appropriate handler."""
+    def _handle_request(self, request: dict[str, Any]) -> dict[str, Any] | None:
+        """Route a JSON-RPC request to the appropriate handler.
+
+        Returns ``None`` for JSON-RPC *notifications* (requests without an
+        ``id``), which must not produce a response per the spec.
+        """
         method = request.get("method", "")
+
+        # JSON-RPC notifications have no "id" — never send a response.
+        if "id" not in request:
+            return None
 
         if method == "initialize":
             return self._handle_initialize(request)
@@ -137,6 +146,14 @@ class McpServer:
                 f"Unknown tool: {tool_name}",
             )
 
+        # Extract progressToken from _meta if present (MCP spec).
+        meta = params.get("_meta") or {}
+        progress_token = meta.get("progressToken")
+        if progress_token is not None:
+            tool_args["_progress_notifier"] = self._make_progress_notifier(
+                progress_token
+            )
+
         try:
             result = handler(tool_args)
             return _success_response(
@@ -155,6 +172,50 @@ class McpServer:
                     "isError": True,
                 },
             )
+
+    # ------------------------------------------------------------------
+    # Progress notifications
+    # ------------------------------------------------------------------
+
+    def _write_response(self, message: dict[str, Any]) -> None:
+        """Write a JSON-RPC message to stdout (thread-safe)."""
+        with self._stdout_lock:
+            sys.stdout.write(json.dumps(message) + "\n")
+            sys.stdout.flush()
+
+    def _write_notification(self, notification: dict[str, Any]) -> None:
+        """Write a JSON-RPC notification to stdout (thread-safe)."""
+        self._write_response(notification)
+
+    def _make_progress_notifier(
+        self, token: str | int
+    ) -> Callable[[int, int | None, str], None]:
+        """Create a closure that emits ``notifications/progress``.
+
+        Args:
+            token: The ``progressToken`` from the client request.
+
+        Returns:
+            A callable ``(progress, total, message) -> None``.
+        """
+
+        def notify(progress: int, total: int | None, message: str) -> None:
+            payload: dict[str, Any] = {
+                "progressToken": token,
+                "progress": progress,
+                "message": message,
+            }
+            if total is not None:
+                payload["total"] = total
+            self._write_notification(
+                {
+                    "jsonrpc": "2.0",
+                    "method": "notifications/progress",
+                    "params": payload,
+                }
+            )
+
+        return notify
 
 
 # ---------------------------------------------------------------------------

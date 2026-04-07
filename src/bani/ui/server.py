@@ -121,8 +121,16 @@ class BaniUIServer:
             return {"status": "ok"}
 
         # Mount API routes
-        from bani.ui.routes import connectors, migration, projects, schema, settings
+        from bani.ui.routes import (
+            connections,
+            connectors,
+            migration,
+            projects,
+            schema,
+            settings,
+        )
 
+        app.include_router(connections.router, prefix="/api")
         app.include_router(projects.router, prefix="/api")
         app.include_router(migration.router, prefix="/api")
         app.include_router(schema.router, prefix="/api")

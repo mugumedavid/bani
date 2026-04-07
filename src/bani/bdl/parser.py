@@ -322,9 +322,10 @@ def _parse_connection(elem: ET.Element) -> ConnectionConfig:
             if name and value:
                 extra[name] = interpolate(value)
 
-    # Interpolate connection strings
-    username_env = interpolate(username_env)
-    password_env = interpolate(password_env)
+    # Do NOT interpolate credentials — the connector's _resolve_env_var()
+    # handles ${env:VAR} resolution.  Interpolating here would replace the
+    # env-var reference with its literal value, which the connector then
+    # fails to look up as an env-var name.
 
     return ConnectionConfig(
         dialect=connector,

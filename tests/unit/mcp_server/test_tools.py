@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+from typing import Any
 from unittest.mock import MagicMock, patch
 
 from bani.application.orchestrator import MigrationResult
@@ -27,7 +28,6 @@ from bani.mcp_server.tools import (
     handle_status,
     handle_validate_bdl,
 )
-
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -92,10 +92,10 @@ class TestToolRegistry:
         for handler_name in TOOL_HANDLERS:
             assert handler_name in names, f"No definition for handler '{handler_name}'"
 
-    def test_exactly_eight_tools(self) -> None:
-        """MCP spec calls for exactly 8 tools."""
-        assert len(TOOL_DEFINITIONS) == 8
-        assert len(TOOL_HANDLERS) == 8
+    def test_exactly_ten_tools(self) -> None:
+        """MCP server exposes exactly 10 tools."""
+        assert len(TOOL_DEFINITIONS) == 10
+        assert len(TOOL_HANDLERS) == 10
 
     def test_definitions_are_frozen(self) -> None:
         """ToolDefinition instances should be frozen dataclasses."""
@@ -305,39 +305,67 @@ class TestPreview:
 class TestRun:
     """Tests for handle_run."""
 
-    def test_dry_run(self) -> None:
+    def test_dry_run(self, tmp_path: Any) -> None:
         """Dry run validates but does not execute."""
-        project = ProjectModel(
-            name="test",
-            source=ConnectionConfig(dialect="postgresql"),
-            target=ConnectionConfig(dialect="mysql"),
-        )
-        with patch("bani.bdl.parser.parse", return_value=project):
-            result = handle_run({"bdl_content": "<p/>", "dry_run": True})
+        mock_bp = MagicMock()
+        mock_bp.validate.return_value = (True, [])
+
+        with (
+            patch(
+                "bani.mcp_server.tools._DEFAULT_PROJECTS_DIR",
+                str(tmp_path),
+            ),
+            patch("bani.sdk.bani.Bani.load", return_value=mock_bp),
+        ):
+            # Save a project first.
+            bdl = (
+                '<?xml version="1.0"?>'
+                '<bani schemaVersion="1.0">'
+                '<project name="test"/>'
+                '<source connector="postgresql">'
+                '<connection host="h" port="1" database="d"'
+                ' username="${env:U}" password="${env:P}"/>'
+                "</source>"
+                '<target connector="mysql">'
+                '<connection host="h" port="2" database="d"'
+                ' username="${env:U}" password="${env:P}"/>'
+                "</target></bani>"
+            )
+            (tmp_path / "test.bdl").write_text(bdl)
+
+            result = handle_run(
+                {"project_name": "test", "dry_run": True}
+            )
 
         assert result.is_error is False
         data = json.loads(result.content[0]["text"])
         assert data["dry_run"] is True
         assert data["success"] is True
 
-    def test_validation_failure(self) -> None:
+    def test_validation_failure(self, tmp_path: Any) -> None:
         """Invalid project returns validation errors."""
-        project = ProjectModel(name="", source=None, target=None)
-        with patch("bani.bdl.parser.parse", return_value=project):
-            result = handle_run({"bdl_content": "<p/>", "dry_run": True})
+        mock_bp = MagicMock()
+        mock_bp.validate.return_value = (False, ["Source is required"])
+
+        with (
+            patch(
+                "bani.mcp_server.tools._DEFAULT_PROJECTS_DIR",
+                str(tmp_path),
+            ),
+            patch("bani.sdk.bani.Bani.load", return_value=mock_bp),
+        ):
+            (tmp_path / "bad.bdl").write_text("<p/>")
+            result = handle_run(
+                {"project_name": "bad", "dry_run": True}
+            )
 
         assert result.is_error is True
         data = json.loads(result.content[0]["text"])
         assert data["success"] is False
         assert len(data["errors"]) > 0
 
-    def test_execution_success(self) -> None:
+    def test_execution_success(self, tmp_path: Any) -> None:
         """Successful execution returns MigrationResult data."""
-        project = ProjectModel(
-            name="test",
-            source=ConnectionConfig(dialect="postgresql"),
-            target=ConnectionConfig(dialect="mysql"),
-        )
         migration_result = MigrationResult(
             project_name="test",
             tables_completed=5,
@@ -348,15 +376,19 @@ class TestRun:
             errors=(),
         )
 
-        mock_bani_project = MagicMock()
-        mock_bani_project.validate.return_value = (True, [])
-        mock_bani_project.run.return_value = migration_result
+        mock_bp = MagicMock()
+        mock_bp.validate.return_value = (True, [])
+        mock_bp.run.return_value = migration_result
 
         with (
-            patch("bani.bdl.parser.parse", return_value=project),
-            patch("bani.sdk.bani.BaniProject", return_value=mock_bani_project),
+            patch(
+                "bani.mcp_server.tools._DEFAULT_PROJECTS_DIR",
+                str(tmp_path),
+            ),
+            patch("bani.sdk.bani.Bani.load", return_value=mock_bp),
         ):
-            result = handle_run({"bdl_content": "<p/>"})
+            (tmp_path / "test.bdl").write_text("<p/>")
+            result = handle_run({"project_name": "test"})
 
         assert result.is_error is False
         data = json.loads(result.content[0]["text"])
@@ -364,10 +396,20 @@ class TestRun:
         assert data["tables_completed"] == 5
         assert data["total_rows_written"] == 1000
 
-    def test_missing_content(self) -> None:
-        """Missing bdl_content returns error."""
+    def test_missing_project_name(self) -> None:
+        """Missing project_name returns error."""
         result = handle_run({})
         assert result.is_error is True
+
+    def test_project_not_found(self, tmp_path: Any) -> None:
+        """Non-existent project returns error."""
+        with patch(
+            "bani.mcp_server.tools._DEFAULT_PROJECTS_DIR",
+            str(tmp_path),
+        ):
+            result = handle_run({"project_name": "no_such"})
+        assert result.is_error is True
+        assert "not found" in result.content[0]["text"]
 
 
 # ---------------------------------------------------------------------------

@@ -299,6 +299,30 @@ export async function inspectSchema(
   });
 }
 
+// --- Connections (registry) ---
+
+export interface RegisteredConnectionSummary {
+  key: string;
+  name: string;
+  connector: string;
+  host: string;
+  port: number;
+  database: string;
+}
+
+export interface ConnectionsResponse {
+  connections: Record<string, RegisteredConnectionSummary>;
+  count: number;
+}
+
+export function getConnections(): Promise<ConnectionsResponse> {
+  return request<ConnectionsResponse>('/api/connections');
+}
+
+export function getConnectionConfig(key: string): Promise<ConnectionConfig> {
+  return request<ConnectionConfig>(`/api/connections/${encodeURIComponent(key)}/config`);
+}
+
 // --- Connectors ---
 
 export function getConnectors(): Promise<ConnectorInfo[]> {

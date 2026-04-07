@@ -1,6 +1,7 @@
 import { useState, useEffect, useRef } from 'react';
 import { useMutation, useQuery } from '@tanstack/react-query';
-import { inspectSchema, getConnectors } from '../api/client';
+import { inspectSchema, getConnectors, getConnections, getConnectionConfig } from '../api/client';
+import type { RegisteredConnectionSummary } from '../api/client';
 import { SchemaTree } from '../components/SchemaTree';
 import { ConnectionForm } from '../components/ConnectionForm';
 import type { ConnectionConfig, Table, SavedConnection } from '../types';
@@ -56,9 +57,29 @@ export function SchemaBrowser() {
     queryFn: getConnectors,
   });
 
+  const { data: registry } = useQuery({
+    queryKey: ['connections'],
+    queryFn: getConnections,
+    staleTime: 30_000,
+  });
+
+  const registeredConnections: RegisteredConnectionSummary[] = registry
+    ? Object.values(registry.connections)
+    : [];
+
   const connectorNames = connectors?.map((c) => c.name) ?? [
     'postgresql', 'mysql', 'mssql', 'oracle', 'sqlite',
   ];
+
+  async function loadRegisteredConnection(key: string) {
+    try {
+      const config = await getConnectionConfig(key);
+      setConnection(config);
+      setTables(null);
+    } catch {
+      // Silently ignore
+    }
+  }
 
   // Persist active state
   useEffect(() => {
@@ -116,11 +137,6 @@ export function SchemaBrowser() {
     setTables(saved.tables);
   }
 
-  function deleteConnection(name: string) {
-    const updated = savedConnections.filter((s) => s.connection.name !== name);
-    setSavedConnections(updated);
-    saveSavedConnections(updated);
-  }
 
   function clearForm() {
     setConnection({ ...emptyConnection });
@@ -136,54 +152,49 @@ export function SchemaBrowser() {
         </p>
       </div>
 
-      {/* Saved Connections */}
-      {savedConnections.length > 0 && (
-        <div className="mb-8">
-          <h2 className="text-sm font-semibold text-gray-500 uppercase tracking-wide mb-3">
-            Saved Connections
-          </h2>
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
-            {savedConnections.map((s) => (
-              <div
-                key={s.connection.name}
-                className={`bg-white rounded-lg border p-4 cursor-pointer hover:shadow-md transition-shadow ${
-                  connection.name === s.connection.name
-                    ? 'border-indigo-500 ring-1 ring-indigo-500'
-                    : 'border-gray-200'
-                }`}
-                onClick={() => loadConnection(s)}
-              >
-                <div className="flex items-start justify-between">
-                  <div className="min-w-0 flex-1">
-                    <h3 className="font-semibold text-gray-900 truncate">
-                      {s.connection.name}
-                    </h3>
-                    <p className="text-sm text-gray-500 mt-0.5">
-                      {s.connection.connector} &middot; {s.connection.host}:{s.connection.port}/{s.connection.database}
-                    </p>
-                    {s.tables && (
-                      <p className="text-xs text-gray-400 mt-1">
-                        {s.tables.length} tables
-                      </p>
-                    )}
-                  </div>
-                  <button
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      if (confirm(`Delete "${s.connection.name}"?`)) {
-                        deleteConnection(s.connection.name);
-                      }
-                    }}
-                    className="ml-2 text-gray-300 hover:text-red-500 transition-colors"
-                  >
-                    <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
-                    </svg>
-                  </button>
-                </div>
-              </div>
-            ))}
-          </div>
+      {/* Connection Picker */}
+      {(registeredConnections.length > 0 || savedConnections.length > 0) && (
+        <div className="flex items-center justify-between mb-6">
+          <select
+            value=""
+            onChange={async (e) => {
+              const val = e.target.value;
+              if (!val) return;
+              if (val.startsWith('reg:')) {
+                await loadRegisteredConnection(val.slice(4));
+              } else {
+                const found = savedConnections.find((s) => s.connection.name === val);
+                if (found) loadConnection(found);
+              }
+            }}
+            className="w-80 h-9 rounded-md border border-gray-300 px-3 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500"
+          >
+            <option value="">Select a connection...</option>
+            {registeredConnections.length > 0 && (
+              <optgroup label="Registered">
+                {registeredConnections.map((r: RegisteredConnectionSummary) => (
+                  <option key={`reg:${r.key}`} value={`reg:${r.key}`}>
+                    {r.name} ({r.connector} — {r.host}:{r.port}/{r.database})
+                  </option>
+                ))}
+              </optgroup>
+            )}
+            {savedConnections.length > 0 && (
+              <optgroup label="Session Saved">
+                {savedConnections.map((s) => (
+                  <option key={s.connection.name} value={s.connection.name}>
+                    {s.connection.name} ({s.connection.connector} — {s.connection.host}:{s.connection.port}/{s.connection.database})
+                  </option>
+                ))}
+              </optgroup>
+            )}
+          </select>
+          <button
+            onClick={clearForm}
+            className="h-9 rounded-md border border-gray-300 px-4 text-sm text-gray-600 hover:bg-gray-50"
+          >
+            Clear
+          </button>
         </div>
       )}
 
