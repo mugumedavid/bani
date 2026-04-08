@@ -208,14 +208,16 @@ class OracleConnector(SourceConnector, SinkConnector):
             with self._pool.acquire() as conn:
                 cursor = conn.cursor()
                 try:
+                    # Submit as a background job so we don't block
                     cursor.execute(
-                        "BEGIN DBMS_STATS.GATHER_SCHEMA_STATS("
-                        f"ownname => '{self._owner}'"
-                        "); END;"
+                        "DECLARE v_job NUMBER; BEGIN "
+                        "DBMS_JOB.SUBMIT(v_job, "
+                        f"'DBMS_STATS.GATHER_SCHEMA_STATS(''{self._owner}'');'"
+                        "); COMMIT; END;"
                     )
                 except Exception:
                     _logger.debug(
-                        "DBMS_STATS.GATHER_SCHEMA_STATS skipped",
+                        "DBMS_STATS background job skipped",
                         exc_info=True,
                     )
                 finally:
