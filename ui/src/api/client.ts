@@ -209,6 +209,7 @@ export interface MigrateStatusResponse {
   error: string | null;
   current_table: string | null;
   table_failures: string[];
+  warnings: string[];
   elapsed_seconds: number;
 }
 

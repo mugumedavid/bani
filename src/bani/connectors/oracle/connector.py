@@ -553,6 +553,7 @@ class OracleConnector(SourceConnector, SinkConnector):
                                 "ORA-00955",  # name collision
                                 "ORA-01450",  # key too long
                                 "ORA-00972",  # identifier too long
+                                "ORA-02327",  # cannot index LOB column
                             )
                         ):
                             _logger.warning(

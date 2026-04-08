@@ -288,6 +288,10 @@ export function MigrationMonitor() {
             <FailureList failures={migrateStatus.table_failures} />
           )}
 
+          {migrateStatus.warnings && migrateStatus.warnings.length > 0 && (
+            <WarningsList warnings={migrateStatus.warnings} />
+          )}
+
           {migrateStatus.error && (
             <div className="mt-3 bg-red-50 border border-red-200 rounded-lg p-3">
               <p className="text-sm text-red-700">{migrateStatus.error}</p>
@@ -380,6 +384,9 @@ export function MigrationMonitor() {
           </div>
           {migrateStatus.table_failures && migrateStatus.table_failures.length > 0 && (
             <FailureList failures={migrateStatus.table_failures} />
+          )}
+          {migrateStatus.warnings && migrateStatus.warnings.length > 0 && (
+            <WarningsList warnings={migrateStatus.warnings} />
           )}
         </div>
       )}
@@ -535,6 +542,21 @@ function FailureList({ failures }: { failures: string[] }) {
       <ul className="text-xs text-amber-700 space-y-0.5 max-h-32 overflow-y-auto">
         {failures.map((f, i) => (
           <li key={i} className="truncate">{f}</li>
+        ))}
+      </ul>
+    </div>
+  );
+}
+
+function WarningsList({ warnings }: { warnings: string[] }) {
+  return (
+    <div className="mt-3 bg-blue-50 border border-blue-200 rounded-lg p-3">
+      <p className="text-xs font-semibold text-blue-800 mb-1">
+        Warnings ({warnings.length})
+      </p>
+      <ul className="text-xs text-blue-700 space-y-0.5 max-h-48 overflow-y-auto">
+        {warnings.map((w, i) => (
+          <li key={i} className="font-mono">{w}</li>
         ))}
       </ul>
     </div>
