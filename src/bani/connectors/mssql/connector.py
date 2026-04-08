@@ -89,6 +89,11 @@ class MSSQLConnector(SourceConnector, SinkConnector):
     Supports SQL Server 2012+ via pymssql's broad compatibility.
     """
 
+    # MSSQL writes are slower than other engines; smaller batches and
+    # fewer workers prevent source connection timeouts during long writes.
+    recommended_batch_size: int | None = 10_000
+    recommended_parallel_workers: int | None = 2
+
     def __init__(self) -> None:
         """Initialize the MSSQL connector."""
         self.connection: Any = None

@@ -159,9 +159,19 @@ class SinkConnector(ABC):
     A sink connector is responsible for creating tables and writing data
     to a target database. It abstracts away database-specific DDL and
     DML details.
+
+    Subclasses may override ``recommended_batch_size`` and
+    ``recommended_parallel_workers`` to declare optimal defaults for
+    the target engine.  The orchestrator applies these when the project
+    uses global defaults (i.e. the user did not explicitly set them).
     """
 
     _pool: ConnectionPool[Any] | None = None
+
+    # Connector-specific performance recommendations.
+    # None means "use the global default".
+    recommended_batch_size: int | None = None
+    recommended_parallel_workers: int | None = None
 
     @abstractmethod
     def connect(self, config: ConnectionConfig, pool_size: int = 1) -> None:

@@ -90,7 +90,9 @@ class MigrationOrchestrator:
         self.source = source
         self.sink = sink
         self.tracker = tracker or ProgressTracker()
-        self.options = project.options or ProjectOptions()
+        self.options = self._apply_sink_recommendations(
+            project.options or ProjectOptions(), sink,
+        )
         self._checkpoint = checkpoint or CheckpointManager()
         self._quarantine = quarantine or QuarantineManager()
         self._cancel_event: threading.Event | None = None
@@ -100,6 +102,47 @@ class MigrationOrchestrator:
             target_executor=sink,
             projects_dir=projects_dir,
         )
+
+    @staticmethod
+    def _apply_sink_recommendations(
+        options: ProjectOptions,
+        sink: SinkConnector,
+    ) -> ProjectOptions:
+        """Apply sink connector recommendations when defaults are in use.
+
+        If the project uses the global default batch_size or
+        parallel_workers, and the sink connector declares its own
+        recommended values, the sink's values take precedence.
+        Explicit user overrides in the BDL are never changed.
+        """
+        defaults = ProjectOptions()
+        new_batch = options.batch_size
+        new_workers = options.parallel_workers
+
+        rec_batch = getattr(sink, "recommended_batch_size", None)
+        if rec_batch and options.batch_size == defaults.batch_size:
+            new_batch = rec_batch
+            logger.info(
+                "Using sink-recommended batch_size=%d (default was %d)",
+                rec_batch, defaults.batch_size,
+            )
+
+        rec_workers = getattr(sink, "recommended_parallel_workers", None)
+        if rec_workers and options.parallel_workers == defaults.parallel_workers:
+            new_workers = rec_workers
+            logger.info(
+                "Using sink-recommended parallel_workers=%d (default was %d)",
+                rec_workers, defaults.parallel_workers,
+            )
+
+        if new_batch != options.batch_size or new_workers != options.parallel_workers:
+            from dataclasses import replace
+            return replace(
+                options,
+                batch_size=new_batch,
+                parallel_workers=new_workers,
+            )
+        return options
 
     def set_cancel_event(self, event: threading.Event) -> None:
         """Register a threading.Event that signals cancellation."""
@@ -111,10 +154,12 @@ class MigrationOrchestrator:
 
     def _hook_context(self, **extra: str) -> dict[str, str]:
         """Build variable context for hook substitution."""
+        src = self.project.source
+        tgt = self.project.target
         ctx: dict[str, str] = {
             "project_name": self.project.name,
-            "source_dialect": self.project.source.dialect if self.project.source else "",
-            "target_dialect": self.project.target.dialect if self.project.target else "",
+            "source_dialect": src.dialect if src else "",
+            "target_dialect": tgt.dialect if tgt else "",
         }
         ctx.update(extra)
         return ctx
@@ -165,7 +210,6 @@ class MigrationOrchestrator:
         )
 
         checkpoint = self._checkpoint
-        quarantine = self._quarantine
         project_hash = checkpoint.compute_hash(self.project)
 
         # Determine whether we can actually resume
