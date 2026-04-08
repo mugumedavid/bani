@@ -131,7 +131,8 @@ class MySQLDataWriter:
         """
         col_names = batch.schema.names
         num_cols = len(col_names)
-        col_list = ", ".join(f"`{name}`" for name in col_names)
+        # Strip column names — MySQL rejects trailing spaces
+        col_list = ", ".join(f"`{name.strip()}`" for name in col_names)
 
         # Build TSV in memory using vectorized column extraction
         columns = [batch.column(i).to_pylist() for i in range(num_cols)]
@@ -218,7 +219,8 @@ class MySQLDataWriter:
             Exception: If INSERT fails.
         """
         col_names = batch.schema.names
-        col_list = ", ".join(f"`{name}`" for name in col_names)
+        # Strip column names — MySQL rejects trailing spaces
+        col_list = ", ".join(f"`{name.strip()}`" for name in col_names)
         placeholders = ", ".join(["%s"] * len(col_names))
 
         # Vectorized column extraction — one C-level to_pylist() per column
