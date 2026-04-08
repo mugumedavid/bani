@@ -302,8 +302,11 @@ class MySQLConnector(SourceConnector, SinkConnector):
 
             # Row too large: convert non-PK VARCHAR to TEXT
             if compact_row and col.name not in pk_col_set:
+                # Convert all VARCHAR to TEXT to stay under 65535 row limit.
+                # Even short VARCHARs add up with many columns (utf8mb4
+                # uses 4 bytes/char, so VARCHAR(230) = 920 bytes each).
                 length = _extract_char_length(mysql_type)
-                if length is not None and length > 255:
+                if length is not None:
                     mysql_type = "TEXT"
 
             # Use LONGTEXT for large text to avoid 64KB TEXT limit
