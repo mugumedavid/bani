@@ -370,6 +370,18 @@ class MigrationOrchestrator:
             for t in self._skipped_tables:
                 warnings.append(f"  {t}")
 
+        insert_errors: list[str] = getattr(self.sink, "_insert_errors", [])
+        if insert_errors:
+            # Deduplicate by message, show count per unique error
+            from collections import Counter
+            error_counts = Counter(insert_errors)
+            warnings.append(
+                f"{len(insert_errors)} row(s) failed to insert:"
+            )
+            for err, count in error_counts.most_common():
+                prefix = f"  ({count}x) " if count > 1 else "  "
+                warnings.append(f"{prefix}{err}")
+
         name_map = getattr(self.sink, "_name_map", {})
         if name_map:
             warnings.append(

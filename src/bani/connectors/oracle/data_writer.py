@@ -60,6 +60,7 @@ class OracleDataWriter:
             connection: An active oracledb connection.
         """
         self.connection = connection
+        self.batch_errors: list[str] = []
 
     def write_batch(
         self, table_name: str, schema_name: str, batch: pa.RecordBatch
@@ -150,6 +151,7 @@ class OracleDataWriter:
                             error.offset,
                             error.message,
                         )
+                        self.batch_errors.append(error.message)
 
                 total_rows += len(chunk) - len(errors)
         finally:

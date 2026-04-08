@@ -107,6 +107,8 @@ class OracleConnector(SourceConnector, SinkConnector):
         # Mapping of original→shortened identifiers, populated when
         # ORA-00972 (identifier too long) is caught during create_table.
         self._name_map: dict[str, str] = {}
+        # Per-row insert errors collected across all write_batch calls.
+        self._insert_errors: list[str] = []
 
     def connect(self, config: ConnectionConfig, pool_size: int = 1) -> None:
         """Establish a connection to an Oracle database.
@@ -525,9 +527,15 @@ class OracleConnector(SourceConnector, SinkConnector):
 
         with self._pool.acquire() as conn:
             writer = OracleDataWriter(conn)
-            return writer.write_batch(
+            rows = writer.write_batch(
                 resolved_table, schema_name or self._owner, batch,
             )
+            if writer.batch_errors:
+                for err in writer.batch_errors:
+                    self._insert_errors.append(
+                        f"{table_name}: {err}"
+                    )
+            return rows
 
     def create_indexes(
         self,
