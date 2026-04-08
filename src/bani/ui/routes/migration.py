@@ -451,6 +451,7 @@ async def start_migration(body: MigrateRequest, request: Request) -> Any:
     state["error"] = None
     state["current_table"] = None
     state["table_failures"] = []
+    state["warnings"] = []
     state["cancel_event"] = threading.Event()
     state["started_at"] = time.time()
 
