@@ -196,6 +196,33 @@ class OracleConnector(SourceConnector, SinkConnector):
         # Initialize schema reader on the primary connection
         self._schema_reader = OracleSchemaReader(self.connection, self._owner)
 
+    def post_migration(self) -> None:
+        """Run post-migration tasks.
+
+        Gathers schema statistics so that ``row_count_estimate`` from
+        subsequent introspection calls reflects the actual row counts.
+        """
+        if self._pool is None:
+            return
+        try:
+            with self._pool.acquire() as conn:
+                cursor = conn.cursor()
+                try:
+                    cursor.execute(
+                        "BEGIN DBMS_STATS.GATHER_SCHEMA_STATS("
+                        f"ownname => '{self._owner}'"
+                        "); END;"
+                    )
+                except Exception:
+                    _logger.debug(
+                        "DBMS_STATS.GATHER_SCHEMA_STATS skipped",
+                        exc_info=True,
+                    )
+                finally:
+                    cursor.close()
+        except Exception:
+            pass  # Best-effort — don't fail the migration
+
     def disconnect(self) -> None:
         """Close the database connection.
 

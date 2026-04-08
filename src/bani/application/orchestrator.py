@@ -351,6 +351,11 @@ class MigrationOrchestrator:
         except Exception:
             logger.debug("Failed to write run log entry", exc_info=True)
 
+        # Run post-migration tasks (e.g. gather Oracle schema stats)
+        post_migration = getattr(self.sink, "post_migration", None)
+        if callable(post_migration):
+            post_migration()
+
         # Clear active migration marker.  Stale markers from crashed
         # processes are cleaned up by ActiveMigrationTracker.list_active()
         # via PID liveness checks.
