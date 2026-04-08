@@ -8,7 +8,7 @@ Covers:
 
 from __future__ import annotations
 
-from unittest.mock import MagicMock, patch
+from unittest.mock import MagicMock
 
 import pymysql
 import pytest
@@ -195,7 +195,8 @@ class TestMySQLCreateTableRetry:
 
         assert len(executed_sqls) == 2
         # First attempt has column DEFAULT, second does not
-        assert "DEFAULT CURRENT_TIMESTAMP" in executed_sqls[0] or "DEFAULT" in executed_sqls[0].split("CHARSET")[0]
+        first_cols = executed_sqls[0].split("CHARSET")[0]
+        assert "DEFAULT" in first_cols
         # Second attempt should not have column defaults
         create_part = executed_sqls[1].split("ENGINE=")[0]
         assert "DEFAULT" not in create_part

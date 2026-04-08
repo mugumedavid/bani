@@ -10,10 +10,9 @@ Covers:
 
 from __future__ import annotations
 
-from unittest.mock import MagicMock, patch, call
+from unittest.mock import MagicMock, patch
 
 import pyarrow as pa
-import pytest
 
 from bani.connectors.oracle.connector import (
     OracleConnector,
@@ -21,8 +20,6 @@ from bani.connectors.oracle.connector import (
 )
 from bani.domain.schema import (
     ColumnDefinition,
-    ForeignKeyDefinition,
-    IndexDefinition,
     TableDefinition,
 )
 
@@ -195,7 +192,9 @@ class TestOracleCreateTableRetry:
 
         connector.create_table(table_def)
 
-        create_sql = [s for s in executed_sqls if "CREATE TABLE" in s][0]
+        create_sql = next(
+            s for s in executed_sqls if "CREATE TABLE" in s
+        )
         assert "VARCHAR2(255)" in create_sql
         assert "VARCHAR2(4000)" not in create_sql
 

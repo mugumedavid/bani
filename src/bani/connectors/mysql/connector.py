@@ -9,10 +9,9 @@ from __future__ import annotations
 
 import logging
 import os
+import re
 from collections.abc import Iterator
 from typing import Any
-
-logger = logging.getLogger(__name__)
 
 import pyarrow as pa
 import pymysql
@@ -41,8 +40,7 @@ from bani.domain.schema import (
     TableDefinition,
 )
 
-
-import re
+logger = logging.getLogger(__name__)
 
 _CHAR_LENGTH_RE = re.compile(
     r"(?:n?var)?char(?:acter)?(?:2)?(?:\s+varying)?\s*\(\s*(\d+)\s*\)", re.IGNORECASE
