@@ -108,41 +108,49 @@ class MigrationOrchestrator:
         options: ProjectOptions,
         sink: SinkConnector,
     ) -> ProjectOptions:
-        """Apply sink connector recommendations when defaults are in use.
+        """Resolve batch_size and parallel_workers.
 
-        If the project uses the global default batch_size or
-        parallel_workers, and the sink connector declares its own
-        recommended values, the sink's values take precedence.
-        Explicit user overrides in the BDL are never changed.
+        Values are resolved in priority order:
+        1. Explicit BDL value (non-zero) — user's choice, always respected.
+        2. Sink connector recommendation — engine-specific tuning.
+        3. Global default from ``ProjectOptions``.
+
+        A value of ``0`` in the parsed options means "not specified in
+        the BDL" (the parser uses 0 as a sentinel).
         """
         defaults = ProjectOptions()
-        new_batch = options.batch_size
-        new_workers = options.parallel_workers
-
         rec_batch = getattr(sink, "recommended_batch_size", None)
-        if rec_batch and options.batch_size == defaults.batch_size:
+        rec_workers = getattr(
+            sink, "recommended_parallel_workers", None,
+        )
+
+        if options.batch_size > 0:
+            new_batch = options.batch_size
+        elif rec_batch:
             new_batch = rec_batch
             logger.info(
-                "Using sink-recommended batch_size=%d (default was %d)",
-                rec_batch, defaults.batch_size,
+                "Using sink-recommended batch_size=%d", rec_batch,
             )
+        else:
+            new_batch = defaults.batch_size
 
-        rec_workers = getattr(sink, "recommended_parallel_workers", None)
-        if rec_workers and options.parallel_workers == defaults.parallel_workers:
+        if options.parallel_workers > 0:
+            new_workers = options.parallel_workers
+        elif rec_workers:
             new_workers = rec_workers
             logger.info(
-                "Using sink-recommended parallel_workers=%d (default was %d)",
-                rec_workers, defaults.parallel_workers,
+                "Using sink-recommended parallel_workers=%d",
+                rec_workers,
             )
+        else:
+            new_workers = defaults.parallel_workers
 
-        if new_batch != options.batch_size or new_workers != options.parallel_workers:
-            from dataclasses import replace
-            return replace(
-                options,
-                batch_size=new_batch,
-                parallel_workers=new_workers,
-            )
-        return options
+        from dataclasses import replace
+        return replace(
+            options,
+            batch_size=new_batch,
+            parallel_workers=new_workers,
+        )
 
     def set_cancel_event(self, event: threading.Event) -> None:
         """Register a threading.Event that signals cancellation."""

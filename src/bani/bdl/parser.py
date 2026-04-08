@@ -402,8 +402,8 @@ def _parse_options(elem: ET.Element) -> ProjectOptions:
         on_error = ErrorHandlingStrategy.ABORT
 
     return ProjectOptions(
-        batch_size=get_int("batchSize", 100000),
-        parallel_workers=get_int("parallelWorkers", 4),
+        batch_size=get_int("batchSize", 0),
+        parallel_workers=get_int("parallelWorkers", 0),
         memory_limit_mb=get_int("memoryLimitMB", 2048),
         on_error=on_error,
         create_target_schema=get_bool("createTargetSchema", True),
@@ -423,8 +423,8 @@ def _parse_options_json(data: dict[str, Any]) -> ProjectOptions:
         on_error = ErrorHandlingStrategy.ABORT
 
     return ProjectOptions(
-        batch_size=data.get("batchSize", 100000),
-        parallel_workers=data.get("parallelWorkers", 4),
+        batch_size=data.get("batchSize", 0),
+        parallel_workers=data.get("parallelWorkers", 0),
         memory_limit_mb=data.get("memoryLimitMB", 2048),
         on_error=on_error,
         create_target_schema=data.get("createTargetSchema", True),

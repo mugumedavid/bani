@@ -776,10 +776,6 @@ def handle_generate_bdl(params: dict[str, Any]) -> ToolResult:
             f'  <target connector="{target_connector}">\n'
             f"{tgt_xml}\n"
             f"  </target>{tables_xml}\n"
-            f"  <options>\n"
-            f"    <batchSize>100000</batchSize>\n"
-            f"    <parallelWorkers>4</parallelWorkers>\n"
-            f"  </options>\n"
             f"</bani>"
         )
         return _text_result(bdl_xml)
