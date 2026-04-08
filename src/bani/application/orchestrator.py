@@ -46,6 +46,7 @@ class MigrationResult:
     total_rows_written: int
     duration_seconds: float
     errors: tuple[str, ...] = ()
+    warnings: tuple[str, ...] = ()
 
 
 class MigrationOrchestrator:
@@ -354,6 +355,17 @@ class MigrationOrchestrator:
         # via PID liveness checks.
         active_tracker.finish(self.project.name)
 
+        # Collect warnings about renamed identifiers from the sink
+        warnings: list[str] = []
+        name_map = getattr(self.sink, "_name_map", {})
+        if name_map:
+            warnings.append(
+                f"Renamed {len(name_map)} identifier(s) to fit "
+                f"target database limits:"
+            )
+            for original, shortened in sorted(name_map.items()):
+                warnings.append(f"  {original} → {shortened}")
+
         return MigrationResult(
             project_name=self.project.name,
             tables_completed=tables_completed,
@@ -362,6 +374,7 @@ class MigrationOrchestrator:
             total_rows_written=total_rows_written,
             duration_seconds=duration,
             errors=tuple(errors),
+            warnings=tuple(warnings),
         )
 
     def _create_target_schema(

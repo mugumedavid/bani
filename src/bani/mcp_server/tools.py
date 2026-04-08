@@ -490,6 +490,7 @@ def handle_run(params: dict[str, Any]) -> ToolResult:
                 "total_rows_written": result.total_rows_written,
                 "duration_seconds": result.duration_seconds,
                 "errors": list(result.errors),
+                "warnings": list(result.warnings),
             }
         )
     except Exception as exc:

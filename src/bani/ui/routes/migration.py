@@ -582,6 +582,8 @@ async def start_migration(body: MigrateRequest, request: Request) -> Any:
             if result.errors:
                 unique_errors = list(dict.fromkeys(result.errors))
                 state["error"] = "; ".join(unique_errors[:10])
+            if result.warnings:
+                state["warnings"] = list(result.warnings)
 
         except Exception as exc:
             state["error"] = str(exc)
@@ -626,6 +628,7 @@ async def get_status(request: Request) -> MigrateStatus:
         error=state.get("error"),
         current_table=state.get("current_table"),
         table_failures=state.get("table_failures", []),
+        warnings=state.get("warnings", []),
         elapsed_seconds=elapsed,
     )
 

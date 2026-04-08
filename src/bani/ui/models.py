@@ -68,6 +68,7 @@ class MigrateStatus(BaseModel):
     error: str | None = None
     current_table: str | None = None
     table_failures: list[str] = Field(default_factory=list)
+    warnings: list[str] = Field(default_factory=list)
     elapsed_seconds: int = 0
 
 
