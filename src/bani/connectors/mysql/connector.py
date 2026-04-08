@@ -315,8 +315,7 @@ class MySQLConnector(SourceConnector, SinkConnector):
                 if "text" in dt and "long" not in dt and "medium" not in dt:
                     mysql_type = "LONGTEXT"
 
-            col_name = col.name.strip()
-            col_def = f"`{col_name}` {mysql_type}"
+            col_def = f"`{col.name}` {mysql_type}"
 
             if not col.nullable:
                 col_def += " NOT NULL"
