@@ -89,6 +89,7 @@ class MigrationOrchestrator:
         self._checkpoint = checkpoint or CheckpointManager()
         self._quarantine = quarantine or QuarantineManager()
         self._cancel_event: threading.Event | None = None
+        self._skipped_tables: list[str] = []
         self._hook_runner = HookRunner(
             source_executor=source,
             target_executor=sink,
@@ -355,8 +356,15 @@ class MigrationOrchestrator:
         # via PID liveness checks.
         active_tracker.finish(self.project.name)
 
-        # Collect warnings about renamed identifiers from the sink
+        # Collect warnings
         warnings: list[str] = []
+        if self._skipped_tables:
+            warnings.append(
+                f"Skipped {len(self._skipped_tables)} table(s) with no columns:"
+            )
+            for t in self._skipped_tables:
+                warnings.append(f"  {t}")
+
         name_map = getattr(self.sink, "_name_map", {})
         if name_map:
             warnings.append(
@@ -397,6 +405,7 @@ class MigrationOrchestrator:
                     "Skipping table %s (no columns)",
                     table.fully_qualified_name,
                 )
+                self._skipped_tables.append(table.fully_qualified_name)
                 continue
 
             # Drop if requested
