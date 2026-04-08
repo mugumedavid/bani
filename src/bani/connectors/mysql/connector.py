@@ -12,6 +12,8 @@ import os
 from collections.abc import Iterator
 from typing import Any
 
+logger = logging.getLogger(__name__)
+
 import pyarrow as pa
 import pymysql
 
@@ -236,30 +238,52 @@ class MySQLConnector(SourceConnector, SinkConnector):
         Creates all columns, primary key, and check constraints.
         Uses InnoDB engine and utf8mb4 charset by default.
 
+        Automatically handles MySQL version limitations by catching
+        specific errors and retrying with workarounds:
+
+        - **1071** (key too long): downgrades PK VARCHAR columns to
+          VARCHAR(191) to fit the 767-byte InnoDB key limit.
+        - **1118** (row too large): converts non-PK VARCHAR columns
+          to TEXT to stay under the 65535-byte row limit.
+        - **1067** (invalid default): strips problematic defaults.
+
         Args:
             table_def: TableDefinition describing the table.
 
         Raises:
             RuntimeError: If not connected.
-            Exception: If table creation fails.
+            Exception: If table creation fails after retries.
         """
         if self._pool is None:
             raise RuntimeError("MySQL connector is not connected")
         if not table_def.columns:
             raise ValueError(f"Table {table_def.table_name} has no columns")
 
-        pk_cols = set(table_def.primary_key)
+        self._create_table_impl(
+            table_def,
+            shorten_pk=False,
+            compact_row=False,
+            strip_defaults=False,
+        )
+
+    def _create_table_impl(
+        self,
+        table_def: TableDefinition,
+        *,
+        shorten_pk: bool,
+        compact_row: bool,
+        strip_defaults: bool,
+    ) -> None:
+        """Internal table creation with retry flags."""
+        assert self._pool is not None
+
+        pk_col_set = set(table_def.primary_key)
 
         # Build column definitions
         col_defs = []
         for col in table_def.columns:
-            # Resolve target type via the canonical Arrow mapping layer
-            # when arrow_type_str is available; fall back to raw data_type.
             if col.arrow_type_str:
                 mysql_type = MySQLTypeMapper.from_arrow_type(col.arrow_type_str)
-                # Arrow 'string' loses varchar length → TEXT.
-                # Recover length from the source data_type when available
-                # so that defaults and indexes remain possible.
                 if mysql_type == "TEXT" and col.data_type:
                     length = _extract_char_length(col.data_type)
                     if length is not None and length <= 1000:
@@ -267,19 +291,29 @@ class MySQLConnector(SourceConnector, SinkConnector):
             else:
                 mysql_type = col.data_type
 
-            # MySQL doesn't allow TEXT/BLOB in primary keys.
-            # Downgrade to VARCHAR(255) for PK columns.
-            if col.name in pk_cols and mysql_type in ("TEXT", "LONGTEXT", "MEDIUMTEXT"):
-                mysql_type = "VARCHAR(255)"
+            # PK columns: TEXT→VARCHAR, and shorten if needed
+            if col.name in pk_col_set and mysql_type in (
+                "TEXT", "LONGTEXT", "MEDIUMTEXT",
+            ):
+                mysql_type = "VARCHAR(191)" if shorten_pk else "VARCHAR(255)"
+            elif col.name in pk_col_set and shorten_pk:
+                # Shorten existing VARCHAR PK columns to 191
+                length = _extract_char_length(mysql_type)
+                if length is not None and length > 191:
+                    mysql_type = "VARCHAR(191)"
+
+            # Row too large: convert non-PK VARCHAR to TEXT
+            if compact_row and col.name not in pk_col_set:
+                length = _extract_char_length(mysql_type)
+                if length is not None and length > 255:
+                    mysql_type = "TEXT"
 
             # Use LONGTEXT for large text to avoid 64KB TEXT limit
             if mysql_type == "TEXT" and col.data_type:
                 dt = col.data_type.lower()
                 if "text" in dt and "long" not in dt and "medium" not in dt:
-                    # Source is generic text — use LONGTEXT for safety
                     mysql_type = "LONGTEXT"
 
-            # Trim column names (some sources have trailing spaces)
             col_name = col.name.strip()
             col_def = f"`{col_name}` {mysql_type}"
 
@@ -288,9 +322,7 @@ class MySQLConnector(SourceConnector, SinkConnector):
 
             if col.is_auto_increment:
                 col_def += " AUTO_INCREMENT"
-            elif col.default_value:
-                # MySQL does not allow DEFAULT on TEXT, BLOB, JSON,
-                # or GEOMETRY columns — silently drop the default.
+            elif col.default_value and not strip_defaults:
                 mu = mysql_type.upper()
                 is_lob = any(
                     kw in mu
@@ -310,10 +342,12 @@ class MySQLConnector(SourceConnector, SinkConnector):
 
         # Add primary key if present
         if table_def.primary_key:
-            pk_cols = ", ".join(f"`{col}`" for col in table_def.primary_key)
-            col_defs.append(f"PRIMARY KEY ({pk_cols})")
+            pk_cols_sql = ", ".join(
+                f"`{col}`" for col in table_def.primary_key
+            )
+            col_defs.append(f"PRIMARY KEY ({pk_cols_sql})")
 
-        # Add check constraints — skip any with source-specific syntax
+        # Add check constraints
         for constraint in table_def.check_constraints:
             c = str(constraint)
             if "::" in c or "ARRAY[" in c or "ANY (" in c:
@@ -322,15 +356,15 @@ class MySQLConnector(SourceConnector, SinkConnector):
 
         col_list = ", ".join(col_defs)
 
-        # Drop FK constraints referencing this table, then drop + recreate
         schema = self._schema(table_def.schema_name)
         tname = table_def.table_name
+
+        retry_kwargs: dict[str, bool] | None = None
 
         with self._pool.acquire() as conn:
             with conn.cursor() as cur:
                 cur.execute("SET FOREIGN_KEY_CHECKS=0")
 
-                # Find and drop all FK constraints that reference this table
                 cur.execute(
                     "SELECT TABLE_NAME, CONSTRAINT_NAME "
                     "FROM information_schema.KEY_COLUMN_USAGE "
@@ -345,7 +379,7 @@ class MySQLConnector(SourceConnector, SinkConnector):
                             f"DROP FOREIGN KEY `{fk_name}`"
                         )
                     except Exception:
-                        pass  # already dropped or table gone
+                        pass
 
                 cur.execute(
                     f"DROP TABLE IF EXISTS `{schema}`.`{tname}`"
@@ -356,8 +390,52 @@ class MySQLConnector(SourceConnector, SinkConnector):
                     f"({col_list}) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 "
                     f"COLLATE=utf8mb4_unicode_ci"
                 )
-                cur.execute(create_sql)
+
+                try:
+                    cur.execute(create_sql)
+                except Exception as exc:
+                    code = getattr(exc, "args", (None,))[0]
+
+                    if code == 1071 and not shorten_pk:
+                        logger.warning(
+                            "Table %s: key too long, retrying with "
+                            "VARCHAR(191) PK columns",
+                            tname,
+                        )
+                        retry_kwargs = {
+                            "shorten_pk": True,
+                            "compact_row": compact_row,
+                            "strip_defaults": strip_defaults,
+                        }
+                    elif code == 1118 and not compact_row:
+                        logger.warning(
+                            "Table %s: row too large, retrying with "
+                            "TEXT for large VARCHAR columns",
+                            tname,
+                        )
+                        retry_kwargs = {
+                            "shorten_pk": shorten_pk,
+                            "compact_row": True,
+                            "strip_defaults": strip_defaults,
+                        }
+                    elif code == 1067 and not strip_defaults:
+                        logger.warning(
+                            "Table %s: invalid default value, "
+                            "retrying without defaults",
+                            tname,
+                        )
+                        retry_kwargs = {
+                            "shorten_pk": shorten_pk,
+                            "compact_row": compact_row,
+                            "strip_defaults": True,
+                        }
+                    else:
+                        raise
+
                 cur.execute("SET FOREIGN_KEY_CHECKS=1")
+
+        if retry_kwargs is not None:
+            self._create_table_impl(table_def, **retry_kwargs)
 
     @staticmethod
     def _normalize_default(raw_default: str, mysql_type: str) -> str:
