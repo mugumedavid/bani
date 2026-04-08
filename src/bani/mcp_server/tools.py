@@ -132,6 +132,7 @@ def handle_schema_inspect(params: dict[str, Any]) -> ToolResult:
 
             conn = ConnectionRegistry.get(str(connection_key))
             config = ConnectionRegistry.to_connection_config(conn)
+            extra_kwargs = dict(config.extra)
             schema = SchemaInspector.inspect(
                 dialect=config.dialect,
                 host=config.host,
@@ -139,6 +140,7 @@ def handle_schema_inspect(params: dict[str, Any]) -> ToolResult:
                 database=config.database,
                 username_env=config.username_env,
                 password_env=config.password_env,
+                **extra_kwargs,
             )
         else:
             # Fallback: individual parameters + env var names.

@@ -1,11 +1,14 @@
 """Oracle connector implementing both source and sink interfaces.
 
-Uses python-oracledb in THIN mode (pure Python, no Oracle Client needed).
-Supports Oracle 12c+ with straightforward connection setup.
+Uses python-oracledb in THIN mode by default (pure Python, no Oracle Client
+needed, supports Oracle 12c+).  When ``oracle_client_lib`` is provided via
+connection options, the driver switches to THICK mode which supports Oracle
+9.2+ (including 11g).
 """
 
 from __future__ import annotations
 
+import logging
 import os
 from collections.abc import Iterator
 from typing import Any
@@ -44,15 +47,38 @@ from bani.domain.schema import (
 )
 
 
+_logger = logging.getLogger(__name__)
+
+_thick_mode_initialised = False
+
+
+def _init_thick_mode(lib_dir: str) -> None:
+    """Activate oracledb thick mode (once per process).
+
+    Thick mode enables connectivity to Oracle 9.2+ (including 11g)
+    by loading the Oracle Instant Client shared libraries.
+    """
+    global _thick_mode_initialised  # noqa: PLW0603
+    if _thick_mode_initialised:
+        return
+    oracledb.init_oracle_client(lib_dir=lib_dir)
+    _thick_mode_initialised = True
+    _logger.info("Oracle thick mode enabled (lib_dir=%s)", lib_dir)
+
+
 class OracleConnector(SourceConnector, SinkConnector):
     """Oracle database connector.
 
     Implements both SourceConnector and SinkConnector to support reading
-    from and writing to Oracle databases. Uses python-oracledb in THIN mode
-    (pure Python, no Oracle Client installation needed).
+    from and writing to Oracle databases.  Uses python-oracledb in THIN
+    mode by default (12c+).  Set the ``oracle_client_lib`` connection
+    option to a path containing Oracle Instant Client to enable THICK
+    mode (9.2+, including 11g).
 
-    Supports Oracle 12c+ with straightforward connection setup via host, port,
-    and service_name or SID.
+    Connection options (passed via ``ConnectionConfig.extra``):
+        service_name: Use a service name instead of SID.
+        oracle_client_lib: Path to Oracle Instant Client libraries.
+        ssl_cert_path: Path to SSL certificate.
     """
 
     def __init__(self) -> None:
@@ -81,14 +107,21 @@ class OracleConnector(SourceConnector, SinkConnector):
         # Validate configuration
         if not config.host:
             raise ValueError("Oracle connector requires 'host' in connection config")
-        # Get service_name from extra config if provided
+        # Get optional settings from extra config
         service_name: str | None = None
         ssl_cert_path: str | None = None
+        oracle_client_lib: str | None = None
         for key, value in config.extra:
             if key == "service_name":
                 service_name = value
             elif key == "ssl_cert_path":
                 ssl_cert_path = value
+            elif key == "oracle_client_lib":
+                oracle_client_lib = value
+
+        # Switch to thick mode if oracle_client_lib is provided
+        if oracle_client_lib:
+            _init_thick_mode(oracle_client_lib)
 
         if not config.database and not service_name:
             raise ValueError(
