@@ -681,18 +681,23 @@ class MSSQLConnector(SourceConnector, SinkConnector):
 
             unique_name = f"{src_table}_{fk.name}"[:128]
 
+            on_delete = fk.on_delete or "NO ACTION"
+            on_update = fk.on_update or "NO ACTION"
+
             alter_sql = (
                 f"ALTER TABLE [{src_schema}].[{src_table}] "
-                f"ADD CONSTRAINT [{unique_name}] FOREIGN KEY ({src_cols}) "
-                f"REFERENCES [{ref_schema}].[{ref_table}] ({ref_cols}) "
-                f"ON DELETE {fk.on_delete} ON UPDATE {fk.on_update}"
+                f"ADD CONSTRAINT [{unique_name}] "
+                f"FOREIGN KEY ({src_cols}) "
+                f"REFERENCES [{ref_schema}].[{ref_table}] "
+                f"({ref_cols}) "
+                f"ON DELETE {on_delete} ON UPDATE {on_update}"
             )
 
             try:
                 with self._pool.acquire() as conn:
                     with conn.cursor() as cur:
                         cur.execute(alter_sql)
-                consecutive_conn_failures = 0  # Reset on success
+                consecutive_conn_failures = 0
             except Exception as exc:
                 exc_str = str(exc)
                 is_conn_error = (
@@ -705,13 +710,110 @@ class MSSQLConnector(SourceConnector, SinkConnector):
                     _log.warning(
                         "Connection broken during FK creation "
                         "(%d/%d): %s",
-                        consecutive_conn_failures, max_conn_failures, exc,
+                        consecutive_conn_failures,
+                        max_conn_failures,
+                        exc,
                     )
-                else:
-                    _log.warning(
-                        "FK %s on %s.%s skipped: %s",
-                        unique_name, src_schema, src_table, exc,
+                    continue
+
+                # 1785: cascade cycles — retry without cascade
+                if "(1785)" in exc_str and (
+                    on_delete != "NO ACTION"
+                    or on_update != "NO ACTION"
+                ):
+                    retry_sql = (
+                        f"ALTER TABLE [{src_schema}].[{src_table}] "
+                        f"ADD CONSTRAINT [{unique_name}] "
+                        f"FOREIGN KEY ({src_cols}) "
+                        f"REFERENCES [{ref_schema}].[{ref_table}] "
+                        f"({ref_cols}) "
+                        f"ON DELETE NO ACTION "
+                        f"ON UPDATE NO ACTION"
                     )
+                    try:
+                        with self._pool.acquire() as conn:
+                            with conn.cursor() as cur:
+                                cur.execute(retry_sql)
+                        _log.info(
+                            "FK %s on %s.%s created with "
+                            "NO ACTION (cascade would cycle)",
+                            unique_name, src_schema, src_table,
+                        )
+                        continue
+                    except Exception:
+                        pass  # Fall through to skip
+
+                # 1776: missing PK/unique — try creating a
+                # unique index on the referenced columns first
+                if "(1776)" in exc_str:
+                    idx_name = f"UQ_{ref_table}_{'_'.join(fk.referenced_columns)}"[:128]
+                    idx_cols = ", ".join(
+                        f"[{c}]" for c in fk.referenced_columns
+                    )
+                    try:
+                        with self._pool.acquire() as conn:
+                            with conn.cursor() as cur:
+                                cur.execute(
+                                    f"CREATE UNIQUE INDEX "
+                                    f"[{idx_name}] ON "
+                                    f"[{ref_schema}].[{ref_table}] "
+                                    f"({idx_cols})"
+                                )
+                                cur.execute(alter_sql)
+                        _log.info(
+                            "FK %s on %s.%s created after "
+                            "adding unique index on %s.%s",
+                            unique_name, src_schema, src_table,
+                            ref_schema, ref_table,
+                        )
+                        continue
+                    except Exception:
+                        pass  # Fall through to skip
+
+                # 1778: type mismatch — try aligning source column
+                # types to match the referenced PK column types
+                if "(1778)" in exc_str:
+                    try:
+                        with self._pool.acquire() as conn:
+                            with conn.cursor() as cur:
+                                for s_col, r_col in zip(
+                                    fk.source_columns,
+                                    fk.referenced_columns,
+                                    strict=True,
+                                ):
+                                    cur.execute(
+                                        "SELECT DATA_TYPE "
+                                        "FROM INFORMATION_SCHEMA.COLUMNS "
+                                        "WHERE TABLE_SCHEMA=%s "
+                                        "AND TABLE_NAME=%s "
+                                        "AND COLUMN_NAME=%s",
+                                        (ref_schema, ref_table, r_col),
+                                    )
+                                    row = cur.fetchone()
+                                    if row:
+                                        cur.execute(
+                                            f"ALTER TABLE "
+                                            f"[{src_schema}].[{src_table}] "
+                                            f"ALTER COLUMN [{s_col}] "
+                                            f"{row[0]}"
+                                        )
+                                cur.execute(alter_sql)
+                        _log.info(
+                            "FK %s on %s.%s created after "
+                            "aligning column types",
+                            unique_name, src_schema, src_table,
+                        )
+                        continue
+                    except Exception:
+                        pass  # Fall through to skip
+
+                _log.warning(
+                    "FK %s on %s.%s skipped: %s",
+                    unique_name,
+                    src_schema,
+                    src_table,
+                    exc_str[:120],
+                )
 
     def execute_sql(self, sql_str: str) -> None:
         """Execute arbitrary SQL.
