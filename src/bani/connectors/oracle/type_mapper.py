@@ -196,7 +196,7 @@ class OracleTypeMapper:
             "utf8": "CLOB",
             "large_string": "CLOB",
             "large_utf8": "CLOB",
-            "binary": "RAW(2000)",
+            "binary": "BLOB",
             "large_binary": "BLOB",
             # Null
             "null": "VARCHAR2(4000)",
