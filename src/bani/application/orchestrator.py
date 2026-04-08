@@ -391,6 +391,14 @@ class MigrationOrchestrator:
         failed: dict[str, str] = {}
 
         for table in source_schema.tables:
+            # Skip tables with no columns (e.g. empty types or stubs)
+            if not table.columns:
+                logger.info(
+                    "Skipping table %s (no columns)",
+                    table.fully_qualified_name,
+                )
+                continue
+
             # Drop if requested
             if self.options.drop_target_tables_first:
                 try:
