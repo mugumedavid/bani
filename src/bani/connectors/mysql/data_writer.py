@@ -236,9 +236,15 @@ class MySQLDataWriter:
             tuple(row) for row in zip(*columns, strict=True)
         ]
 
+        # Escape % in identifiers — PyMySQL's executemany uses
+        # %-based string formatting internally, so literal % in
+        # column names (e.g. "No and %") must be doubled.
+        safe_col_list = col_list.replace("%", "%%")
+        safe_table = table_name.replace("%", "%%")
+        safe_schema = schema_name.replace("%", "%%")
         insert_sql = (
-            f"INSERT INTO `{schema_name}`.`{table_name}` "
-            f"({col_list}) VALUES ({placeholders})"
+            f"INSERT INTO `{safe_schema}`.`{safe_table}` "
+            f"({safe_col_list}) VALUES ({placeholders})"
         )
 
         # Single executemany call — PyMySQL splits internally
