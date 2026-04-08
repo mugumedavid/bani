@@ -281,7 +281,7 @@ export function MigrationMonitor() {
             />
             <MiniStat label="Tables Failed" value={String(migrateStatus.tables_failed)} />
             <MiniStat label="Rows Read" value={migrateStatus.total_rows_read.toLocaleString()} />
-            <MiniStat label="Rows Written" value={migrateStatus.total_rows_written.toLocaleString()} />
+            <MiniStat label="Rows Written" value={migrateStatus.total_rows_written.toLocaleString()} warn={migrateStatus.total_rows_read !== migrateStatus.total_rows_written} />
           </div>
 
           {migrateStatus.table_failures && migrateStatus.table_failures.length > 0 && (
@@ -330,7 +330,7 @@ export function MigrationMonitor() {
             />
             <MiniStat label="Tables Failed" value={String(migrateStatus.tables_failed)} />
             <MiniStat label="Rows Read" value={migrateStatus.total_rows_read.toLocaleString()} />
-            <MiniStat label="Rows Written" value={migrateStatus.total_rows_written.toLocaleString()} />
+            <MiniStat label="Rows Written" value={migrateStatus.total_rows_written.toLocaleString()} warn={migrateStatus.total_rows_read !== migrateStatus.total_rows_written} />
           </div>
         </div>
       )}
@@ -380,7 +380,7 @@ export function MigrationMonitor() {
             <MiniStat label="Tables Completed" value={String(migrateStatus.tables_completed)} />
             <MiniStat label="Tables Failed" value={String(migrateStatus.tables_failed)} />
             <MiniStat label="Rows Read" value={migrateStatus.total_rows_read.toLocaleString()} />
-            <MiniStat label="Rows Written" value={migrateStatus.total_rows_written.toLocaleString()} />
+            <MiniStat label="Rows Written" value={migrateStatus.total_rows_written.toLocaleString()} warn={migrateStatus.total_rows_read !== migrateStatus.total_rows_written} />
           </div>
           {migrateStatus.table_failures && migrateStatus.table_failures.length > 0 && (
             <FailureList failures={migrateStatus.table_failures} />
@@ -495,11 +495,11 @@ function TableRow({ table }: { table: TableProgressData }) {
   );
 }
 
-function MiniStat({ label, value }: { label: string; value: string }) {
+function MiniStat({ label, value, warn }: { label: string; value: string; warn?: boolean }) {
   return (
     <div className="bg-white/60 rounded-lg px-3 py-2">
       <p className="text-xs text-gray-500">{label}</p>
-      <p className="text-sm font-semibold text-gray-900">{value}</p>
+      <p className={`text-sm font-semibold ${warn ? "text-amber-600" : "text-gray-900"}`}>{value}</p>
     </div>
   );
 }
