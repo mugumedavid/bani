@@ -29,11 +29,6 @@ from bani.connectors.default_translation import (
     register_dialect_defaults,
     translate_default,
 )
-
-register_dialect_defaults("oracle", DialectDefaultConfig(
-    timestamp_expression="SYSDATE",
-    temporal_keywords=("date", "timestamp", "interval"),
-))
 from bani.connectors.oracle.data_reader import OracleDataReader
 from bani.connectors.oracle.data_writer import OracleDataWriter
 from bani.connectors.oracle.schema_reader import OracleSchemaReader
@@ -47,6 +42,10 @@ from bani.domain.schema import (
     TableDefinition,
 )
 
+register_dialect_defaults("oracle", DialectDefaultConfig(
+    timestamp_expression="SYSDATE",
+    temporal_keywords=("date", "timestamp", "interval"),
+))
 
 _logger = logging.getLogger(__name__)
 
@@ -59,7 +58,7 @@ def _init_thick_mode(lib_dir: str) -> None:
     Thick mode enables connectivity to Oracle 9.2+ (including 11g)
     by loading the Oracle Instant Client shared libraries.
     """
-    global _thick_mode_initialised  # noqa: PLW0603
+    global _thick_mode_initialised
     if _thick_mode_initialised:
         return
     oracledb.init_oracle_client(lib_dir=lib_dir)
@@ -131,13 +130,10 @@ class OracleConnector(SourceConnector, SinkConnector):
             raise ValueError("Oracle connector requires 'host' in connection config")
         # Get optional settings from extra config
         service_name: str | None = None
-        ssl_cert_path: str | None = None
         oracle_client_lib: str | None = None
         for key, value in config.extra:
             if key == "service_name":
                 service_name = value
-            elif key == "ssl_cert_path":
-                ssl_cert_path = value
             elif key == "oracle_client_lib":
                 oracle_client_lib = value
 

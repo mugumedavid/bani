@@ -18,11 +18,6 @@ from bani.connectors.default_translation import (
     register_dialect_defaults,
     translate_default,
 )
-
-register_dialect_defaults("postgresql", DialectDefaultConfig(
-    timestamp_expression="NOW()",
-    temporal_keywords=("timestamp", "date", "time", "interval"),
-))
 from bani.connectors.pool import ConnectionPool
 from bani.connectors.postgresql.data_reader import PostgreSQLDataReader
 from bani.connectors.postgresql.data_writer import PostgreSQLDataWriter
@@ -35,6 +30,11 @@ from bani.domain.schema import (
     IndexDefinition,
     TableDefinition,
 )
+
+register_dialect_defaults("postgresql", DialectDefaultConfig(
+    timestamp_expression="NOW()",
+    temporal_keywords=("timestamp", "date", "time", "interval"),
+))
 
 
 class PostgreSQLConnector(SourceConnector, SinkConnector):

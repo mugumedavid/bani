@@ -22,11 +22,6 @@ from bani.connectors.default_translation import (
     register_dialect_defaults,
     translate_default,
 )
-
-register_dialect_defaults("mysql", DialectDefaultConfig(
-    timestamp_expression="CURRENT_TIMESTAMP",
-    temporal_keywords=("datetime", "timestamp", "date", "time"),
-))
 from bani.connectors.mysql.data_reader import MySQLDataReader
 from bani.connectors.mysql.data_writer import MySQLDataWriter
 from bani.connectors.mysql.schema_reader import MySQLSchemaReader
@@ -39,6 +34,11 @@ from bani.domain.schema import (
     IndexDefinition,
     TableDefinition,
 )
+
+register_dialect_defaults("mysql", DialectDefaultConfig(
+    timestamp_expression="CURRENT_TIMESTAMP",
+    temporal_keywords=("datetime", "timestamp", "date", "time"),
+))
 
 logger = logging.getLogger(__name__)
 

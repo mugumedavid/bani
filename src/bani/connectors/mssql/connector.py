@@ -35,7 +35,7 @@ try:
 except ImportError:
     pyodbc_module = None  # type: ignore[assignment]
 
-_log = logging.getLogger(__name__)
+import re
 
 from bani.connectors.base import SinkConnector, SourceConnector
 from bani.connectors.default_translation import (
@@ -43,12 +43,6 @@ from bani.connectors.default_translation import (
     register_dialect_defaults,
     translate_default,
 )
-
-register_dialect_defaults("mssql", DialectDefaultConfig(
-    timestamp_expression="GETDATE()",
-    temporal_keywords=("datetime", "date", "time", "smalldatetime",
-                       "datetime2", "datetimeoffset"),
-))
 from bani.connectors.mssql.data_reader import MSSQLDataReader
 from bani.connectors.mssql.data_writer import MSSQLDataWriter
 from bani.connectors.mssql.schema_reader import MSSQLSchemaReader
@@ -62,8 +56,13 @@ from bani.domain.schema import (
     TableDefinition,
 )
 
+register_dialect_defaults("mssql", DialectDefaultConfig(
+    timestamp_expression="GETDATE()",
+    temporal_keywords=("datetime", "date", "time", "smalldatetime",
+                       "datetime2", "datetimeoffset"),
+))
 
-import re
+_log = logging.getLogger(__name__)
 
 _CHAR_LENGTH_RE = re.compile(
     r"(?:n?var)?char(?:acter)?(?:2)?(?:\s+varying)?\s*\(\s*(\d+)\s*\)", re.IGNORECASE
@@ -270,7 +269,10 @@ class MSSQLConnector(SourceConnector, SinkConnector):
                 cur.execute("SET TEXTSIZE 2147483647")
             _log.info("[MSSQL-CONN] SET TEXTSIZE OK on conn=%s", id(conn))
         except Exception as exc:
-            _log.warning("[MSSQL-CONN] SET TEXTSIZE failed on conn=%s: %s", id(conn), exc)
+            _log.warning(
+                "[MSSQL-CONN] SET TEXTSIZE failed on conn=%s: %s",
+                id(conn), exc,
+            )
 
         return conn
 

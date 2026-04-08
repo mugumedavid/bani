@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from unittest.mock import MagicMock, call
+from unittest.mock import MagicMock
 
 from bani.connectors.postgresql.schema_reader import PostgreSQLSchemaReader
 from bani.domain.schema import ColumnDefinition, IndexDefinition, TableDefinition

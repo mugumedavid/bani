@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from unittest.mock import MagicMock, call, patch
+from unittest.mock import MagicMock, patch
 
 from bani.connectors.oracle.schema_reader import OracleSchemaReader
 from bani.domain.schema import (

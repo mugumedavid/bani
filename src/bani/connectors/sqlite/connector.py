@@ -24,12 +24,6 @@ from bani.connectors.default_translation import (
     register_dialect_defaults,
     translate_default,
 )
-
-register_dialect_defaults("sqlite", DialectDefaultConfig(
-    timestamp_expression="CURRENT_TIMESTAMP",
-    temporal_keywords=("date", "datetime", "timestamp", "time"),
-    reject_function_calls=True,  # SQLite only accepts constant expressions
-))
 from bani.connectors.pool import ConnectionPool
 from bani.connectors.sqlite.data_reader import SQLiteDataReader
 from bani.connectors.sqlite.data_writer import SQLiteDataWriter
@@ -42,6 +36,12 @@ from bani.domain.schema import (
     IndexDefinition,
     TableDefinition,
 )
+
+register_dialect_defaults("sqlite", DialectDefaultConfig(
+    timestamp_expression="CURRENT_TIMESTAMP",
+    temporal_keywords=("date", "datetime", "timestamp", "time"),
+    reject_function_calls=True,  # SQLite only accepts constant expressions
+))
 
 
 def _create_sqlite_connection(database: str) -> sqlite3.Connection:

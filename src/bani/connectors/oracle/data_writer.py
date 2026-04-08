@@ -8,19 +8,18 @@ chunking to limit memory pressure.
 from __future__ import annotations
 
 import logging
+from datetime import datetime, time
 from typing import TYPE_CHECKING, Any
 
 import pyarrow as pa
-
-from datetime import datetime, time
-
-logger = logging.getLogger(__name__)
 
 from bani.connectors.value_coercion import (
     DriverProfile,
     coerce_for_binding,
     register_driver_profile,
 )
+
+logger = logging.getLogger(__name__)
 
 
 def _oracle_time_to_datetime(val: time) -> datetime:
@@ -127,7 +126,7 @@ class OracleDataWriter:
 
         # Transpose columns to rows
         all_values: list[tuple[Any, ...]] = [
-            tuple(row) for row in zip(*columns)
+            tuple(row) for row in zip(*columns, strict=True)
         ]
 
         total_rows = 0

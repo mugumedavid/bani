@@ -16,12 +16,12 @@ changes to this file.
 from __future__ import annotations
 
 import json
-from dataclasses import dataclass, field
+from collections.abc import Callable
+from dataclasses import dataclass
 from datetime import date, datetime, time, timedelta
 from decimal import Decimal
-from typing import Any, Callable
+from typing import Any
 from uuid import UUID
-
 
 # ---------------------------------------------------------------------------
 # Driver profile dataclass
