@@ -554,7 +554,7 @@ function WarningsList({ warnings }: { warnings: string[] }) {
       <p className="text-xs font-semibold text-blue-800 mb-1">
         Warnings ({warnings.length})
       </p>
-      <ul className="text-xs text-blue-700 space-y-0.5 max-h-48 overflow-y-auto">
+      <ul className="text-xs text-blue-700 space-y-0.5 max-h-24 overflow-y-auto">
         {warnings.map((w, i) => (
           <li key={i} className="font-mono">{w}</li>
         ))}
