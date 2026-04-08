@@ -7,7 +7,12 @@ import logging
 import queue
 import threading
 import time
-from concurrent.futures import ThreadPoolExecutor, as_completed
+from concurrent.futures import (
+    FIRST_COMPLETED,
+    ThreadPoolExecutor,
+    as_completed,
+    wait,
+)
 from dataclasses import dataclass
 from datetime import datetime, timezone
 
@@ -531,18 +536,40 @@ class MigrationOrchestrator:
                     break
 
                 # Mark as in_progress in checkpoint
-                checkpoint.update_table_status(project_name, table_name, "in_progress")
+                checkpoint.update_table_status(
+                    project_name, table_name, "in_progress",
+                )
 
                 future = executor.submit(self._transfer_table, table)
                 futures[future] = table_name
 
-            # Collect results as they complete
+                # When we've filled the pool, wait for at least one
+                # to complete before submitting more.  This keeps
+                # the number of in_progress tables bounded to
+                # max_workers, so a crash only loses that many.
+                if len(futures) >= max_workers:
+                    done, _ = wait(futures, return_when=FIRST_COMPLETED)
+                    for f in done:
+                        tbl = futures.pop(f)
+                        result = f.result()
+                        results.append(result)
+                        if result.success:
+                            checkpoint.update_table_status(
+                                project_name, tbl, "completed",
+                                rows=result.rows_written,
+                            )
+                        else:
+                            checkpoint.update_table_status(
+                                project_name, tbl, "failed",
+                                error=result.error,
+                            )
+
+            # Collect remaining futures
             for future in as_completed(futures):
                 tbl_name = futures[future]
                 result = future.result()
                 results.append(result)
 
-                # Update checkpoint with result
                 if result.success:
                     checkpoint.update_table_status(
                         project_name,
