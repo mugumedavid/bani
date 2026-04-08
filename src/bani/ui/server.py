@@ -28,6 +28,30 @@ from bani.ui.sse import SSEBroadcaster, sse_progress_endpoint
 logger = logging.getLogger(__name__)
 
 
+def _init_oracle_thick_if_needed() -> None:
+    """Scan connections.json for oracle_client_lib and init thick mode.
+
+    Oracle thick mode must be activated before any thin mode connection
+    is created. This is called at server startup so all subsequent
+    Oracle connections use thick mode when Instant Client is available.
+    """
+    try:
+        from bani.infra.connections import ConnectionRegistry
+
+        for _key, conn in ConnectionRegistry.load().items():
+            if conn.connector != "oracle":
+                continue
+            for opt_key, opt_val in conn.options:
+                if opt_key == "oracle_client_lib" and opt_val:
+                    from bani.connectors.oracle.connector import (
+                        _init_thick_mode,
+                    )
+                    _init_thick_mode(opt_val)
+                    return  # Only need to init once
+    except Exception as exc:
+        logger.warning("Oracle thick mode init skipped: %s", exc)
+
+
 class BaniUIServer:
     """Wraps a FastAPI application for the Bani Web UI.
 
@@ -69,6 +93,10 @@ class BaniUIServer:
 
         @asynccontextmanager
         async def lifespan(app: FastAPI) -> AsyncIterator[None]:
+            # Pre-init Oracle thick mode if any connection needs it.
+            # Must happen before any Oracle thin mode connection is made.
+            _init_oracle_thick_if_needed()
+
             # Startup: start scheduler registry for cron-enabled projects
             registry = SchedulerRegistry(projects_dir)
             app.state.scheduler_registry = registry
