@@ -79,15 +79,22 @@ class BaniApp(rumps.App):
     def open_terminal(self, _: Any) -> None:
         """Open Terminal.app with bani on PATH."""
         bin_dir = self.bani_home / "bin"
-        script = (
-            f'tell application "Terminal"\n'
-            f"  activate\n"
-            f'  do script "export PATH=\\"{bin_dir}:$PATH\\""'
-            f"\n"
-            f"end tell"
+        cmd = (
+            f"export PATH='{bin_dir}':$PATH"
+            " && echo 'bani ready — try: bani --help'"
         )
         subprocess.run(
-            ["osascript", "-e", script],
+            [
+                "osascript",
+                "-e",
+                'tell application "Terminal"',
+                "-e",
+                "activate",
+                "-e",
+                f'do script "{cmd}"',
+                "-e",
+                "end tell",
+            ],
             check=False,
         )
 

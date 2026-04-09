@@ -89,15 +89,30 @@ def build_app(arch: str = "aarch64") -> Path:
     with plist_path.open("wb") as f:
         plistlib.dump(plist, f)
 
-    # Launcher script
-    launcher = macos / "bani-launcher"
-    launcher.write_text(
-        "#!/bin/sh\n"
-        'DIR="$(cd "$(dirname "$0")/../Resources/runtime" '
-        '&& pwd)"\n'
-        'exec "$DIR/python/bin/python3" -m bani.desktop.menubar\n'
+    # Copy bootstrap script
+    shutil.copy(
+        REPO_ROOT / "pkg_build" / "bani-start.py",
+        resources / "bani-start.py",
     )
-    launcher.chmod(0o755)
+
+    # Compile native launcher (embeds Python for GUI access)
+    python_dir = runtime / "python"
+    launcher_src = REPO_ROOT / "pkg_build" / "launcher.m"
+    launcher_bin = macos / "bani-launcher"
+    print("\nCompiling native launcher...")
+    subprocess.run(
+        [
+            "cc",
+            "-o", str(launcher_bin),
+            str(launcher_src),
+            "-framework", "Cocoa",
+            f"-I{python_dir}/include/python3.12",
+            f"-L{python_dir}/lib",
+            "-lpython3.12",
+            "-Wl,-rpath,@executable_path/../Resources/runtime/python/lib",
+        ],
+        check=True,
+    )
 
     print(f"\n=== Built: {app_dir} ===")
     return app_dir
