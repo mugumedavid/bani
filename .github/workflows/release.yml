@@ -1,0 +1,146 @@
+name: Release
+
+on:
+  push:
+    tags: ['v*']
+
+permissions:
+  contents: write
+
+jobs:
+  # ── Linux packages (.deb, .rpm, AppImage) ─────────────────────
+  build-linux:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Install build tools
+        run: |
+          pip install build
+          sudo apt-get update
+          sudo apt-get install -y rpm
+
+      - name: Build UI
+        run: cd ui && npm ci && npm run build
+
+      - name: Build wheel
+        run: python -m build --wheel
+
+      - name: Build .deb
+        run: PYTHONPATH=. python -m pkg_build.build_deb
+
+      - name: Build .rpm
+        run: PYTHONPATH=. python -m pkg_build.build_rpm
+
+      - name: Build AppImage
+        run: PYTHONPATH=. python -m pkg_build.build_appimage
+
+      - name: Smoke test (deb)
+        run: |
+          sudo dpkg -i build/bani_*.deb || true
+          /opt/bani/bin/bani --version
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: linux-packages
+          path: |
+            build/*.deb
+            build/*.rpm
+            build/*.AppImage
+
+  # ── macOS package (.pkg) ──────────────────────────────────────
+  build-macos:
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Install build tools
+        run: pip install build
+
+      - name: Build UI
+        run: cd ui && npm ci && npm run build
+
+      - name: Build wheel
+        run: python -m build --wheel
+
+      - name: Build .pkg
+        run: PYTHONPATH=. python -m pkg_build.build_macos
+
+      - name: Smoke test
+        run: |
+          sudo installer -pkg build/bani-*.pkg -target /
+          /opt/bani/bin/bani --version
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: macos-package
+          path: build/*.pkg
+
+  # ── Windows installer (.exe) ──────────────────────────────────
+  build-windows:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Install build tools
+        run: |
+          pip install build
+          choco install innosetup -y
+
+      - name: Build UI
+        run: cd ui && npm ci && npm run build
+
+      - name: Build wheel
+        run: python -m build --wheel
+
+      - name: Build .exe installer
+        env:
+          PYTHONPATH: '.'
+        run: python -m pkg_build.build_windows
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: windows-package
+          path: build/*-setup.exe
+
+  # ── Create GitHub Release ─────────────────────────────────────
+  release:
+    needs: [build-linux, build-macos, build-windows]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          path: artifacts
+
+      - name: Create Release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: |
+            artifacts/linux-packages/*
+            artifacts/macos-package/*
+            artifacts/windows-package/*
+          generate_release_notes: true
