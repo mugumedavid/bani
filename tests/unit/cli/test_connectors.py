@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+from typing import ClassVar
 from unittest.mock import patch
 
 import pytest
@@ -23,7 +24,7 @@ class FakeSourceSink(SourceConnector, SinkConnector):
 
     VERSION = "1.0.0"
     DRIVER_VERSION = "3.2.1"
-    SUPPORTED_DB_VERSIONS = ["PostgreSQL 12+"]
+    SUPPORTED_DB_VERSIONS: ClassVar[list[str]] = ["PostgreSQL 12+"]
 
     def connect(self, config):  # type: ignore[override]
         pass
@@ -34,7 +35,10 @@ class FakeSourceSink(SourceConnector, SinkConnector):
     def introspect_schema(self):  # type: ignore[override]
         pass
 
-    def read_table(self, table_name, schema_name="", columns=None, filter_sql=None, batch_size=100000):  # type: ignore[override]
+    def read_table(  # type: ignore[override]
+        self, table_name, schema_name="",
+        columns=None, filter_sql=None, batch_size=100000,
+    ):
         yield from ()
 
     def estimate_row_count(self, table_name, schema_name=""):  # type: ignore[override]

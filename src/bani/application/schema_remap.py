@@ -14,6 +14,7 @@ schema-level differences must be reconciled before target table creation:
 from __future__ import annotations
 
 from dataclasses import replace as dc_replace
+from typing import ClassVar
 
 from bani.domain.schema import DatabaseSchema, TableDefinition
 
@@ -24,7 +25,7 @@ class SchemaRemapper:
     This is a stateless utility class — all methods are static.
     """
 
-    _DEFAULT_SCHEMAS: dict[str, str] = {
+    _DEFAULT_SCHEMAS: ClassVar[dict[str, str]] = {
         "postgresql": "public",
         "mysql": "",
         "mssql": "dbo",

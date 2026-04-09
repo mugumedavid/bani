@@ -108,10 +108,14 @@ class ConnectionPool(Generic[C]):
                     logger.info("[POOL] resetting failed connection %s", id(conn))
                     self._reset(conn)
                     self._queue.put(conn)
-                    logger.info("[POOL] connection %s reset OK, returned to pool", id(conn))
+                    logger.info(
+                        "[POOL] connection %s reset OK, "
+                        "returned to pool", id(conn),
+                    )
                 except Exception as reset_exc:
                     logger.warning(
-                        "[POOL] reset FAILED for connection %s: %s — attempting replacement",
+                        "[POOL] reset FAILED for connection "
+                        "%s: %s — attempting replacement",
                         id(conn), reset_exc,
                     )
                     try:

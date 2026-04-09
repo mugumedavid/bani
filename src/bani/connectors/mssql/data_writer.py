@@ -142,7 +142,8 @@ class MSSQLDataWriter:
             else:
                 result = self._write_pymssql(table_name, schema_name, batch)
             logger.info(
-                "[MSSQL-WRITE] %s.%s: wrote %d rows OK", schema_name, table_name, result,
+                "[MSSQL-WRITE] %s.%s: wrote %d rows OK",
+                schema_name, table_name, result,
             )
             return result
         except Exception as exc:
@@ -196,7 +197,7 @@ class MSSQLDataWriter:
                     for v in col
                 ]
 
-        rows = [tuple(row) for row in zip(*columns)]
+        rows = [tuple(row) for row in zip(*columns, strict=True)]
 
         cursor = self.connection.cursor()
         try:

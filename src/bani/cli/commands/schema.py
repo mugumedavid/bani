@@ -38,8 +38,14 @@ def inspect(
     host: str = typer.Option("", help="Database host"),
     port: int = typer.Option(0, help="Database port"),
     database: str = typer.Option(..., help="Database name"),
-    username_env: str = typer.Option("", "--username-env", help="Environment variable for username"),
-    password_env: str = typer.Option("", "--password-env", help="Environment variable for password"),
+    username_env: str = typer.Option(
+        "", "--username-env",
+        help="Environment variable for username",
+    ),
+    password_env: str = typer.Option(
+        "", "--password-env",
+        help="Environment variable for password",
+    ),
     schema_filter: str | None = typer.Option(
         None, "--schema", help="Filter by schema name (optional)"
     ),

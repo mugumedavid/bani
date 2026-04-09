@@ -11,7 +11,6 @@ from bani.application.hook_runner import HookResult, HookRunner
 from bani.domain.errors import HookExecutionError
 from bani.domain.project import HookConfig
 
-
 # ---------------------------------------------------------------------------
 # Fixtures
 # ---------------------------------------------------------------------------

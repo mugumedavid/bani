@@ -34,7 +34,10 @@ class FakeConnector(SourceConnector, SinkConnector):
     def introspect_schema(self):  # type: ignore[override]
         pass
 
-    def read_table(self, table_name, schema_name="", columns=None, filter_sql=None, batch_size=100000):  # type: ignore[override]
+    def read_table(  # type: ignore[override]
+        self, table_name, schema_name="",
+        columns=None, filter_sql=None, batch_size=100000,
+    ):
         yield from ()
 
     def estimate_row_count(self, table_name, schema_name=""):  # type: ignore[override]

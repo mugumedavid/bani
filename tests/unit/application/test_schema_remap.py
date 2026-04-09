@@ -18,7 +18,6 @@ from bani.domain.schema import (
     TableDefinition,
 )
 
-
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
@@ -491,7 +490,7 @@ class TestIdentityInsertOrchestrator:
         sink.write_batch = failing_write  # type: ignore[assignment]
 
         orch = MigrationOrchestrator(project, source, sink)
-        result = orch._transfer_table_sequential(table)
+        _result = orch._transfer_table_sequential(table)
 
         # Even when writes fail, IDENTITY_INSERT OFF should be attempted
         off_calls = [s for s in sink.sql_calls if "OFF" in s]

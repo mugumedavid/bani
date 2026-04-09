@@ -885,7 +885,7 @@ class TestResumeExecution:
         assert "users" not in read_tables
 
     def test_resume_false_starts_fresh(self, tmp_path: Path) -> None:
-        """execute(resume=False) should create a fresh checkpoint and clear on success."""
+        """execute(resume=False) should create a fresh checkpoint."""
         project = create_test_project()
         schema = create_test_schema()
         source = MockSourceConnector(schema)

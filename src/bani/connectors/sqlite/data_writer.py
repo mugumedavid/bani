@@ -97,7 +97,7 @@ class SQLiteDataWriter:
 
         # Transpose columns to rows
         all_values: list[tuple[Any, ...]] = [
-            tuple(row) for row in zip(*columns)
+            tuple(row) for row in zip(*columns, strict=True)
         ]
 
         # Execute in batches — sqlite3 auto-manages transactions

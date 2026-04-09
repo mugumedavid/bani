@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import json
-from pathlib import Path
 from typing import Any
 
 from bani.infra.connections import ConnectionRegistry, RegisteredConnection
@@ -100,7 +99,7 @@ class TestGet:
         path.write_text("{}")
         try:
             ConnectionRegistry.get("nope", path)
-            assert False, "Expected ValueError"
+            raise AssertionError("Expected ValueError")
         except ValueError as exc:
             assert "nope" in str(exc)
 

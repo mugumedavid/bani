@@ -34,9 +34,17 @@ schedule_app = typer.Typer(help="Manage scheduled migrations")
 
 @schedule_app.command("register")
 def schedule_register(
-    project_file: str = typer.Argument(..., help="Path to BDL project file"),
-    cron: str = typer.Option(..., "--cron", help='Cron expression (e.g., "0 2 * * *")'),
-    timezone: str = typer.Option("UTC", "--timezone", help="IANA timezone (default: UTC)"),
+    project_file: str = typer.Argument(
+        ..., help="Path to BDL project file",
+    ),
+    cron: str = typer.Option(
+        ..., "--cron",
+        help='Cron expression (e.g., "0 2 * * *")',
+    ),
+    timezone: str = typer.Option(
+        "UTC", "--timezone",
+        help="IANA timezone (default: UTC)",
+    ),
 ) -> None:
     """Register a migration with the OS scheduler.
 
@@ -223,9 +231,17 @@ def schedule_list() -> None:
 
 
 def schedule(
-    project_file: str = typer.Argument(..., help="Path to BDL project file"),
-    cron: str = typer.Option(..., "--cron", help='Cron expression (e.g., "0 2 * * *")'),
-    timezone: str = typer.Option("UTC", "--timezone", help="IANA timezone (default: UTC)"),
+    project_file: str = typer.Argument(
+        ..., help="Path to BDL project file",
+    ),
+    cron: str = typer.Option(
+        ..., "--cron",
+        help='Cron expression (e.g., "0 2 * * *")',
+    ),
+    timezone: str = typer.Option(
+        "UTC", "--timezone",
+        help="IANA timezone (default: UTC)",
+    ),
 ) -> None:
     """Register a migration with the OS scheduler.
 

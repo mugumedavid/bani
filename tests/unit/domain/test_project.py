@@ -84,7 +84,10 @@ class TestHookConfig:
     """Tests for HookConfig."""
 
     def test_defaults(self) -> None:
-        hook = HookConfig(name="backup", event="before-migration", command="pg_dump mydb")
+        hook = HookConfig(
+            name="backup", event="before-migration",
+            command="pg_dump mydb",
+        )
         assert hook.timeout_seconds == 300
         assert hook.on_failure == "abort"
         assert hook.hook_type == "shell"

@@ -198,7 +198,7 @@ class HookRunner:
         try:
             proc = subprocess.run(
                 command,
-                shell=True,  # noqa: S602
+                shell=True,
                 capture_output=True,
                 text=True,
                 timeout=hook.timeout_seconds,
@@ -283,7 +283,7 @@ class HookRunner:
                 duration_seconds=duration,
                 output=f"SQL executed: {sql}",
             )
-        except Exception as exc:  # noqa: BLE001
+        except Exception as exc:
             duration = time.monotonic() - start
             return HookResult(
                 name=hook.name,
@@ -405,7 +405,7 @@ class HookRunner:
                 except Exception:
                     pass
 
-        except Exception as exc:  # noqa: BLE001
+        except Exception as exc:
             duration = time.monotonic() - start
             return HookResult(
                 name=hook.name,

@@ -231,7 +231,7 @@ class TestMSSQLDataWriterPyodbc:
         mock_cursor = MagicMock()
         mock_connection.cursor.return_value = mock_cursor
 
-        writer = MSSQLDataWriter(mock_connection, driver="pyodbc")
+        _writer = MSSQLDataWriter(mock_connection, driver="pyodbc")
 
         # Arrow doesn't have a native dict type, but values come through
         # as Python dicts when read from JSON columns via .as_py()

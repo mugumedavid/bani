@@ -548,7 +548,7 @@ class TestPreviewSource:
         # PreviewResult is frozen
         try:
             result.source_dialect = "other"  # type: ignore[misc]
-            raise AssertionError("Should have raised FrozenInstanceError")  # noqa: TRY301
+            raise AssertionError("Should have raised FrozenInstanceError")
         except AttributeError:
             pass
 
@@ -556,7 +556,7 @@ class TestPreviewSource:
         col = ColumnPreview(name="x", data_type="INT", nullable=False)
         try:
             col.name = "y"  # type: ignore[misc]
-            raise AssertionError("Should have raised FrozenInstanceError")  # noqa: TRY301
+            raise AssertionError("Should have raised FrozenInstanceError")
         except AttributeError:
             pass
 
@@ -570,7 +570,7 @@ class TestPreviewSource:
         )
         try:
             tp.table_name = "other"  # type: ignore[misc]
-            raise AssertionError("Should have raised FrozenInstanceError")  # noqa: TRY301
+            raise AssertionError("Should have raised FrozenInstanceError")
         except AttributeError:
             pass
 

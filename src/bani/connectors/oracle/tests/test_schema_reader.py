@@ -242,11 +242,16 @@ class TestOracleSchemaReader:
         mock_cursor = MagicMock()
         mock_conn.cursor.return_value = mock_cursor
         mock_cursor.fetchall.return_value = [
-            # (table, col, data_type, data_len, precision, scale, nullable, col_id, default)
-            ("USERS", "ID", "NUMBER", None, 10, 0, "N", 1, None),
-            ("USERS", "NAME", "VARCHAR2", 100, None, None, "N", 2, None),
-            ("USERS", "BALANCE", "NUMBER", None, 12, 2, "Y", 3, None),
-            ("USERS", "STATUS", "CHAR", 1, None, None, "Y", 4, "'A'"),
+            # (table, col, data_type, data_len,
+            #  precision, scale, nullable, col_id, default)
+            ("USERS", "ID", "NUMBER", None,
+             10, 0, "N", 1, None),
+            ("USERS", "NAME", "VARCHAR2", 100,
+             None, None, "N", 2, None),
+            ("USERS", "BALANCE", "NUMBER", None,
+             12, 2, "Y", 3, None),
+            ("USERS", "STATUS", "CHAR", 1,
+             None, None, "Y", 4, "'A'"),
         ]
 
         reader = self._make_reader(mock_conn)
@@ -268,9 +273,12 @@ class TestOracleSchemaReader:
         mock_cursor = MagicMock()
         mock_conn.cursor.return_value = mock_cursor
         mock_cursor.fetchall.return_value = [
-            ("T", "ID", "NUMBER", None, 10, 0, "N", 1, '"TESTUSER"."ISEQ$$_123".nextval'),
-            ("T", "SEQ", "NUMBER", None, 10, 0, "N", 2, "my_seq.nextval"),
-            ("T", "NAME", "VARCHAR2", 50, None, None, "Y", 3, None),
+            ("T", "ID", "NUMBER", None, 10, 0, "N", 1,
+             '"TESTUSER"."ISEQ$$_123".nextval'),
+            ("T", "SEQ", "NUMBER", None, 10, 0, "N", 2,
+             "my_seq.nextval"),
+            ("T", "NAME", "VARCHAR2", 50,
+             None, None, "Y", 3, None),
         ]
 
         reader = self._make_reader(mock_conn)

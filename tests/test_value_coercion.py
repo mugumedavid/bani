@@ -16,15 +16,14 @@ from uuid import UUID
 
 import pytest
 
-from bani.connectors.value_coercion import coerce_for_binding
+import bani.connectors.mssql.data_writer
+import bani.connectors.mysql.data_writer
+import bani.connectors.oracle.data_writer
+import bani.connectors.postgresql.data_writer
 
 # Import data writers to trigger driver profile registration
 import bani.connectors.sqlite.data_writer  # noqa: F401
-import bani.connectors.mysql.data_writer  # noqa: F401
-import bani.connectors.mssql.data_writer  # noqa: F401
-import bani.connectors.oracle.data_writer  # noqa: F401
-import bani.connectors.postgresql.data_writer  # noqa: F401
-
+from bani.connectors.value_coercion import coerce_for_binding
 
 # ── Helpers ───────────────────────────────────────────────────────────
 

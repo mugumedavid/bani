@@ -31,9 +31,9 @@ class SchedulerRegistry:
     def list_schedules(self) -> list[dict[str, Any]]:
         """Return schedule info for all projects with enabled cron schedules."""
         import xml.etree.ElementTree as ET
+        from datetime import datetime, timezone
 
         from bani.application.scheduler import _next_cron_time
-        from datetime import datetime, timezone
 
         results: list[dict[str, Any]] = []
         if not self._projects_dir.exists():
@@ -48,7 +48,7 @@ class SchedulerRegistry:
 
             # Lightweight XML check — no full parse needed
             try:
-                tree = ET.parse(bdl_file)  # noqa: S314
+                tree = ET.parse(bdl_file)
                 root = tree.getroot()
             except ET.ParseError:
                 continue
@@ -138,7 +138,7 @@ class SchedulerRegistry:
         # Quick check using raw XML — avoids the full BDL parser
         # (which requires env vars for credential interpolation).
         try:
-            tree = ET.parse(bdl_path)  # noqa: S314
+            tree = ET.parse(bdl_path)
             root = tree.getroot()
         except ET.ParseError:
             return
@@ -303,7 +303,7 @@ class SchedulerRegistry:
         env_pattern = re.compile(r"^\$\{env:(.+)\}$")
 
         try:
-            tree = ET.parse(bdl_path)  # noqa: S314
+            tree = ET.parse(bdl_path)
             root = tree.getroot()
         except ET.ParseError:
             return

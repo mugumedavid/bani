@@ -123,7 +123,10 @@ class TestSchemaInspect:
         mock_connector.introspect_schema.return_value = _sample_schema()
         mock_cls = MagicMock(return_value=mock_connector)
 
-        with patch("bani.sdk.schema_inspector.ConnectorRegistry.get", return_value=mock_cls):
+        with patch(
+            "bani.sdk.schema_inspector.ConnectorRegistry.get",
+            return_value=mock_cls,
+        ):
             result = handle_schema_inspect(
                 {
                     "connector": "postgresql",

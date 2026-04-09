@@ -22,7 +22,6 @@ from bani.domain.schema import (
     TableDefinition,
 )
 
-
 # ---------------------------------------------------------------------------
 # Mock connectors
 # ---------------------------------------------------------------------------
@@ -157,7 +156,11 @@ def _sync_config(
     strategy: SyncStrategy = SyncStrategy.FULL,
     tracking_columns: tuple[tuple[str, str], ...] = (),
 ) -> SyncConfig:
-    return SyncConfig(enabled=True, strategy=strategy, tracking_columns=tracking_columns)
+    return SyncConfig(
+        enabled=True,
+        strategy=strategy,
+        tracking_columns=tracking_columns,
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -353,7 +356,10 @@ class TestFullSync:
         engine.sync_table("users", "public", primary_key_columns=("id",))
 
         # Should have DDL (CREATE TABLE) + DELETE target + UPDATE state.
-        state_sql = [s for s in target.executed_sql if "INSERT INTO _bani_sync_state" in s]
+        state_sql = [
+            s for s in target.executed_sql
+            if "INSERT INTO _bani_sync_state" in s
+        ]
         assert len(state_sql) == 1
 
 
@@ -368,7 +374,10 @@ class TestTimestampSync:
     def test_first_sync_reads_all_rows(self) -> None:
         """First timestamp sync (no prior state) reads everything."""
         batch = _make_batch(
-            {"id": [1, 2], "name": ["a", "b"], "updated_at": ["2025-06-01", "2025-06-02"]}
+            {
+                "id": [1, 2], "name": ["a", "b"],
+                "updated_at": ["2025-06-01", "2025-06-02"],
+            }
         )
         source = MockSourceConnector(table_data={"public.users": [batch]})
         target = MockCombinedConnector()
@@ -482,7 +491,10 @@ class TestTimestampSync:
     def test_timestamp_state_is_updated(self) -> None:
         """After sync, the state table stores the max timestamp seen."""
         batch = _make_batch(
-            {"id": [1, 2], "name": ["a", "b"], "updated_at": ["2025-06-01", "2025-06-02"]}
+            {
+                "id": [1, 2], "name": ["a", "b"],
+                "updated_at": ["2025-06-01", "2025-06-02"],
+            }
         )
         source = MockSourceConnector(table_data={"public.users": [batch]})
         target = MockCombinedConnector()
@@ -500,7 +512,10 @@ class TestTimestampSync:
 
         engine.sync_table("users", "public", primary_key_columns=("id",))
 
-        state_sql = [s for s in target.executed_sql if "INSERT INTO _bani_sync_state" in s]
+        state_sql = [
+            s for s in target.executed_sql
+            if "INSERT INTO _bani_sync_state" in s
+        ]
         assert len(state_sql) == 1
         assert "2025-06-02" in state_sql[0]
 
@@ -665,7 +680,10 @@ class TestRowversionSync:
 
         engine.sync_table("users", "public", primary_key_columns=("id",))
 
-        state_sql = [s for s in target.executed_sql if "INSERT INTO _bani_sync_state" in s]
+        state_sql = [
+            s for s in target.executed_sql
+            if "INSERT INTO _bani_sync_state" in s
+        ]
         assert len(state_sql) == 1
         assert "200" in state_sql[0]
 

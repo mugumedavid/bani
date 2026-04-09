@@ -20,8 +20,6 @@ from __future__ import annotations
 import pytest
 
 from bani.connectors.base import SinkConnector, SourceConnector
-from bani.domain.project import ConnectionConfig
-
 
 # The 5 connectors: PostgreSQL, MySQL, MSSQL, Oracle, SQLite
 CONNECTORS = ["postgresql", "mysql", "mssql", "oracle", "sqlite"]
@@ -86,12 +84,12 @@ def test_25pair_cross_database_matrix(
                 # The type_mapper for the target should be able to
                 # convert this Arrow type to a native type
                 try:
+                    from bani.connectors.mssql.type_mapper import MSSQLTypeMapper
+                    from bani.connectors.mysql.type_mapper import MySQLTypeMapper
+                    from bani.connectors.oracle.type_mapper import OracleTypeMapper
                     from bani.connectors.postgresql.type_mapper import (
                         PostgreSQLTypeMapper,
                     )
-                    from bani.connectors.mysql.type_mapper import MySQLTypeMapper
-                    from bani.connectors.mssql.type_mapper import MSSQLTypeMapper
-                    from bani.connectors.oracle.type_mapper import OracleTypeMapper
                     from bani.connectors.sqlite.type_mapper import SQLiteTypeMapper
 
                     type_mappers = {

@@ -126,7 +126,10 @@ class MSSQLDataReader:
         try:
             cursor.execute(query)
             if cursor.description is None:
-                logger.warning("[MSSQL-READ] cursor: no description for %s.%s", schema_name, table_name)
+                logger.warning(
+                    "[MSSQL-READ] cursor: no description for %s.%s",
+                    schema_name, table_name,
+                )
                 return
 
             col_names = [str(desc[0]) for desc in cursor.description]
@@ -140,9 +143,10 @@ class MSSQLDataReader:
                     rows = cursor.fetchmany(batch_size)
                 except Exception as exc:
                     logger.error(
-                        "[MSSQL-READ] cursor fetchmany FAILED for %s.%s batch %d (total_rows=%d): %s: %s",
-                        schema_name, table_name, batch_num, total_rows,
-                        type(exc).__name__, exc,
+                        "[MSSQL-READ] cursor fetchmany FAILED "
+                        "for %s.%s batch %d (total_rows=%d): %s: %s",
+                        schema_name, table_name, batch_num,
+                        total_rows, type(exc).__name__, exc,
                     )
                     raise
                 if not rows:
@@ -155,7 +159,11 @@ class MSSQLDataReader:
                 yield self._make_record_batch(rows, col_names, arrow_types)
                 batch_num += 1
 
-            logger.info("[MSSQL-READ] cursor %s.%s: completed, total=%d batches=%d", schema_name, table_name, total_rows, batch_num)
+            logger.info(
+                "[MSSQL-READ] cursor %s.%s: completed, "
+                "total=%d batches=%d",
+                schema_name, table_name, total_rows, batch_num,
+            )
         finally:
             try:
                 cursor.close()
@@ -199,7 +207,10 @@ class MSSQLDataReader:
 
         mssql_types = [col_info.get(cn, "nvarchar") for cn in col_names]
         arrow_types = [self.type_mapper.map_mssql_type_name(t) for t in mssql_types]
-        logger.info("[MSSQL-READ] %s.%s: %d columns resolved", schema_name, table_name, len(col_names))
+        logger.info(
+            "[MSSQL-READ] %s.%s: %d columns resolved",
+            schema_name, table_name, len(col_names),
+        )
 
         base = f"SELECT {col_list} FROM [{schema_name}].[{table_name}]"
         if filter_sql:
@@ -209,17 +220,21 @@ class MSSQLDataReader:
         offset = 0
         page_num = 0
         while True:
-            page_query = f"{base} OFFSET {offset} ROWS FETCH NEXT {batch_size} ROWS ONLY"
             logger.info(
-                "[MSSQL-READ] %s.%s page %d: offset=%d batch_size=%d conn=%s",
-                schema_name, table_name, page_num, offset, batch_size, id(self.connection),
+                "[MSSQL-READ] %s.%s page %d: "
+                "offset=%d batch_size=%d conn=%s",
+                schema_name, table_name, page_num,
+                offset, batch_size, id(self.connection),
             )
             rows = None
             last_exc = None
             # Try with current batch_size, then halve on failure (down to 100)
             attempt_size = batch_size
             while attempt_size >= 100:
-                retry_query = f"{base} OFFSET {offset} ROWS FETCH NEXT {attempt_size} ROWS ONLY"
+                retry_query = (
+                    f"{base} OFFSET {offset} ROWS "
+                    f"FETCH NEXT {attempt_size} ROWS ONLY"
+                )
                 try:
                     # Reconnect before retry if not the first attempt
                     if last_exc is not None and self._reconnect_fn is not None:
@@ -240,8 +255,10 @@ class MSSQLDataReader:
                     # for the rest of this table
                     if attempt_size < batch_size:
                         logger.info(
-                            "[MSSQL-READ] %s.%s: reducing batch_size %d → %d for remaining pages",
-                            schema_name, table_name, batch_size, attempt_size,
+                            "[MSSQL-READ] %s.%s: reducing "
+                            "batch_size %d → %d for remaining pages",
+                            schema_name, table_name,
+                            batch_size, attempt_size,
                         )
                         batch_size = attempt_size
                     break  # success
@@ -250,13 +267,21 @@ class MSSQLDataReader:
                     next_size = attempt_size // 2
                     if next_size >= 100:
                         logger.info(
-                            "[MSSQL-READ] %s.%s page %d: batch_size %d too large, reducing to %d and retrying",
-                            schema_name, table_name, page_num, attempt_size, next_size,
+                            "[MSSQL-READ] %s.%s page %d: "
+                            "batch_size %d too large, "
+                            "reducing to %d and retrying",
+                            schema_name, table_name,
+                            page_num, attempt_size,
+                            next_size,
                         )
                     else:
                         logger.warning(
-                            "[MSSQL-READ] %s.%s page %d: failed at offset=%d with smallest batch_size=%d: %s",
-                            schema_name, table_name, page_num, offset, attempt_size, exc,
+                            "[MSSQL-READ] %s.%s page %d: "
+                            "failed at offset=%d with "
+                            "smallest batch_size=%d: %s",
+                            schema_name, table_name,
+                            page_num, offset,
+                            attempt_size, exc,
                         )
                     attempt_size = next_size
 
@@ -268,7 +293,10 @@ class MSSQLDataReader:
                 raise last_exc  # type: ignore[misc]
 
             if not rows:
-                logger.info("[MSSQL-READ] %s.%s: no more rows at offset=%d", schema_name, table_name, offset)
+                logger.info(
+                    "[MSSQL-READ] %s.%s: no more rows at offset=%d",
+                    schema_name, table_name, offset,
+                )
                 break
 
             logger.info(
@@ -280,7 +308,11 @@ class MSSQLDataReader:
             page_num += 1
 
             if len(rows) < attempt_size:
-                logger.info("[MSSQL-READ] %s.%s: last page (%d < %d)", schema_name, table_name, len(rows), batch_size)
+                logger.info(
+                    "[MSSQL-READ] %s.%s: last page (%d < %d)",
+                    schema_name, table_name,
+                    len(rows), batch_size,
+                )
                 break
 
             # Periodic reconnection for pymssql: reset FreeTDS internal
@@ -290,7 +322,8 @@ class MSSQLDataReader:
                 and page_num % self._PYMSSQL_RECONNECT_INTERVAL == 0
             ):
                 logger.info(
-                    "[MSSQL-READ] %s.%s: reconnecting at page %d to reset FreeTDS state",
+                    "[MSSQL-READ] %s.%s: reconnecting at "
+                    "page %d to reset FreeTDS state",
                     schema_name, table_name, page_num,
                 )
                 try:
@@ -303,7 +336,11 @@ class MSSQLDataReader:
                     schema_name, table_name, id(self.connection),
                 )
 
-        logger.info("[MSSQL-READ] %s.%s: completed, total offset=%d pages=%d", schema_name, table_name, offset, page_num)
+        logger.info(
+            "[MSSQL-READ] %s.%s: completed, "
+            "total offset=%d pages=%d",
+            schema_name, table_name, offset, page_num,
+        )
 
     def _make_record_batch(
         self,

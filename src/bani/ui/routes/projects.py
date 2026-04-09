@@ -36,7 +36,11 @@ async def list_projects(request: Request) -> list[ProjectSummary]:
     """List all .bdl project files."""
     projects_path = _projects_dir(request)
     results: list[ProjectSummary] = []
-    for f in sorted(projects_path.glob("*.bdl"), key=lambda p: p.stat().st_mtime, reverse=True):
+    for f in sorted(
+        projects_path.glob("*.bdl"),
+        key=lambda p: p.stat().st_mtime,
+        reverse=True,
+    ):
         results.append(ProjectSummary(name=f.stem, path=str(f)))
     return results
 

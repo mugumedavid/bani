@@ -31,7 +31,9 @@ def _get_ctx() -> dict[str, Any]:
 
 def _connector_type(cls: type[SourceConnector] | type[SinkConnector]) -> str:
     """Determine if a connector class is source, sink, or both."""
-    is_source = issubclass(cls, SourceConnector) and not _is_abstract(cls, SourceConnector)
+    is_source = issubclass(cls, SourceConnector) and not _is_abstract(
+        cls, SourceConnector
+    )
     is_sink = issubclass(cls, SinkConnector) and not _is_abstract(cls, SinkConnector)
     if is_source and is_sink:
         return "source+sink"
@@ -161,6 +163,7 @@ def connector_info(
         console.print(f"  [bold]Driver:[/bold]  {info['default_driver_version']}")
         if info["supported_db_versions"]:
             console.print(
-                f"  [bold]Supported DB versions:[/bold] {', '.join(info['supported_db_versions'])}"
+                "  [bold]Supported DB versions:[/bold] "
+                f"{', '.join(info['supported_db_versions'])}"
             )
         console.print()

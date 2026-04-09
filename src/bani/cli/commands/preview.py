@@ -35,7 +35,10 @@ def _get_ctx() -> dict[str, Any]:
 
 def preview(
     project_file: str = typer.Argument(..., help="Path to BDL project file"),
-    sample_size: int = typer.Option(10, "--sample-size", help="Rows to sample per table (default: 10)."),
+    sample_size: int = typer.Option(
+        10, "--sample-size",
+        help="Rows to sample per table (default: 10).",
+    ),
 ) -> None:
     """Preview source data by sampling N rows per table.
 

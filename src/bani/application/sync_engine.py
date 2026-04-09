@@ -412,7 +412,11 @@ class IncrementalSyncEngine:
                 for i in range(len(col_data)):
                     val = col_data[i].as_py()
                     if val is not None:
-                        val_str = val.isoformat() if isinstance(val, datetime) else str(val)
+                        val_str = (
+                            val.isoformat()
+                            if isinstance(val, datetime)
+                            else str(val)
+                        )
                         if max_ts is None or val_str > max_ts:
                             max_ts = val_str
 
@@ -579,7 +583,7 @@ class IncrementalSyncEngine:
                             f".{_quote_ident(table_name)} WHERE {where}"
                         )
 
-                written = self._sink.write_batch(
+                self._sink.write_batch(
                     table_name, schema_name, filtered
                 )
                 # Count inserts vs updates.
@@ -688,7 +692,7 @@ def _pk_where_clause(
 ) -> str:
     """Build a WHERE clause for a composite primary key."""
     parts: list[str] = []
-    for col, val in zip(pk_columns, pk_values):
+    for col, val in zip(pk_columns, pk_values, strict=True):
         if val is None:
             parts.append(f"{_quote_ident(col)} IS NULL")
         elif isinstance(val, (int, float)):

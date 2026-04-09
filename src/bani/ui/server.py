@@ -196,8 +196,8 @@ class BaniUIServer:
         dist_dir = next((d for d in candidates if d.is_dir()), None)
 
         if dist_dir is not None:
-            from fastapi.staticfiles import StaticFiles
             from fastapi.responses import FileResponse
+            from fastapi.staticfiles import StaticFiles
 
             index_html = dist_dir / "index.html"
 
@@ -239,8 +239,8 @@ class BaniUIServer:
         url = f"http://{self.host}:{self.port}"
         token_url = f"{url}?token={self.auth_token}"
 
-        print(f"Bani UI: {token_url}")  # noqa: T201
-        print(f"API docs: {url}/docs")  # noqa: T201
+        print(f"Bani UI: {token_url}")
+        print(f"API docs: {url}/docs")
 
         # Auto-open browser on localhost
         if self.host in ("127.0.0.1", "localhost", "0.0.0.0"):

@@ -119,7 +119,7 @@ class PostgreSQLDataWriter:
                 ]
 
         # Transpose columns to rows
-        return [list(row) for row in zip(*columns)]
+        return [list(row) for row in zip(*columns, strict=True)]
 
     def _write_copy(
         self,
@@ -213,7 +213,9 @@ class PostgreSQLDataWriter:
                     # the finish line one by one. Slow? Yes. Reliable? Also yes.
                     import logging as _logging
                     _logging.getLogger(__name__).warning(
-                        "Bulk INSERT failed for %s.%s — falling back to row-by-row insert (%d rows)",
+                        "Bulk INSERT failed for %s.%s — "
+                        "falling back to row-by-row "
+                        "insert (%d rows)",
                         schema_name, table_name, len(chunk),
                     )
                     for row in chunk:

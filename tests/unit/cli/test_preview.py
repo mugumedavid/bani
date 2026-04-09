@@ -54,8 +54,14 @@ def sample_bdl_file(tmp_path: Path) -> Path:
 def _mock_preview_result() -> PreviewResult:
     """Create a mock PreviewResult for testing."""
     columns = (
-        ColumnPreview(name="id", data_type="INTEGER", nullable=False, arrow_type="int32"),
-        ColumnPreview(name="name", data_type="VARCHAR(255)", nullable=True, arrow_type="string"),
+        ColumnPreview(
+            name="id", data_type="INTEGER",
+            nullable=False, arrow_type="int32",
+        ),
+        ColumnPreview(
+            name="name", data_type="VARCHAR(255)",
+            nullable=True, arrow_type="string",
+        ),
     )
     sample_rows = (
         {"id": 1, "name": "Alice"},

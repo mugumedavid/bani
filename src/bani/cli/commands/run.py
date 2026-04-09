@@ -113,13 +113,21 @@ def _make_json_callback(quiet: bool) -> Any:
 
 def run(
     project_file: str = typer.Argument(..., help="Path to BDL project file"),
-    dry_run: bool = typer.Option(False, "--dry-run", help="Validate and plan but don't execute."),
+    dry_run: bool = typer.Option(
+        False, "--dry-run",
+        help="Validate and plan but don't execute.",
+    ),
     tables: str | None = typer.Option(
         None, help="Comma-separated table names to migrate (all if omitted)."
     ),
     parallel: int = typer.Option(1, help="Number of parallel workers."),
-    batch_size: int = typer.Option(100_000, "--batch-size", help="Rows per batch."),
-    resume: bool = typer.Option(False, "--resume", help="Resume a previously failed migration."),
+    batch_size: int = typer.Option(
+        100_000, "--batch-size", help="Rows per batch.",
+    ),
+    resume: bool = typer.Option(
+        False, "--resume",
+        help="Resume a previously failed migration.",
+    ),
 ) -> None:
     """Execute a database migration from a BDL project file.
 
@@ -208,6 +216,7 @@ def run(
 
     # Apply CLI overrides to project options
     from dataclasses import replace as dc_replace
+
     from bani.domain.project import ProjectOptions, TableMapping
 
     opts = project.options or ProjectOptions()
@@ -221,7 +230,10 @@ def run(
         for name in table_names:
             parts = name.split(".", 1)
             if len(parts) == 2:
-                mappings.append(TableMapping(source_schema=parts[0], source_table=parts[1]))
+                mappings.append(TableMapping(
+                    source_schema=parts[0],
+                    source_table=parts[1],
+                ))
             else:
                 mappings.append(TableMapping(source_schema="", source_table=name))
         object.__setattr__(project, "table_mappings", tuple(mappings))

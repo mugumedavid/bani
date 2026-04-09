@@ -5,9 +5,9 @@ from __future__ import annotations
 import pyarrow as pa  # type: ignore[import-untyped]
 
 from bani.application.quarantine import (
-    QuarantineManager,
     _CREATE_TABLE_SQL_VARIANTS,
     _QUARANTINE_TABLE,
+    QuarantineManager,
 )
 from bani.connectors.base import SinkConnector
 from bani.domain.project import ConnectionConfig

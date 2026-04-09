@@ -10,17 +10,18 @@ Run with:  pytest tests/test_default_translation.py -v
 
 from __future__ import annotations
 
+from typing import ClassVar
+
 import pytest
 
-from bani.connectors.default_translation import translate_default
+import bani.connectors.mssql.connector
+import bani.connectors.mysql.connector
+import bani.connectors.oracle.connector
+import bani.connectors.postgresql.connector
 
 # Import connectors to trigger dialect registration
 import bani.connectors.sqlite.connector  # noqa: F401
-import bani.connectors.mysql.connector  # noqa: F401
-import bani.connectors.mssql.connector  # noqa: F401
-import bani.connectors.oracle.connector  # noqa: F401
-import bani.connectors.postgresql.connector  # noqa: F401
-
+from bani.connectors.default_translation import translate_default
 
 DIALECTS = ["postgresql", "mysql", "mssql", "oracle", "sqlite"]
 
@@ -30,7 +31,7 @@ DIALECTS = ["postgresql", "mysql", "mssql", "oracle", "sqlite"]
 class TestTimestampOnTemporalColumns:
     """Timestamp defaults should be translated when the column IS temporal."""
 
-    _TEMPORAL_COL_TYPES: dict[str, str] = {
+    _TEMPORAL_COL_TYPES: ClassVar[dict[str, str]] = {
         "postgresql": "TIMESTAMP WITHOUT TIME ZONE",
         "mysql": "DATETIME",
         "mssql": "DATETIME2",
@@ -38,7 +39,7 @@ class TestTimestampOnTemporalColumns:
         "sqlite": "DATETIME",
     }
 
-    _EXPECTED_DEFAULTS: dict[str, str] = {
+    _EXPECTED_DEFAULTS: ClassVar[dict[str, str]] = {
         "postgresql": "NOW()",
         "mysql": "CURRENT_TIMESTAMP",
         "mssql": "GETDATE()",
