@@ -3,29 +3,34 @@
 Tests all combinations of (source, target) across the five connectors:
 PostgreSQL, MySQL, MSSQL, Oracle, and SQLite.
 
-This implementation uses pytest.mark.parametrize to efficiently test
-all 25 source-target pairs. Each test verifies:
-  - Schema introspection on source
-  - Table creation on sink using Arrow type mapping
-  - Data transfer (at least one batch of representative rows)
-  - Row count verification
-  - Type round-trip verification
+Uses the MigrationOrchestrator to test the real migration path:
+introspect source → create tables on sink → transfer data → verify
+row counts. This exercises the same code path as a real migration.
 
 Mark all tests with @pytest.mark.integration so they are skipped
-in CI without Docker.
+by default.
 """
 
 from __future__ import annotations
 
 import pytest
 
+from bani.application.orchestrator import MigrationOrchestrator, MigrationResult
 from bani.connectors.base import SinkConnector, SourceConnector
+from bani.domain.project import ConnectionConfig, ProjectModel, ProjectOptions
+
+from .conftest import EXPECTED_ROW_COUNTS
 
 # The 5 connectors: PostgreSQL, MySQL, MSSQL, Oracle, SQLite
 CONNECTORS = ["postgresql", "mysql", "mssql", "oracle", "sqlite"]
 
 # All 25 source-target combinations
 PAIRS = [(src, tgt) for src in CONNECTORS for tgt in CONNECTORS]
+
+# Dummy ConnectionConfig for building ProjectModel.
+# The orchestrator uses the already-connected connectors passed
+# directly, so these configs are only needed for project metadata.
+_DUMMY_CFG = ConnectionConfig(dialect="dummy")
 
 
 @pytest.mark.integration
@@ -35,103 +40,68 @@ def test_25pair_cross_database_matrix(
     source: str,
     target: str,
 ) -> None:
-    """Test a (source, target) pair from the 25-pair matrix.
+    """Test a (source, target) pair using the MigrationOrchestrator.
 
-    Args:
-        request: pytest request object to fetch fixtures dynamically
-        source: Source database dialect
-        target: Target database dialect
-
-    This test dynamically loads the appropriate source and target connector
-    fixtures based on the parametrized dialect names.
+    Runs a full migration: introspect → create schema → transfer data.
+    Verifies that all tables are created and row counts match.
     """
-    # Map dialect names to fixture names
-    source_fixture_name = f"{source}_source"
-    target_fixture_name = f"{target}_sink"
+    source_fixture = f"{source}_source"
+    target_fixture = f"{target}_sink"
 
-    # Get fixtures
     try:
-        source_connector = request.getfixturevalue(source_fixture_name)
-        target_connector = request.getfixturevalue(target_fixture_name)
-    except pytest.FixtureLookupError as e:
-        pytest.skip(f"Fixture not available: {e}")
+        source_conn = request.getfixturevalue(source_fixture)
+        target_conn = request.getfixturevalue(target_fixture)
+    except pytest.FixtureLookupError as exc:
+        pytest.skip(f"Fixture not available: {exc}")
 
-    if not isinstance(source_connector, SourceConnector):
-        pytest.skip(f"{source} connector is not a SourceConnector")
+    if not isinstance(source_conn, SourceConnector):
+        pytest.skip(f"{source} is not a SourceConnector")
+    if not isinstance(target_conn, SinkConnector):
+        pytest.skip(f"{target} is not a SinkConnector")
 
-    if not isinstance(target_connector, SinkConnector):
-        pytest.skip(f"{target} connector is not a SinkConnector")
-
-    # Test: Schema introspection
-    schema = source_connector.introspect_schema()
-    assert schema is not None, "Schema introspection returned None"
-    assert len(schema.tables) > 0, "No tables found in schema"
-
-    # Test: Verify each table has columns and arrow_type_str populated
-    for table in schema.tables:
-        assert len(table.columns) > 0, f"Table {table.table_name} has no columns"
-        for col in table.columns:
-            assert col.arrow_type_str, (
-                f"Column {col.name} in table {table.table_name} missing arrow_type_str"
-            )
-
-    # Test: Type round-trip (arrow type -> native type)
-    # This validates that the type mapper can convert Arrow types back
-    # to the target database's native types
-    for table in schema.tables:
-        for col in table.columns:
-            if col.arrow_type_str:
-                # The type_mapper for the target should be able to
-                # convert this Arrow type to a native type
-                try:
-                    from bani.connectors.mssql.type_mapper import MSSQLTypeMapper
-                    from bani.connectors.mysql.type_mapper import MySQLTypeMapper
-                    from bani.connectors.oracle.type_mapper import OracleTypeMapper
-                    from bani.connectors.postgresql.type_mapper import (
-                        PostgreSQLTypeMapper,
-                    )
-                    from bani.connectors.sqlite.type_mapper import SQLiteTypeMapper
-
-                    type_mappers = {
-                        "postgresql": PostgreSQLTypeMapper,
-                        "mysql": MySQLTypeMapper,
-                        "mssql": MSSQLTypeMapper,
-                        "oracle": OracleTypeMapper,
-                        "sqlite": SQLiteTypeMapper,
-                    }
-
-                    if target in type_mappers:
-                        mapper = type_mappers[target]
-                        # Just verify the method exists and is callable
-                        assert hasattr(mapper, "from_arrow_type"), (
-                            f"{target} type_mapper missing from_arrow_type() method"
-                        )
-                except ImportError:
-                    # If the connector isn't available, that's OK
-                    pass
-
-    # Test: Data transfer (read at least one batch from source)
-    if len(schema.tables) > 0:
-        first_table = schema.tables[0]
-
-        # Create table on target before writing
-        target_connector.create_table(first_table)
-
-        batch_count = 0
-        for batch in source_connector.read_table(
-            first_table.table_name,
-            schema_name=first_table.schema_name,
+    # Build a minimal project model for the orchestrator
+    project = ProjectModel(
+        name=f"test-{source}-to-{target}",
+        description=f"Integration test: {source} → {target}",
+        source=ConnectionConfig(dialect=source),
+        target=ConnectionConfig(dialect=target),
+        options=ProjectOptions(
             batch_size=100,
-        ):
-            batch_count += 1
-            # Verify batch is not None and has rows
-            assert batch is not None
-            assert batch.num_rows > 0
-            # Transfer this batch to target
-            target_connector.write_batch(
-                first_table.table_name,
-                first_table.schema_name or "",
-                batch,
-            )
-        # Verify we read at least one batch
-        assert batch_count > 0, f"No batches read from {first_table.table_name}"
+            parallel_workers=1,
+            transfer_indexes=False,
+            transfer_foreign_keys=False,
+        ),
+    )
+
+    # Run migration through the orchestrator
+    orchestrator = MigrationOrchestrator(
+        project=project,
+        source=source_conn,
+        sink=target_conn,
+    )
+    result: MigrationResult = orchestrator.execute()
+
+    # Verify: no table failures
+    assert result.tables_failed == 0, (
+        f"Migration {source}→{target} had "
+        f"{result.tables_failed} table failures: "
+        f"{result.errors}"
+    )
+
+    # Verify: tables were migrated
+    assert result.tables_completed > 0, (
+        f"Migration {source}→{target} completed 0 tables"
+    )
+
+    # Verify: row counts match expected
+    assert result.total_rows_read == result.total_rows_written, (
+        f"Row mismatch: read={result.total_rows_read}, "
+        f"written={result.total_rows_written}"
+    )
+
+    # Verify: total rows match the fixture data
+    expected_total = sum(EXPECTED_ROW_COUNTS.values())
+    assert result.total_rows_written == expected_total, (
+        f"Expected {expected_total} rows, "
+        f"got {result.total_rows_written}"
+    )

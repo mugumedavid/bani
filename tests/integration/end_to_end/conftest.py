@@ -120,6 +120,30 @@ def _oracle_config() -> ConnectionConfig:
     )
 
 
+def _mysql_sink_config() -> ConnectionConfig:
+    """MySQL sink config — uses a separate database to avoid conflicts."""
+    return ConnectionConfig(
+        dialect="mysql",
+        host=os.environ.get("MYSQL_HOST", "localhost"),
+        port=int(os.environ.get("MYSQL_PORT", "3306")),
+        database=os.environ.get("MYSQL_SINK_DB", "bani_sink"),
+        username_env="MYSQL_USER",
+        password_env="MYSQL_PASS",
+    )
+
+
+def _mssql_sink_config() -> ConnectionConfig:
+    """MSSQL sink config — uses a separate database to avoid conflicts."""
+    return ConnectionConfig(
+        dialect="mssql",
+        host=os.environ.get("MSSQL_HOST", "localhost"),
+        port=int(os.environ.get("MSSQL_PORT", "1433")),
+        database=os.environ.get("MSSQL_SINK_DB", "bani_sink"),
+        username_env="MSSQL_USER",
+        password_env="MSSQL_PASS",
+    )
+
+
 def _sqlite_config(db_path: str) -> ConnectionConfig:
     """Build a SQLite ConnectionConfig from a file path."""
     return ConnectionConfig(
@@ -486,32 +510,47 @@ def mysql_source(
     mysql_config: ConnectionConfig,
 ) -> Generator[MySQLConnector, None, None]:
     """A connected MySQL 8.x connector with test schema and data."""
+    import pymysql as _pymysql
+
     os.environ.setdefault("MYSQL_USER", "bani_test")
     os.environ.setdefault("MYSQL_PASS", "bani_test")
 
-    connector = MySQLConnector()
+    user = os.environ["MYSQL_USER"]
+    pwd = os.environ["MYSQL_PASS"]
+    host = os.environ.get("MYSQL_HOST", "localhost")
+    port = int(os.environ.get("MYSQL_PORT", "3306"))
+    db = os.environ.get("MYSQL_DB", "bani_test")
+
+    # Insert fixture data BEFORE creating the connector pool
+    # so all pool connections see committed data.
     try:
-        connector.connect(mysql_config)
+        raw = _pymysql.connect(
+            host=host, port=port, database=db,
+            user=user, password=pwd,
+        )
     except Exception as exc:
         pytest.skip(f"MySQL not available: {exc}")
 
-    # Drop existing tables and recreate with fixture data
-    assert connector.connection is not None
-    with connector.connection.cursor() as cur:
-        cur.execute("SET FOREIGN_KEY_CHECKS=0")
-        for tbl in reversed(TABLE_NAMES):
-            cur.execute(f"DROP TABLE IF EXISTS {tbl}")
-        cur.execute("SET FOREIGN_KEY_CHECKS=1")
+    cur = raw.cursor()
+    cur.execute("SET FOREIGN_KEY_CHECKS=0")
+    for tbl in reversed(TABLE_NAMES):
+        cur.execute(f"DROP TABLE IF EXISTS {tbl}")
+    cur.execute("SET FOREIGN_KEY_CHECKS=1")
+    for stmt in MYSQL_CREATE_SCHEMA.split(";"):
+        s = stmt.strip()
+        if s:
+            cur.execute(s)
+    for stmt in MYSQL_INSERT_DATA.split(";"):
+        s = stmt.strip()
+        if s:
+            cur.execute(s)
+    raw.commit()
+    cur.close()
+    raw.close()
 
-        for stmt in MYSQL_CREATE_SCHEMA.split(";"):
-            stmt = stmt.strip()
-            if stmt:
-                cur.execute(stmt)
-
-        for stmt in MYSQL_INSERT_DATA.split(";"):
-            stmt = stmt.strip()
-            if stmt:
-                cur.execute(stmt)
+    # Now create the connector — pool connections see committed data
+    connector = MySQLConnector()
+    connector.connect(mysql_config)
 
     yield connector
     connector.disconnect()
@@ -533,14 +572,14 @@ def pg_sink(pg_config: ConnectionConfig) -> Generator[PostgreSQLConnector, None,
 
 
 @pytest.fixture()
-def mysql_sink(mysql_config: ConnectionConfig) -> Generator[MySQLConnector, None, None]:
-    """A connected MySQL 8.x connector for use as a sink (clean DB)."""
+def mysql_sink() -> Generator[MySQLConnector, None, None]:
+    """A connected MySQL 8.x connector for use as a sink (separate DB)."""
     os.environ.setdefault("MYSQL_USER", "bani_test")
     os.environ.setdefault("MYSQL_PASS", "bani_test")
 
     connector = MySQLConnector()
     try:
-        connector.connect(mysql_config)
+        connector.connect(_mysql_sink_config())
     except Exception as exc:
         pytest.skip(f"MySQL not available: {exc}")
     yield connector
@@ -579,6 +618,7 @@ def mysql55_source(
             if stmt:
                 cur.execute(stmt)
 
+    connector.connection.commit()
     yield connector
     connector.disconnect()
 
@@ -644,10 +684,8 @@ def mssql_source(
 
 
 @pytest.fixture()
-def mssql_sink(
-    mssql_config: ConnectionConfig,
-) -> Generator[MSSQLConnector, None, None]:
-    """A connected MSSQL connector for use as a sink (clean DB)."""
+def mssql_sink() -> Generator[MSSQLConnector, None, None]:
+    """A connected MSSQL connector for use as a sink (separate DB)."""
     if not _HAS_MSSQL:
         pytest.skip("MSSQL connector not available")
 
@@ -656,7 +694,7 @@ def mssql_sink(
 
     connector = MSSQLConnector()
     try:
-        connector.connect(mssql_config)
+        connector.connect(_mssql_sink_config())
     except Exception as exc:
         pytest.skip(f"MSSQL not available: {exc}")
 

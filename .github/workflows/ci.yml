@@ -96,17 +96,23 @@ jobs:
       - name: Install dependencies
         run: uv sync --all-extras --dev
 
-      - name: Create MSSQL test database
+      - name: Create MSSQL test databases
         run: |
           /opt/mssql-tools18/bin/sqlcmd \
             -S localhost -U sa -P 'BaniTest123!' -C \
             -Q "CREATE DATABASE bani_test" || true
+          /opt/mssql-tools18/bin/sqlcmd \
+            -S localhost -U sa -P 'BaniTest123!' -C \
+            -Q "CREATE DATABASE bani_sink" || true
 
-      - name: Grant MySQL user full privileges
+      - name: Create MySQL sink database and grant privileges
         run: |
           docker exec ${{ job.services.mysql.id }} \
             mysql -uroot -pbani_test \
-            -e "GRANT ALL PRIVILEGES ON bani_test.* TO 'bani_test'@'%'; FLUSH PRIVILEGES;"
+            -e "CREATE DATABASE IF NOT EXISTS bani_sink; \
+                GRANT ALL PRIVILEGES ON bani_test.* TO 'bani_test'@'%'; \
+                GRANT ALL PRIVILEGES ON bani_sink.* TO 'bani_test'@'%'; \
+                FLUSH PRIVILEGES;"
 
       - name: Run integration tests
         env:
