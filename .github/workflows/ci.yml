@@ -34,5 +34,89 @@ jobs:
       - name: Mypy strict
         run: uv run mypy --strict src/bani/
 
-      - name: Pytest
+      - name: Pytest (unit tests)
         run: uv run pytest
+
+  integration:
+    runs-on: ubuntu-latest
+    needs: lint-and-test
+
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: bani_test
+          POSTGRES_PASSWORD: bani_test
+          POSTGRES_DB: bani_test
+        ports:
+          - 5433:5432
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+
+      mysql:
+        image: mysql:8.4
+        env:
+          MYSQL_ROOT_PASSWORD: bani_test
+          MYSQL_USER: bani_test
+          MYSQL_PASSWORD: bani_test
+          MYSQL_DATABASE: bani_test
+        ports:
+          - 3306:3306
+        options: >-
+          --health-cmd "mysqladmin ping -h localhost"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 10
+
+      mssql:
+        image: mcr.microsoft.com/mssql/server:2022-latest
+        env:
+          ACCEPT_EULA: Y
+          MSSQL_SA_PASSWORD: BaniTest123!
+        ports:
+          - 1433:1433
+        options: >-
+          --health-cmd "/opt/mssql-tools18/bin/sqlcmd -S localhost -U sa -P 'BaniTest123!' -C -Q 'SELECT 1' || exit 1"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 10
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v4
+
+      - name: Set up Python
+        run: uv python install 3.12
+
+      - name: Install dependencies
+        run: uv sync --all-extras --dev
+
+      - name: Create MSSQL test database
+        run: |
+          /opt/mssql-tools18/bin/sqlcmd \
+            -S localhost -U sa -P 'BaniTest123!' -C \
+            -Q "CREATE DATABASE bani_test" || true
+
+      - name: Run integration tests
+        env:
+          PG_HOST: localhost
+          PG_PORT: "5433"
+          PG_USER: bani_test
+          PG_PASS: bani_test
+          PG_DB: bani_test
+          MYSQL_HOST: localhost
+          MYSQL_PORT: "3306"
+          MYSQL_USER: bani_test
+          MYSQL_PASS: bani_test
+          MYSQL_DB: bani_test
+          MSSQL_HOST: localhost
+          MSSQL_PORT: "1433"
+          MSSQL_USER: sa
+          MSSQL_PASS: BaniTest123!
+          MSSQL_DB: bani_test
+        run: uv run pytest -m integration --tb=short -q
