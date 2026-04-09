@@ -53,13 +53,16 @@ def sample_bdl_file(tmp_path: Path) -> Path:
 
 def test_run_help(runner: CliRunner) -> None:
     """Test run command shows help."""
+    from tests.unit.cli.conftest import strip_ansi
+
     result = runner.invoke(app, ["run", "--help"])
     assert result.exit_code == 0
-    assert "--dry-run" in result.stdout
-    assert "--tables" in result.stdout
-    assert "--parallel" in result.stdout
-    assert "--batch-size" in result.stdout
-    assert "--resume" in result.stdout
+    output = strip_ansi(result.stdout)
+    assert "--dry-run" in output
+    assert "--tables" in output
+    assert "--parallel" in output
+    assert "--batch-size" in output
+    assert "--resume" in output
 
 
 def test_run_missing_file(runner: CliRunner) -> None:

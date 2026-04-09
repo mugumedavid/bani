@@ -201,5 +201,9 @@ class TestBasicPassthrough:
     @pytest.mark.parametrize("driver", DRIVERS)
     def test_basic_passthrough(self, val: object, driver: str) -> None:
         result = coerce_for_binding(val, driver)
+        # oracledb converts bool→int (Oracle has no boolean type)
+        if driver == "oracledb" and isinstance(val, bool):
+            assert result == int(val)
+            return
         assert result == val
         assert type(result) is type(val)

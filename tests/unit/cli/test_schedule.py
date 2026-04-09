@@ -29,9 +29,11 @@ def sample_bdl_file(tmp_path: Path) -> Path:
 
 def test_schedule_help(runner: CliRunner) -> None:
     """Test schedule command shows help."""
+    from tests.unit.cli.conftest import strip_ansi
+
     result = runner.invoke(app, ["schedule", "--help"])
     assert result.exit_code == 0
-    assert "--cron" in result.stdout
+    assert "--cron" in strip_ansi(result.stdout)
 
 
 def test_schedule_missing_file(runner: CliRunner) -> None:

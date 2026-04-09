@@ -16,8 +16,25 @@ from typing import TYPE_CHECKING, Any
 
 import pyarrow as pa
 
+from bani.connectors.value_coercion import (
+    DriverProfile,
+    register_driver_profile,
+)
+
 if TYPE_CHECKING:
     pass  # driver typing not needed since we use Any in __init__
+
+register_driver_profile(
+    "pymssql",
+    DriverProfile(
+        decimal=False,  # pymssql handles Decimal natively
+        uuid=False,
+        time=False,  # pymssql needs isoformat strings for TIME columns
+        timedelta=False,
+        list_ok=False,
+        dict_ok=False,
+    ),
+)
 
 logger = logging.getLogger(__name__)
 

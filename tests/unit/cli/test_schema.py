@@ -66,10 +66,13 @@ def _mock_schema() -> DatabaseSchema:
 
 def test_schema_inspect_help(runner: CliRunner) -> None:
     """Test schema inspect help."""
+    from tests.unit.cli.conftest import strip_ansi
+
     result = runner.invoke(app, ["schema", "inspect", "--help"])
     assert result.exit_code == 0
-    assert "inspect" in result.stdout.lower()
-    assert "--connector" in result.stdout
+    output = strip_ansi(result.stdout)
+    assert "inspect" in output.lower()
+    assert "--connector" in output
 
 
 def test_schema_inspect_missing_env_vars(runner: CliRunner) -> None:

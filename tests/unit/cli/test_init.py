@@ -20,10 +20,13 @@ def runner() -> CliRunner:
 
 def test_init_help(runner: CliRunner) -> None:
     """Test init command shows help."""
+    from tests.unit.cli.conftest import strip_ansi
+
     result = runner.invoke(app, ["init", "--help"])
     assert result.exit_code == 0
-    assert "--source" in result.stdout
-    assert "--target" in result.stdout
+    output = strip_ansi(result.stdout)
+    assert "--source" in output
+    assert "--target" in output
 
 
 @patch("bani.cli.commands.init.ConnectorRegistry")

@@ -83,9 +83,11 @@ def _mock_preview_result() -> PreviewResult:
 
 def test_preview_help(runner: CliRunner) -> None:
     """Test preview command shows help."""
+    from tests.unit.cli.conftest import strip_ansi
+
     result = runner.invoke(app, ["preview", "--help"])
     assert result.exit_code == 0
-    assert "--sample-size" in result.stdout
+    assert "--sample-size" in strip_ansi(result.stdout)
 
 
 def test_preview_missing_file(runner: CliRunner) -> None:
