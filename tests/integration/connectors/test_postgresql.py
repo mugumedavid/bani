@@ -335,8 +335,10 @@ class TestPostgreSQLConnectorDataWrite:
         # Clear any failed transaction from prior tests
         pg_connection.rollback()
 
-        # Create table
+        # Create table and commit so it persists across rollbacks
+        # (the data writer rollbacks on COPY fallback attempts)
         with pg_connection.cursor() as cur:
+            cur.execute(f'DROP TABLE IF EXISTS "{test_schema}".write_test')
             cur.execute(
                 f"""
                 CREATE TABLE "{test_schema}".write_test (
@@ -345,6 +347,7 @@ class TestPostgreSQLConnectorDataWrite:
                 )
             """
             )
+        pg_connection.commit()
 
         # Create and write batch
         batch = pa.RecordBatch.from_arrays(

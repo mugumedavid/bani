@@ -69,23 +69,37 @@ class PostgreSQLDataWriter:
 
         # Try binary COPY first (fastest)
         try:
-            return self._write_copy(table_name, schema_name, batch, binary=True)
+            return self._write_copy(
+                table_name,
+                schema_name,
+                batch,
+                binary=True,
+            )
         except Exception:
             logger.debug(
                 "Binary COPY failed for %s.%s, falling back to text COPY",
                 schema_name,
                 table_name,
             )
+            # Rollback the failed COPY transaction so the next
+            # attempt starts with a clean transaction state.
+            self.connection.rollback()
 
         # Fall back to text COPY
         try:
-            return self._write_copy(table_name, schema_name, batch, binary=False)
+            return self._write_copy(
+                table_name,
+                schema_name,
+                batch,
+                binary=False,
+            )
         except Exception:
             logger.debug(
                 "Text COPY failed for %s.%s, falling back to INSERT",
                 schema_name,
                 table_name,
             )
+            self.connection.rollback()
 
         # Final fallback: multi-row INSERT
         return self._write_insert(table_name, schema_name, batch)
