@@ -330,6 +330,9 @@ class TestPostgreSQLConnectorDataWrite:
 
         from bani.connectors.postgresql.data_writer import PostgreSQLDataWriter
 
+        # Clear any failed transaction from prior tests
+        pg_connection.rollback()
+
         # Create table
         with pg_connection.cursor() as cur:
             cur.execute(
