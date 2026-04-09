@@ -7,6 +7,7 @@ with explicit transactions for throughput.
 from __future__ import annotations
 
 import sqlite3
+from datetime import date, datetime
 from typing import Any
 
 import pyarrow as pa
@@ -16,6 +17,11 @@ from bani.connectors.value_coercion import (
     coerce_for_binding,
     register_driver_profile,
 )
+
+# Register adapters explicitly — Python 3.12 deprecated the default
+# datetime adapter.
+sqlite3.register_adapter(datetime, lambda v: v.isoformat())
+sqlite3.register_adapter(date, lambda v: v.isoformat())
 
 register_driver_profile(
     "sqlite3",
