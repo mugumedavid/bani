@@ -51,11 +51,13 @@ def build_app(arch: str = "aarch64") -> Path:
     runtime_dir = assemble("darwin", arch)
 
     # Install menu bar dependencies into the runtime
-    pip_bin = runtime_dir / "python" / "bin" / "pip3"
+    python_bin = runtime_dir / "python" / "bin" / "python3"
     print("\n=== Installing menu bar dependencies ===")
     subprocess.run(
         [
-            str(pip_bin),
+            str(python_bin),
+            "-m",
+            "pip",
             "install",
             "--no-cache-dir",
             "rumps>=0.4.0",
@@ -181,6 +183,63 @@ def build_dmg(app_dir: Path) -> Path:
     return dmg_path
 
 
+def build_pkg(arch: str = "aarch64") -> Path:
+    """Build a flat .pkg installer for macOS.
+
+    Installs Bani to /opt/bani with a symlink at /usr/local/bin/bani,
+    matching the Linux package layout.
+
+    Args:
+        arch: Target architecture (aarch64 or x86_64).
+
+    Returns:
+        Path to the built .pkg file.
+    """
+    version = get_version()
+    arch_label = "arm64" if arch == "aarch64" else "x86_64"
+
+    # Assemble runtime (Python + Bani + UI)
+    runtime_dir = assemble("darwin", arch)
+
+    # Create pkg payload directory
+    pkg_root = REPO_ROOT / "build" / "pkg-root"
+    if pkg_root.exists():
+        shutil.rmtree(pkg_root)
+
+    opt_bani = pkg_root / "opt" / "bani"
+    shutil.copytree(runtime_dir, opt_bani)
+
+    # Symlink in /usr/local/bin
+    usr_local_bin = pkg_root / "usr" / "local" / "bin"
+    usr_local_bin.mkdir(parents=True)
+    (usr_local_bin / "bani").symlink_to("/opt/bani/bin/bani")
+
+    # Build .pkg
+    output = REPO_ROOT / "build" / f"bani-{version}-macos-{arch_label}.pkg"
+    output.unlink(missing_ok=True)
+
+    print(f"\n=== Building {output.name} ===")
+    subprocess.run(
+        [
+            "pkgbuild",
+            "--root",
+            str(pkg_root),
+            "--identifier",
+            "dev.bani.pkg",
+            "--version",
+            version,
+            str(output),
+        ],
+        check=True,
+    )
+
+    # Clean up
+    shutil.rmtree(pkg_root)
+    shutil.rmtree(runtime_dir)
+
+    print(f"Built: {output}")
+    return output
+
+
 if __name__ == "__main__":
-    app = build_app()
-    build_dmg(app)
+    build_pkg()
