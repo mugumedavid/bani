@@ -95,17 +95,27 @@ def build_app(arch: str = "aarch64") -> Path:
         resources / "bani-start.py",
     )
 
-    # Compile native launcher (embeds Python for GUI access)
+    # Fix Python dylib install_name for @rpath resolution
     python_dir = runtime / "python"
+    dylib = python_dir / "lib" / "libpython3.12.dylib"
+    print("\nFixing Python dylib install_name...")
+    subprocess.run(
+        ["install_name_tool", "-id", "@rpath/libpython3.12.dylib", str(dylib)],
+        check=True,
+    )
+
+    # Compile native launcher (embeds Python for GUI access)
     launcher_src = REPO_ROOT / "pkg_build" / "launcher.m"
     launcher_bin = macos / "bani-launcher"
-    print("\nCompiling native launcher...")
+    print("Compiling native launcher...")
     subprocess.run(
         [
             "cc",
-            "-o", str(launcher_bin),
+            "-o",
+            str(launcher_bin),
             str(launcher_src),
-            "-framework", "Cocoa",
+            "-framework",
+            "Cocoa",
             f"-I{python_dir}/include/python3.12",
             f"-L{python_dir}/lib",
             "-lpython3.12",
