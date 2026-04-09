@@ -15,7 +15,6 @@ import threading
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 from pathlib import Path
-from typing import Any
 
 import uvicorn
 from fastapi import FastAPI
@@ -123,7 +122,7 @@ class BaniUIServer:
         # Store auth token and shared state on app.state
         app.state.auth_token = self.auth_token
         app.state.projects_dir = self.projects_dir
-        app.state.migration_state: dict[str, Any] = {
+        app.state.migration_state = {
             "running": False,
             "project_name": None,
             "tables_completed": 0,

@@ -274,7 +274,7 @@ class CheckpointManager:
         checkpoint = self.load(project_name)
         if checkpoint is None:
             return False
-        return checkpoint.get("project_hash") == project_hash  # type: ignore[no-any-return]
+        return bool(checkpoint.get("project_hash") == project_hash)
 
     def clear(self, project_name: str) -> None:
         """Delete the checkpoint file for a project.

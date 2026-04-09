@@ -5,8 +5,8 @@ from __future__ import annotations
 from typing import Any
 from unittest.mock import MagicMock, patch
 
-import pyarrow as pa  # type: ignore[import-untyped]
-import pytest  # type: ignore[import-untyped]
+import pyarrow as pa
+import pytest
 
 from bani.connectors.mssql.connector import MSSQLConnector
 from bani.domain.project import ConnectionConfig

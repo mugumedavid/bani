@@ -248,10 +248,12 @@ class SchedulerRegistry:
 
         pool_size = project.options.parallel_workers if project.options else 4
 
+        assert project.source is not None, "project.source is required"
         source_class = ConnectorRegistry.get(project.source.dialect)
         source = cast(type[SourceConnector], source_class)()
         source.connect(project.source, pool_size=pool_size)
 
+        assert project.target is not None, "project.target is required"
         sink_class = ConnectorRegistry.get(project.target.dialect)
         sink = cast(type[SinkConnector], sink_class)()
         sink.connect(project.target, pool_size=pool_size)

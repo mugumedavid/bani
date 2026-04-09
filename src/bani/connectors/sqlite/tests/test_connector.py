@@ -55,8 +55,8 @@ class TestConnect:
         connector.disconnect()
         assert connector.connection is None
         assert connector._schema_reader is None
-        assert connector._data_reader is None
-        assert connector._data_writer is None
+        assert connector._data_reader is None  # type: ignore[attr-defined]  # private attr set in connect()
+        assert connector._data_writer is None  # type: ignore[attr-defined]  # private attr set in connect()
 
     def test_disconnect_when_not_connected(self) -> None:
         connector = SQLiteConnector()

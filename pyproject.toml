@@ -101,6 +101,7 @@ check_untyped_defs = true
 no_implicit_optional = true
 warn_redundant_casts = true
 warn_unused_ignores = true
+disable_error_code = ["import-untyped"]
 mypy_path = "src"
 namespace_packages = true
 explicit_package_bases = true
@@ -110,6 +111,16 @@ explicit_package_bases = true
 module = "tests.integration.end_to_end.*"
 disable_error_code = ["attr-defined"]
 warn_unused_ignores = false
+
+# Third-party libraries without type stubs or py.typed marker.
+[[tool.mypy.overrides]]
+module = [
+    "pyarrow", "pyarrow.*",
+    "lxml", "lxml.*",
+    "jsonschema", "jsonschema.*",
+    "pyodbc", "pyodbc.*",
+]
+ignore_missing_imports = true
 
 # Cross-version compatibility: type: ignore comments that are only needed on
 # certain Python versions (e.g., tomllib on <3.11, entry_points on <3.12).

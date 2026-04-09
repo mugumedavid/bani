@@ -154,11 +154,13 @@ def coerce_for_binding(py_val: Any, driver: str) -> Any:
     # --- list / dict (JSON-like) ---
     if isinstance(py_val, list):
         if not profile.list_ok:
-            return customs.get("list", json.dumps)(py_val)
+            list_coercer: Callable[[Any], Any] = customs.get("list", json.dumps)
+            return list_coercer(py_val)
         return py_val
     if isinstance(py_val, dict):
         if not profile.dict_ok:
-            return customs.get("dict", json.dumps)(py_val)
+            dict_coercer: Callable[[Any], Any] = customs.get("dict", json.dumps)
+            return dict_coercer(py_val)
         return py_val
 
     # --- bytes ---

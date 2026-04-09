@@ -26,7 +26,8 @@ def _get_ctx() -> dict[str, Any]:
 
     if ctx_obj is None:
         ctx_obj = {"output": "human", "quiet": False, "console": Console()}
-    return ctx_obj
+    result: dict[str, Any] = ctx_obj
+    return result
 
 
 def _connector_type(cls: type[SourceConnector] | type[SinkConnector]) -> str:

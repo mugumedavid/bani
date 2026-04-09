@@ -311,6 +311,8 @@ async def _dry_run(project_path: Any, project_name: str) -> Any:
 
                 # Filter to listed tables if any
                 if project.table_mappings:
+                    from bani.domain.schema import TableDefinition
+
                     by_fqn = {
                         f"{t.schema_name}.{t.table_name}": t for t in schema.tables
                     }
@@ -319,11 +321,12 @@ async def _dry_run(project_path: Any, project_name: str) -> Any:
                         by_name.setdefault(t.table_name, []).append(t)
 
                     filtered = []
-                    missing = []
+                    missing: list[str] = []
                     ambiguous = []
                     for m in project.table_mappings:
+                        found: TableDefinition | None = None
                         if m.source_schema:
-                            t = by_fqn.get(f"{m.source_schema}.{m.source_table}")
+                            found = by_fqn.get(f"{m.source_schema}.{m.source_table}")
                         else:
                             matches = by_name.get(m.source_table, [])
                             if len(matches) > 1:
@@ -332,15 +335,15 @@ async def _dry_run(project_path: Any, project_name: str) -> Any:
                                     f"{', '.join(x.schema_name for x in matches)})"
                                 )
                                 continue
-                            t = matches[0] if matches else None
-                        if t is None:
+                            found = matches[0] if matches else None
+                        if found is None:
                             missing.append(
                                 f"{m.source_schema}.{m.source_table}"
                                 if m.source_schema
                                 else m.source_table
                             )
-                        elif t not in filtered:
-                            filtered.append(t)
+                        elif found not in filtered:
+                            filtered.append(found)
 
                     if ambiguous:
                         return {
@@ -507,7 +510,7 @@ async def start_migration(body: MigrateRequest, request: Request) -> Any:
                 tp = state.get("table_progress", {})
                 if event.table_name in tp:
                     tp[event.table_name]["rows_transferred"] = (
-                        int(tp[event.table_name]["rows_transferred"])  # type: ignore[arg-type]
+                        int(str(tp[event.table_name]["rows_transferred"]))
                         + event.rows_written
                     )
             elif isinstance(event, TableComplete):
@@ -677,7 +680,8 @@ async def list_runs() -> list[dict[str, Any]]:
     """
     from bani.application.run_log import RunLog
 
-    return RunLog().recent(50)  # type: ignore[return-value]
+    entries: list[dict[str, Any]] = RunLog().recent(50)
+    return entries
 
 
 @router.get("/runs/last-per-project")
@@ -689,7 +693,8 @@ async def last_run_per_project() -> dict[str, Any]:
     """
     from bani.application.run_log import RunLog
 
-    return RunLog().last_run_per_project()  # type: ignore[return-value]
+    result: dict[str, Any] = RunLog().last_run_per_project()
+    return result
 
 
 @router.get("/runs/summary")
@@ -701,7 +706,8 @@ async def run_summary() -> dict[str, Any]:
     """
     from bani.application.run_log import RunLog
 
-    return RunLog().summary()  # type: ignore[return-value]
+    summary: dict[str, Any] = RunLog().summary()
+    return summary
 
 
 @router.delete("/runs")
@@ -766,7 +772,8 @@ async def list_schedules(request: Request) -> list[dict[str, Any]]:
     registry = getattr(request.app.state, "scheduler_registry", None)
     if registry is None:
         return []
-    return registry.list_schedules()
+    schedules: list[dict[str, Any]] = registry.list_schedules()
+    return schedules
 
 
 @router.post("/migrate/cancel", status_code=202)

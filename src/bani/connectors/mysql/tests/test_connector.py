@@ -19,8 +19,8 @@ class TestMySQLConnectorInit:
         connector = MySQLConnector()
         assert connector.connection is None
         assert connector._schema_reader is None
-        assert connector._data_reader is None
-        assert connector._data_writer is None
+        assert connector._data_reader is None  # type: ignore[attr-defined]  # private attr set in connect()
+        assert connector._data_writer is None  # type: ignore[attr-defined]  # private attr set in connect()
         assert connector._database == ""
 
 
@@ -90,8 +90,8 @@ class TestDisconnect:
         # Mock connection
         connector.connection = MagicMock()
         connector._schema_reader = MagicMock()
-        connector._data_reader = MagicMock()
-        connector._data_writer = MagicMock()
+        connector._data_reader = MagicMock()  # type: ignore[attr-defined]  # private attr set in connect()
+        connector._data_writer = MagicMock()  # type: ignore[attr-defined]  # private attr set in connect()
 
         connector.disconnect()
 
@@ -238,8 +238,8 @@ class TestConnectWithCredentials:
         assert connector.connection == mock_conn
         assert connector._database == "test_db"
         assert connector._schema_reader is not None
-        assert connector._data_reader is not None
-        assert connector._data_writer is not None
+        assert connector._data_reader is not None  # type: ignore[attr-defined]  # private attr set in connect()
+        assert connector._data_writer is not None  # type: ignore[attr-defined]  # private attr set in connect()
         mock_pymysql_connect.assert_called_once()
 
     @patch("bani.connectors.mysql.connector.pymysql.connect")
@@ -380,7 +380,7 @@ class TestReadTableDelegation:
         mock_conn = MagicMock()
         mock_reader = MagicMock()
         connector.connection = mock_conn
-        connector._data_reader = mock_reader
+        connector._data_reader = mock_reader  # type: ignore[attr-defined]  # private attr set in connect()
 
         import pyarrow as pa
 
@@ -416,7 +416,7 @@ class TestEstimateRowCountDelegation:
         mock_conn = MagicMock()
         mock_reader = MagicMock()
         connector.connection = mock_conn
-        connector._data_reader = mock_reader
+        connector._data_reader = mock_reader  # type: ignore[attr-defined]  # private attr set in connect()
         mock_reader.estimate_row_count.return_value = 1000
 
         result = connector.estimate_row_count("test_table", "test_db")
@@ -596,7 +596,7 @@ class TestWriteBatchDelegation:
         mock_conn = MagicMock()
         mock_writer = MagicMock()
         connector.connection = mock_conn
-        connector._data_writer = mock_writer
+        connector._data_writer = mock_writer  # type: ignore[attr-defined]  # private attr set in connect()
         mock_writer.write_batch.return_value = 5
 
         import pyarrow as pa

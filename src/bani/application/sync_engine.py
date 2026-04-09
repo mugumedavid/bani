@@ -13,7 +13,7 @@ from dataclasses import dataclass
 from datetime import datetime, timezone
 from typing import Protocol, runtime_checkable
 
-import pyarrow as pa  # type: ignore[import-untyped]
+import pyarrow as pa
 
 from bani.connectors.base import SinkConnector, SourceConnector
 from bani.domain.errors import ConfigurationError
@@ -722,4 +722,4 @@ def _optional_int(value: object) -> int | None:
     """Convert a value to int or None."""
     if value is None:
         return None
-    return int(value)  # type: ignore[arg-type]
+    return int(str(value))

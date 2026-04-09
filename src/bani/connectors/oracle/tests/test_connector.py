@@ -58,16 +58,16 @@ class TestOracleConnectorConnect:
 
         assert connector.connection is not None
         assert connector._schema_reader is not None
-        assert connector._data_reader is not None
-        assert connector._data_writer is not None
+        assert connector._data_reader is not None  # type: ignore[attr-defined]  # private attr set in connect()
+        assert connector._data_writer is not None  # type: ignore[attr-defined]  # private attr set in connect()
 
     def test_disconnect_closes_connection(self) -> None:
         """Disconnect should close the connection."""
         connector = OracleConnector()
         connector.connection = MagicMock()
         connector._schema_reader = MagicMock()
-        connector._data_reader = MagicMock()
-        connector._data_writer = MagicMock()
+        connector._data_reader = MagicMock()  # type: ignore[attr-defined]  # private attr set in connect()
+        connector._data_writer = MagicMock()  # type: ignore[attr-defined]  # private attr set in connect()
 
         connector.disconnect()
 

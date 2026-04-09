@@ -24,7 +24,8 @@ def _get_ctx() -> dict[str, Any]:
 
     if ctx_obj is None:
         ctx_obj = {"output": "human", "quiet": False, "console": Console()}
-    return ctx_obj
+    result: dict[str, Any] = ctx_obj
+    return result
 
 
 _DEFAULT_PORTS: dict[str, int] = {

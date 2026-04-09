@@ -5,7 +5,7 @@ from __future__ import annotations
 from typing import Any
 from unittest.mock import MagicMock
 
-import pyarrow as pa  # type: ignore[import-untyped]
+import pyarrow as pa
 
 from bani.connectors.mssql.data_writer import MSSQLDataWriter
 

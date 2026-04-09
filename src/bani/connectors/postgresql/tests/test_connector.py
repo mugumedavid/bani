@@ -19,8 +19,8 @@ class TestPostgreSQLConnectorInit:
         connector = PostgreSQLConnector()
         assert connector.connection is None
         assert connector._schema_reader is None
-        assert connector._data_reader is None
-        assert connector._data_writer is None
+        assert connector._data_reader is None  # type: ignore[attr-defined]  # private attr set in connect()
+        assert connector._data_writer is None  # type: ignore[attr-defined]  # private attr set in connect()
 
 
 class TestConnectionConfigResolution:
@@ -89,8 +89,8 @@ class TestDisconnect:
         # Mock connection
         connector.connection = MagicMock()
         connector._schema_reader = MagicMock()
-        connector._data_reader = MagicMock()
-        connector._data_writer = MagicMock()
+        connector._data_reader = MagicMock()  # type: ignore[attr-defined]  # private attr set in connect()
+        connector._data_writer = MagicMock()  # type: ignore[attr-defined]  # private attr set in connect()
 
         connector.disconnect()
 
@@ -356,8 +356,8 @@ class TestConnectWithCredentials:
 
             assert connector.connection is not None
             assert connector._schema_reader is not None
-            assert connector._data_reader is not None
-            assert connector._data_writer is not None
+            assert connector._data_reader is not None  # type: ignore[attr-defined]  # private attr set in connect()
+            assert connector._data_writer is not None  # type: ignore[attr-defined]  # private attr set in connect()
 
 
 class TestIntrospectSchemaDelegation:
@@ -391,7 +391,7 @@ class TestReadTableDelegation:
         mock_conn = MagicMock()
         connector.connection = mock_conn
         mock_reader = MagicMock()
-        connector._data_reader = mock_reader
+        connector._data_reader = mock_reader  # type: ignore[attr-defined]  # private attr set in connect()
 
         mock_reader.read_table.return_value = iter([])
 
@@ -411,7 +411,7 @@ class TestReadTableDelegation:
         mock_conn = MagicMock()
         connector.connection = mock_conn
         mock_reader = MagicMock()
-        connector._data_reader = mock_reader
+        connector._data_reader = mock_reader  # type: ignore[attr-defined]  # private attr set in connect()
 
         mock_reader.read_table.return_value = iter([])
 
@@ -443,7 +443,7 @@ class TestEstimateRowCountDelegation:
         mock_conn = MagicMock()
         connector.connection = mock_conn
         mock_reader = MagicMock()
-        connector._data_reader = mock_reader
+        connector._data_reader = mock_reader  # type: ignore[attr-defined]  # private attr set in connect()
         mock_reader.estimate_row_count.return_value = 12345
 
         result = connector.estimate_row_count("test", "public")
@@ -584,7 +584,7 @@ class TestWriteBatchDelegation:
         mock_conn = MagicMock()
         connector.connection = mock_conn
         mock_writer = MagicMock()
-        connector._data_writer = mock_writer
+        connector._data_writer = mock_writer  # type: ignore[attr-defined]  # private attr set in connect()
         mock_writer.write_batch.return_value = 5
 
         batch = pa.RecordBatch.from_arrays(

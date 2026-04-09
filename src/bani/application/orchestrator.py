@@ -16,7 +16,7 @@ from concurrent.futures import (
 from dataclasses import dataclass
 from datetime import datetime, timezone
 
-import pyarrow as pa  # type: ignore[import-untyped]
+import pyarrow as pa
 
 from bani.application.active_migration import ActiveMigrationTracker
 from bani.application.checkpoint import CheckpointManager
@@ -99,7 +99,7 @@ class MigrationOrchestrator:
         self._cancel_event: threading.Event | None = None
         self._skipped_tables: list[str] = []
         self._hook_runner = HookRunner(
-            source_executor=source,
+            source_executor=source,  # type: ignore[arg-type]  # SourceConnector has execute_sql but doesn't explicitly implement SqlExecutor
             target_executor=sink,
             projects_dir=projects_dir,
         )
@@ -650,9 +650,8 @@ class MigrationOrchestrator:
         (e.g. 'dbo'). For reading from the source, we need the original
         name (e.g. 'public').
         """
-        return getattr(self, "_source_schema_map", {}).get(
-            table.table_name, table.schema_name
-        )
+        schema_map: dict[str, str] = getattr(self, "_source_schema_map", {})
+        return schema_map.get(table.table_name, table.schema_name)
 
     def _filter_tables(self, schema: DatabaseSchema) -> DatabaseSchema:
         """Filter introspected schema to only include tables from table_mappings.

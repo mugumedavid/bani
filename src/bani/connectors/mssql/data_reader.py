@@ -10,7 +10,7 @@ import logging
 from collections.abc import Iterator
 from typing import TYPE_CHECKING, Any
 
-import pyarrow as pa  # type: ignore[import-untyped]
+import pyarrow as pa
 
 if TYPE_CHECKING:
     pass  # pymssql typing not needed since we use Any in __init__

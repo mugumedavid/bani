@@ -42,7 +42,7 @@ def validate_xml(xml_content: str | bytes, xsd_path: Path | None = None) -> list
 
         if not xsd_schema.validate(xml_doc):
             error_strings = []
-            for error in xsd_schema.error_log:  # type: ignore[import-untyped]
+            for error in xsd_schema.error_log:
                 error_strings.append(str(error))
             return error_strings
         return []

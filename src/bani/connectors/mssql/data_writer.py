@@ -14,7 +14,7 @@ import logging
 from decimal import Decimal
 from typing import TYPE_CHECKING, Any
 
-import pyarrow as pa  # type: ignore[import-untyped]
+import pyarrow as pa
 
 if TYPE_CHECKING:
     pass  # driver typing not needed since we use Any in __init__
@@ -216,7 +216,7 @@ class MSSQLDataWriter:
             cursor.close()
 
         self.connection.commit()
-        return batch.num_rows
+        return int(batch.num_rows)
 
     # ------------------------------------------------------------------
     # pymssql fallback (inline INSERT)

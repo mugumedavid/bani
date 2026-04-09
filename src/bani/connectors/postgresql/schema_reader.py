@@ -151,7 +151,7 @@ class PostgreSQLSchemaReader:
             arrow_type = self._type_mapper.map_pg_type_name(full_type)
             arrow_type_str = str(arrow_type)
 
-            clean_default = column_default
+            clean_default: str | None = column_default
             if is_auto and clean_default and "nextval(" in str(clean_default):
                 clean_default = None
 

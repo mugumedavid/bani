@@ -12,7 +12,7 @@ import os
 from collections.abc import Iterator
 from typing import Any
 
-import pyarrow as pa  # type: ignore[import-untyped]
+import pyarrow as pa
 import pymssql as pymssql_module
 
 try:
@@ -32,9 +32,9 @@ try:
             if os.path.isfile(os.path.join(_odbc_dir, "odbcinst.ini")):
                 os.environ["ODBCSYSINI"] = _odbc_dir
                 break
-    import pyodbc as pyodbc_module  # type: ignore[import-untyped]
+    import pyodbc as pyodbc_module
 except ImportError:
-    pyodbc_module = None  # type: ignore[assignment]
+    pyodbc_module = None
 
 import re
 

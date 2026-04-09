@@ -29,7 +29,8 @@ def _get_ctx() -> dict[str, Any]:
 
     if ctx_obj is None:
         ctx_obj = {"output": "human", "console": Console()}
-    return ctx_obj
+    result: dict[str, Any] = ctx_obj
+    return result
 
 
 @schema.command()

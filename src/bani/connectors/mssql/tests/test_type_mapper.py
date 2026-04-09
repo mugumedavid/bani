@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-import pyarrow as pa  # type: ignore[import-untyped]
+import pyarrow as pa
 
 from bani.connectors.mssql.type_mapper import MSSQLTypeMapper
 

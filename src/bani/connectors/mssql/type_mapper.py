@@ -8,7 +8,7 @@ from __future__ import annotations
 
 from typing import ClassVar
 
-import pyarrow as pa  # type: ignore[import-untyped]
+import pyarrow as pa
 
 
 class MSSQLTypeMapper:

@@ -80,7 +80,7 @@ class RunLog:
         if not entries:
             return {"total_runs": 0, "last_run": None, "lifetime_rows": 0}
         last = entries[-1]
-        lifetime_rows = sum(e.get("total_rows", 0) for e in entries)  # type: ignore[arg-type]
+        lifetime_rows = sum(int(str(e.get("total_rows", 0))) for e in entries)
         return {
             "total_runs": len(entries),
             "last_run": last,

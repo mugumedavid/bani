@@ -13,7 +13,7 @@ from contextlib import contextmanager
 from typing import TYPE_CHECKING, Any
 
 if TYPE_CHECKING:
-    import pyarrow as pa  # type: ignore[import-untyped]
+    import pyarrow as pa
 
 from bani.connectors.pool import ConnectionPool
 from bani.domain.project import ConnectionConfig
