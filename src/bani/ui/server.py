@@ -210,7 +210,11 @@ class BaniUIServer:
 
             # Catch-all: serve index.html for any non-API path so that
             # React Router handles client-side routing on refresh.
-            @app.get("/{full_path:path}")
+            @app.get(
+                "/{full_path:path}",
+                response_class=FileResponse,
+                include_in_schema=False,
+            )
             async def spa_fallback(full_path: str) -> FileResponse:
                 return FileResponse(str(index_html))
 
@@ -236,7 +240,9 @@ class BaniUIServer:
         browser automatically with the token in the URL so the user
         doesn't need to copy-paste it.
         """
-        url = f"http://{self.host}:{self.port}"
+        # Use localhost for display — 0.0.0.0 is not a valid browser URL
+        display_host = "localhost" if self.host == "0.0.0.0" else self.host
+        url = f"http://{display_host}:{self.port}"
         token_url = f"{url}?token={self.auth_token}"
 
         print(f"Bani UI: {token_url}")
