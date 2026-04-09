@@ -89,6 +89,28 @@ export function MigrationMonitor() {
   const events = useAppStore((s) => s.migrationEvents);
   const tableProgress = useAppStore((s) => s.tableProgress);
 
+  // Hydrate per-table progress from server state on page refresh
+  useEffect(() => {
+    const tp = migrateStatus?.table_progress;
+    if (tp && Object.keys(tp).length > 0 && Object.keys(tableProgress).length === 0) {
+      const store = useAppStore.getState();
+      const entries = Object.values(tp);
+      store.initTableProgress(
+        entries.map((e) => ({ name: e.table_name, estimated_rows: e.total_rows })),
+      );
+      for (const e of entries) {
+        if (e.status === 'completed') {
+          store.setTableComplete(e.table_name, e.rows_transferred);
+        } else if (e.status === 'running') {
+          store.updateTableStatus(e.table_name, 'running');
+          store.addTableRows(e.table_name, e.rows_transferred);
+        } else if (e.status === 'failed') {
+          store.updateTableStatus(e.table_name, 'failed');
+        }
+      }
+    }
+  }, [migrateStatus?.table_progress, tableProgress]);
+
   // Show only tables that have started (running/completed/failed).
   // Running tables at top, completed accumulate below.
   const activeTables = useMemo(() => {

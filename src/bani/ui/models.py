@@ -4,7 +4,6 @@ from __future__ import annotations
 
 from pydantic import BaseModel, Field
 
-
 # --- Projects ---
 
 
@@ -44,7 +43,9 @@ class MigrateRequest(BaseModel):
 
     project_name: str = Field(..., description="Name of the project (.bdl file)")
     resume: bool = Field(default=False, description="Resume from checkpoint")
-    dry_run: bool = Field(default=False, description="Dry run (validate only, no data transfer)")
+    dry_run: bool = Field(
+        default=False, description="Dry run (validate only)",
+    )
 
 
 class MigrateStarted(BaseModel):
@@ -69,6 +70,9 @@ class MigrateStatus(BaseModel):
     current_table: str | None = None
     table_failures: list[str] = Field(default_factory=list)
     warnings: list[str] = Field(default_factory=list)
+    table_progress: dict[str, dict[str, object]] = Field(
+        default_factory=dict,
+    )
     elapsed_seconds: int = 0
 
 
@@ -103,8 +107,12 @@ class SchemaInspectRequest(BaseModel):
     database: str = Field(default="", description="Database name")
     username_env: str = Field(default="", description="Env var or username")
     password_env: str = Field(default="", description="Env var or password")
-    username_is_env: bool = Field(default=False, description="If true, username_env is an env var name")
-    password_is_env: bool = Field(default=False, description="If true, password_env is an env var name")
+    username_is_env: bool = Field(
+        default=False, description="username_env is an env var",
+    )
+    password_is_env: bool = Field(
+        default=False, description="password_env is an env var",
+    )
     extra: dict[str, str] = Field(default_factory=dict, description="Extra params")
 
     @property

@@ -210,6 +210,12 @@ export interface MigrateStatusResponse {
   current_table: string | null;
   table_failures: string[];
   warnings: string[];
+  table_progress: Record<string, {
+    table_name: string;
+    rows_transferred: number;
+    total_rows: number;
+    status: string;
+  }>;
   elapsed_seconds: number;
 }
 

@@ -230,7 +230,7 @@ async def validate_migration(body: MigrateRequest, request: Request) -> dict[str
         from bani.sdk.bani import Bani
 
         bp = Bani.load(str(project_path))
-        project = bp._project  # noqa: SLF001
+        project = bp._project
 
         # Ensure _BANI_CONN_* env vars are populated from
         # connections.json so BDL ${env:...} refs resolve.
@@ -290,7 +290,7 @@ async def _dry_run(project_path: Any, project_name: str) -> Any:
 
     def _execute() -> dict[str, Any]:
         bp = Bani.load(str(project_path))
-        project = bp._project  # noqa: SLF001
+        project = bp._project
         _ensure_registry_env_vars()
         temp_vars = _setup_direct_credentials(project)
 
@@ -311,7 +311,6 @@ async def _dry_run(project_path: Any, project_name: str) -> Any:
 
                 # Filter to listed tables if any
                 if project.table_mappings:
-                    from dataclasses import replace as dc_replace
                     by_fqn = {
                         f"{t.schema_name}.{t.table_name}": t
                         for t in schema.tables
@@ -483,9 +482,22 @@ async def start_migration(body: MigrateRequest, request: Request) -> Any:
             elif isinstance(event, IntrospectionComplete):
                 state["phase"] = "transferring"
                 state["total_tables"] = len(event.tables)
+                # Init per-table progress for refresh recovery
+                tp: dict[str, dict[str, object]] = {}
+                for name, rows in event.tables:
+                    tp[name] = {
+                        "table_name": name,
+                        "rows_transferred": 0,
+                        "total_rows": rows or 0,
+                        "status": "pending",
+                    }
+                state["table_progress"] = tp
             elif isinstance(event, TableStarted):
                 running_tables.add(event.table_name)
                 state["current_table"] = event.table_name
+                tp = state.get("table_progress", {})
+                if event.table_name in tp:
+                    tp[event.table_name]["status"] = "running"
             elif isinstance(event, BatchComplete):
                 state["total_rows_read"] = (
                     state.get("total_rows_read", 0) + event.rows_read
@@ -493,12 +505,24 @@ async def start_migration(body: MigrateRequest, request: Request) -> Any:
                 state["total_rows_written"] = (
                     state.get("total_rows_written", 0) + event.rows_written
                 )
+                tp = state.get("table_progress", {})
+                if event.table_name in tp:
+                    tp[event.table_name]["rows_transferred"] = (
+                        int(tp[event.table_name]["rows_transferred"])  # type: ignore[arg-type]
+                        + event.rows_written
+                    )
             elif isinstance(event, TableComplete):
                 state["tables_completed"] = (
                     state.get("tables_completed", 0) + 1
                 )
                 running_tables.discard(event.table_name)
                 state["current_table"] = next(iter(running_tables), None)
+                tp = state.get("table_progress", {})
+                if event.table_name in tp:
+                    tp[event.table_name]["status"] = "completed"
+                    tp[event.table_name]["rows_transferred"] = (
+                        event.total_rows_written
+                    )
             elif isinstance(event, TableCreateFailed):
                 state["tables_failed"] = (
                     state.get("tables_failed", 0) + 1
@@ -506,6 +530,9 @@ async def start_migration(body: MigrateRequest, request: Request) -> Any:
                 fails = state.get("table_failures", [])
                 fails.append(f"{event.table_name}: {event.reason}")
                 state["table_failures"] = fails
+                tp = state.get("table_progress", {})
+                if event.table_name in tp:
+                    tp[event.table_name]["status"] = "failed"
             elif isinstance(event, MigrationComplete):
                 pass  # Final totals come from the result object
 
@@ -524,7 +551,7 @@ async def start_migration(body: MigrateRequest, request: Request) -> Any:
 
             # Apply global settings as defaults when project doesn't specify
             settings = _load_settings()
-            project = bp._project  # noqa: SLF001
+            project = bp._project
             if project.options:
                 from dataclasses import replace as dc_replace
                 opts = project.options
@@ -630,6 +657,7 @@ async def get_status(request: Request) -> MigrateStatus:
         current_table=state.get("current_table"),
         table_failures=state.get("table_failures", []),
         warnings=state.get("warnings", []),
+        table_progress=state.get("table_progress", {}),
         elapsed_seconds=elapsed,
     )
 
