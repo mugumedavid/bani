@@ -137,6 +137,7 @@ addopts = [
     "--strict-markers",
     "--tb=short",
     "-q",
+    "-m", "not integration and not benchmark",
 ]
 markers = [
     "integration: marks tests as integration tests (deselect with '-m \"not integration\"')",

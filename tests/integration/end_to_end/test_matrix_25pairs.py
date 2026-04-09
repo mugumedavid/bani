@@ -63,7 +63,7 @@ def test_25pair_cross_database_matrix(
         pytest.skip(f"{target} connector is not a SinkConnector")
 
     # Test: Schema introspection
-    schema = source_connector.read_schema()
+    schema = source_connector.introspect_schema()
     assert schema is not None, "Schema introspection returned None"
     assert len(schema.tables) > 0, "No tables found in schema"
 
