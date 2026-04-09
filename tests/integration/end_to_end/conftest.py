@@ -376,9 +376,12 @@ def pg_source(
     except Exception as exc:
         pytest.skip(f"PostgreSQL not available: {exc}")
 
-    # Create schema and insert fixture data
+    # Drop existing tables and recreate with fixture data
     assert connector.connection is not None
     with connector.connection.cursor() as cur:
+        for tbl in reversed(TABLE_NAMES):
+            cur.execute(f"DROP TABLE IF EXISTS public.{tbl} CASCADE")
+
         for stmt in PG_CREATE_SCHEMA.split(";"):
             stmt = stmt.strip()
             if stmt:
@@ -407,9 +410,14 @@ def mysql_source(
     except Exception as exc:
         pytest.skip(f"MySQL not available: {exc}")
 
-    # Create schema and insert fixture data
+    # Drop existing tables and recreate with fixture data
     assert connector.connection is not None
     with connector.connection.cursor() as cur:
+        cur.execute("SET FOREIGN_KEY_CHECKS=0")
+        for tbl in reversed(TABLE_NAMES):
+            cur.execute(f"DROP TABLE IF EXISTS {tbl}")
+        cur.execute("SET FOREIGN_KEY_CHECKS=1")
+
         for stmt in MYSQL_CREATE_SCHEMA.split(";"):
             stmt = stmt.strip()
             if stmt:
@@ -468,9 +476,14 @@ def mysql55_source(
     except Exception as exc:
         pytest.skip(f"MySQL 5.7 not available: {exc}")
 
-    # Create schema and insert fixture data
+    # Drop existing tables and recreate with fixture data
     assert connector.connection is not None
     with connector.connection.cursor() as cur:
+        cur.execute("SET FOREIGN_KEY_CHECKS=0")
+        for tbl in reversed(TABLE_NAMES):
+            cur.execute(f"DROP TABLE IF EXISTS {tbl}")
+        cur.execute("SET FOREIGN_KEY_CHECKS=1")
+
         for stmt in MYSQL_CREATE_SCHEMA.split(";"):
             stmt = stmt.strip()
             if stmt:
