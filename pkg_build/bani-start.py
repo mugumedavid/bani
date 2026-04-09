@@ -38,9 +38,8 @@ class AppDelegate(NSObject):
     statusItem = None
 
     def applicationDidFinishLaunching_(self, notification):
-        self.statusItem = (
-            NSStatusBar.systemStatusBar()
-            .statusItemWithLength_(NSVariableStatusItemLength)
+        self.statusItem = NSStatusBar.systemStatusBar().statusItemWithLength_(
+            NSVariableStatusItemLength
         )
         self.statusItem.setTitle_("B")
         self.statusItem.setHighlightMode_(True)
@@ -87,20 +86,23 @@ class AppDelegate(NSObject):
         subprocess.run(["pbcopy"], input=TOKEN.encode(), check=False)
 
     def openTerminal_(self, sender):
+        import tempfile
+
         bin_dir = _runtime_bin()
-        subprocess.run(
-            [
-                "osascript",
-                "-e", 'tell application "Terminal"',
-                "-e", "activate",
-                "-e", (
-                    f"do script \"export PATH='{bin_dir}':$PATH"
-                    " && echo 'bani ready — try: bani --help'\""
-                ),
-                "-e", "end tell",
-            ],
-            check=False,
+        script = tempfile.NamedTemporaryFile(
+            suffix=".command",
+            prefix="bani-",
+            delete=False,
+            mode="w",
         )
+        script.write(
+            f"export PATH='{bin_dir}':$PATH\n"
+            "echo 'bani ready — try: bani --help'\n"
+            "exec $SHELL\n"
+        )
+        script.close()
+        os.chmod(script.name, 0o755)
+        subprocess.run(["open", script.name], check=False)
 
     def quitApp_(self, sender):
         NSApp.terminate_(self)

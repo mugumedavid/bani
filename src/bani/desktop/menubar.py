@@ -78,22 +78,24 @@ class BaniApp(rumps.App):  # type: ignore[misc]  # rumps has no type stubs
 
     def open_terminal(self, _: Any) -> None:
         """Open Terminal.app with bani on PATH."""
+        import tempfile
+
         bin_dir = self.bani_home / "bin"
-        cmd = f"export PATH='{bin_dir}':$PATH && echo 'bani ready — try: bani --help'"
-        subprocess.run(
-            [
-                "osascript",
-                "-e",
-                'tell application "Terminal"',
-                "-e",
-                "activate",
-                "-e",
-                f'do script "{cmd}"',
-                "-e",
-                "end tell",
-            ],
-            check=False,
+        # Create a .command file — macOS opens these in Terminal
+        script = tempfile.NamedTemporaryFile(
+            suffix=".command",
+            prefix="bani-",
+            delete=False,
+            mode="w",
         )
+        script.write(
+            f"export PATH='{bin_dir}':$PATH\n"
+            "echo 'bani ready — try: bani --help'\n"
+            "exec $SHELL\n"
+        )
+        script.close()
+        os.chmod(script.name, 0o755)
+        subprocess.run(["open", script.name], check=False)
 
     def copy_token(self, _: Any) -> None:
         """Copy the auth token to clipboard."""
