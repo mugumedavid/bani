@@ -163,7 +163,7 @@ def _create_unix_wrapper(bin_dir: Path, install_dir: Path) -> None:
     wrapper.write_text(
         "#!/bin/sh\n"
         'BANI_HOME="$(cd "$(dirname "$0")/.." && pwd)"\n'
-        'exec "$BANI_HOME/python/bin/python3" -m bani.cli.app "$@"\n'
+        'exec "$BANI_HOME/python/bin/python3" -m bani "$@"\n'
     )
     wrapper.chmod(0o755)
     print(f"Created {wrapper}")
@@ -175,7 +175,7 @@ def _create_windows_wrapper(bin_dir: Path, install_dir: Path) -> None:
     wrapper.write_text(
         "@echo off\r\n"
         'set "BANI_HOME=%~dp0.."\r\n'
-        '"%BANI_HOME%\\python\\python.exe" -m bani.cli.app %*\r\n'
+        '"%BANI_HOME%\\python\\python.exe" -m bani %*\r\n'
     )
     print(f"Created {wrapper}")
 
