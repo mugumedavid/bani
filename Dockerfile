@@ -71,6 +71,9 @@ WORKDIR /home/bani
 # Default projects directory
 RUN mkdir -p /home/bani/.bani/projects
 
+# Ensure print() output appears immediately in docker logs
+ENV PYTHONUNBUFFERED=1
+
 # Expose ports: 8910 for Web UI
 EXPOSE 8910
 
