@@ -589,6 +589,74 @@ def oracle_sink(
     connector.disconnect()
 
 
+SQLITE_CREATE_SCHEMA = """
+CREATE TABLE categories (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    name VARCHAR(100) NOT NULL,
+    description TEXT,
+    created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+CREATE TABLE products (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    category_id INTEGER NOT NULL REFERENCES categories(id),
+    name VARCHAR(255) NOT NULL,
+    sku CHAR(12) NOT NULL UNIQUE,
+    price NUMERIC(10,2) NOT NULL,
+    weight_kg DOUBLE,
+    is_active BOOLEAN NOT NULL DEFAULT 1,
+    metadata TEXT,
+    created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+CREATE TABLE customers (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    email VARCHAR(255) NOT NULL UNIQUE,
+    full_name VARCHAR(200) NOT NULL,
+    notes TEXT,
+    registered_at DATE NOT NULL DEFAULT CURRENT_DATE
+);
+CREATE TABLE orders (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    customer_id INTEGER NOT NULL REFERENCES customers(id),
+    order_date TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    total_amount NUMERIC(12,2) NOT NULL,
+    status VARCHAR(20) NOT NULL DEFAULT 'pending'
+);
+CREATE TABLE order_items (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    order_id INTEGER NOT NULL REFERENCES orders(id),
+    product_id INTEGER NOT NULL REFERENCES products(id),
+    quantity INTEGER NOT NULL,
+    unit_price NUMERIC(10,2) NOT NULL
+);
+"""
+
+SQLITE_INSERT_DATA = """
+INSERT INTO categories (id, name, description) VALUES
+    (1, 'Electronics', 'Consumer electronics and gadgets'),
+    (2, 'Books', NULL),
+    (3, 'Special Items', '');
+INSERT INTO products
+    (id, category_id, name, sku, price, weight_kg, is_active, metadata) VALUES
+    (1, 1, 'Laptop Pro', 'LAPTOP-PRO16', 2499.99, 2.1, 1, '{"brand": "TechCo"}'),
+    (2, 1, 'USB Cable', 'USBC-CABLE01', 0.01, 0.05, 1, NULL),
+    (3, 2, 'Novel', 'NOVEL-SET001', 19.99, NULL, 1, '{}'),
+    (4, 3, 'Widget', 'WIDGET-PR01', 0.00, 0.0, 0, '{}');
+INSERT INTO customers (id, email, full_name, notes, registered_at) VALUES
+    (1, 'alice@example.com', 'Alice Smith', 'VIP', '2020-01-15'),
+    (2, 'bob@example.com', 'Bob Jones', NULL, '2024-12-31'),
+    (3, 'charlie@test.com', 'Charlie Brown', '', '2000-01-01');
+INSERT INTO orders (id, customer_id, order_date, total_amount, status) VALUES
+    (1, 1, '2024-06-15 10:30:00', 2500.00, 'completed'),
+    (2, 2, '2024-12-31 23:59:59', 19.99, 'pending'),
+    (3, 3, '2024-01-01 00:00:00', 0.01, 'shipped');
+INSERT INTO order_items (id, order_id, product_id, quantity, unit_price) VALUES
+    (1, 1, 1, 1, 2499.99),
+    (2, 1, 2, 1, 0.01),
+    (3, 2, 3, 1, 19.99),
+    (4, 3, 4, 1, 0.00);
+"""
+
+
 @pytest.fixture()
 def sqlite_source(
     sqlite_temp_path: str,
@@ -604,6 +672,19 @@ def sqlite_source(
         connector.connect(config)
     except Exception as exc:
         pytest.skip(f"SQLite not available: {exc}")
+
+    # Create schema and insert fixture data
+    assert connector.connection is not None
+    cursor = connector.connection.cursor()
+    for stmt in SQLITE_CREATE_SCHEMA.split(";"):
+        stmt = stmt.strip()
+        if stmt:
+            cursor.execute(stmt)
+    for stmt in SQLITE_INSERT_DATA.split(";"):
+        stmt = stmt.strip()
+        if stmt:
+            cursor.execute(stmt)
+    connector.connection.commit()
 
     yield connector
     connector.disconnect()

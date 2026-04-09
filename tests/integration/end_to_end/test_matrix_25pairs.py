@@ -113,11 +113,15 @@ def test_25pair_cross_database_matrix(
     # Test: Data transfer (read at least one batch from source)
     if len(schema.tables) > 0:
         first_table = schema.tables[0]
+
+        # Create table on target before writing
+        target_connector.create_table(first_table)
+
         batch_count = 0
-        for batch in source_connector.read_batches(
+        for batch in source_connector.read_table(
             first_table.table_name,
-            batch_size=100,
             schema_name=first_table.schema_name,
+            batch_size=100,
         ):
             batch_count += 1
             # Verify batch is not None and has rows
@@ -126,8 +130,8 @@ def test_25pair_cross_database_matrix(
             # Transfer this batch to target
             target_connector.write_batch(
                 first_table.table_name,
+                first_table.schema_name or "",
                 batch,
-                schema_name="public",
             )
         # Verify we read at least one batch
         assert batch_count > 0, f"No batches read from {first_table.table_name}"
