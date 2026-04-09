@@ -247,6 +247,7 @@ class BaniUIServer:
 
         print(f"Bani UI: {token_url}")
         print(f"API docs: {url}/docs")
+        print(f"Token: {self.auth_token}")
 
         # Auto-open browser on localhost
         if self.host in ("127.0.0.1", "localhost", "0.0.0.0"):
