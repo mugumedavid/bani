@@ -33,18 +33,14 @@ def build_rpm(arch: str = "x86_64") -> Path:
     for d in ["BUILD", "RPMS", "SOURCES", "SPECS", "SRPMS", "BUILDROOT"]:
         (rpmbuild_dir / d).mkdir(parents=True, exist_ok=True)
 
-    # Copy assembled files to BUILDROOT
     import shutil
 
-    buildroot = rpmbuild_dir / "BUILDROOT" / f"bani-{version}-1.{rpm_arch}"
-    if buildroot.exists():
-        shutil.rmtree(buildroot)
-    opt_bani = buildroot / "opt" / "bani"
-    shutil.copytree(install_dir, opt_bani)
-
-    usr_bin = buildroot / "usr" / "local" / "bin"
-    usr_bin.mkdir(parents=True)
-    (usr_bin / "bani").symlink_to("/opt/bani/bin/bani")
+    # Stage assembled files in SOURCES so %install can copy them
+    # into BUILDROOT (rpmbuild wipes BUILDROOT before %install).
+    staged = rpmbuild_dir / "SOURCES" / "bani-install"
+    if staged.exists():
+        shutil.rmtree(staged)
+    shutil.copytree(install_dir, staged)
 
     # Create .spec file
     spec = rpmbuild_dir / "SPECS" / "bani.spec"
@@ -62,12 +58,17 @@ def build_rpm(arch: str = "x86_64") -> Path:
         f"and SQLite with a Web UI, CLI, SDK, and MCP server.\n"
         f"\n"
         f"%install\n"
-        f"# Files already in BUILDROOT\n"
+        f"mkdir -p %{{buildroot}}/opt\n"
+        f"cp -a %{{_topdir}}/SOURCES/bani-install %{{buildroot}}/opt/bani\n"
+        f"mkdir -p %{{buildroot}}/usr/local/bin\n"
+        f"ln -sf /opt/bani/bin/bani %{{buildroot}}/usr/local/bin/bani\n"
         f"\n"
         f"%files\n"
         f"/opt/bani\n"
         f"/usr/local/bin/bani\n"
     )
+
+    buildroot = rpmbuild_dir / "BUILDROOT" / f"bani-{version}-1.{rpm_arch}"
 
     # Build RPM
     print("\nBuilding RPM...")
