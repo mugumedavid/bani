@@ -41,7 +41,7 @@ def _bani_home() -> Path:
     return Path("/opt/bani")
 
 
-class BaniApp(rumps.App):
+class BaniApp(rumps.App):  # type: ignore[misc]  # rumps has no type stubs
     """Menu bar app for Bani."""
 
     def __init__(self) -> None:
@@ -79,10 +79,7 @@ class BaniApp(rumps.App):
     def open_terminal(self, _: Any) -> None:
         """Open Terminal.app with bani on PATH."""
         bin_dir = self.bani_home / "bin"
-        cmd = (
-            f"export PATH='{bin_dir}':$PATH"
-            " && echo 'bani ready — try: bani --help'"
-        )
+        cmd = f"export PATH='{bin_dir}':$PATH && echo 'bani ready — try: bani --help'"
         subprocess.run(
             [
                 "osascript",

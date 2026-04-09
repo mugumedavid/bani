@@ -121,6 +121,7 @@ module = [
     "lxml", "lxml.*",
     "jsonschema", "jsonschema.*",
     "pyodbc", "pyodbc.*",
+    "rumps", "rumps.*",
 ]
 ignore_missing_imports = true
 
