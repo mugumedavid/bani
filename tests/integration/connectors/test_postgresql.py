@@ -58,18 +58,20 @@ def test_schema(
     """
     schema_name = "bani_test_schema"
 
-    with pg_connection.cursor() as cur:
-        # Drop if exists
-        cur.execute(f'DROP SCHEMA IF EXISTS "{schema_name}" CASCADE')
-        # Create fresh
-        cur.execute(f'CREATE SCHEMA "{schema_name}"')
-
-    yield schema_name
-
-    # Cleanup — rollback any failed transaction first
+    # Ensure clean transaction state before DDL
     pg_connection.rollback()
     with pg_connection.cursor() as cur:
         cur.execute(f'DROP SCHEMA IF EXISTS "{schema_name}" CASCADE')
+        cur.execute(f'CREATE SCHEMA "{schema_name}"')
+    pg_connection.commit()
+
+    yield schema_name
+
+    # Cleanup
+    pg_connection.rollback()
+    with pg_connection.cursor() as cur:
+        cur.execute(f'DROP SCHEMA IF EXISTS "{schema_name}" CASCADE')
+    pg_connection.commit()
 
 
 class TestPostgreSQLConnectorSchema:
