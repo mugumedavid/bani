@@ -43,6 +43,14 @@ dependencies = [
 [project.optional-dependencies]
 sqlite-extras = ["apsw>=3.40"]
 
+[dependency-groups]
+dev = [
+    "ruff>=0.7.0",
+    "mypy>=1.0",
+    "pytest>=7.0",
+    "pytest-anyio>=0.0.0",
+]
+
 [project.urls]
 Homepage = "https://bani.dev"
 Documentation = "https://docs.bani.dev"
