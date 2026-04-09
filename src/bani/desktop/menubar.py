@@ -1,8 +1,8 @@
 """Bani macOS menu bar app.
 
 Runs the Bani web UI server in a background thread and provides
-a menu bar icon with options to open the browser, view the token,
-and quit.
+a menu bar icon with options to open the browser, open a terminal
+with bani on PATH, view the token, and quit.
 
 Usage:
     python -m bani.desktop.menubar
@@ -10,13 +10,35 @@ Usage:
 
 from __future__ import annotations
 
+import os
 import secrets
 import subprocess
 import threading
 import webbrowser
+from pathlib import Path
 from typing import Any
 
 import rumps
+
+
+def _bani_home() -> Path:
+    """Resolve the Bani installation root.
+
+    When running from Bani.app, the layout is:
+        Bani.app/Contents/MacOS/bani-launcher
+        Bani.app/Contents/Resources/runtime/bin/bani
+        Bani.app/Contents/Resources/runtime/python/...
+    """
+    # Try app bundle layout first
+    resources = Path(__file__).resolve().parent
+    # Installed in site-packages inside the runtime
+    # Walk up to find the runtime/bin directory
+    for parent in resources.parents:
+        bin_dir = parent / "bin"
+        if (bin_dir / "bani").exists():
+            return parent
+    # Fallback: /opt/bani
+    return Path("/opt/bani")
 
 
 class BaniApp(rumps.App):
@@ -30,18 +52,22 @@ class BaniApp(rumps.App):
         )
         self.port = 8910
         self.token = secrets.token_urlsafe(32)
+        self.bani_home = _bani_home()
         self.server_thread: threading.Thread | None = None
-        self.server_running = False
 
         self.menu = [
             rumps.MenuItem("Open Bani", callback=self.open_browser),
+            rumps.MenuItem(
+                "Open Terminal",
+                callback=self.open_terminal,
+            ),
             rumps.MenuItem("Copy Token", callback=self.copy_token),
-            None,  # separator
+            None,
             rumps.MenuItem(
                 f"Server: localhost:{self.port}",
                 callback=None,
             ),
-            None,  # separator
+            None,
             rumps.MenuItem("Quit Bani", callback=self.quit_app),
         ]
 
@@ -50,6 +76,21 @@ class BaniApp(rumps.App):
         url = f"http://localhost:{self.port}?token={self.token}"
         webbrowser.open(url)
 
+    def open_terminal(self, _: Any) -> None:
+        """Open Terminal.app with bani on PATH."""
+        bin_dir = self.bani_home / "bin"
+        script = (
+            f'tell application "Terminal"\n'
+            f"  activate\n"
+            f'  do script "export PATH=\\"{bin_dir}:$PATH\\""'
+            f"\n"
+            f"end tell"
+        )
+        subprocess.run(
+            ["osascript", "-e", script],
+            check=False,
+        )
+
     def copy_token(self, _: Any) -> None:
         """Copy the auth token to clipboard."""
         subprocess.run(
@@ -57,10 +98,17 @@ class BaniApp(rumps.App):
             input=self.token.encode(),
             check=False,
         )
-        rumps.notification(
-            "Bani",
-            "Token copied",
-            "Auth token copied to clipboard.",
+        # Use osascript for notification — rumps.notification()
+        # requires a PlistBuddy setup that may not be present.
+        subprocess.run(
+            [
+                "osascript",
+                "-e",
+                "display notification "
+                '"Auth token copied to clipboard." '
+                'with title "Bani"',
+            ],
+            check=False,
         )
 
     def quit_app(self, _: Any) -> None:
@@ -68,21 +116,31 @@ class BaniApp(rumps.App):
         rumps.quit_application()
 
     def _start_server(self) -> None:
-        """Start the Bani UI server in a background thread."""
-        import os
+        """Start the Bani UI server in a background thread.
+
+        Retries on port conflict and catches all exceptions so the
+        menu bar stays alive even if the server fails.
+        """
+        import time as _time
 
         os.environ["BANI_AUTH_TOKEN"] = self.token
 
         from bani.ui.server import BaniUIServer
 
-        server = BaniUIServer(
-            host="127.0.0.1",
-            port=self.port,
-        )
-        # Override the token with ours
-        server.auth_token = self.token
-        self.server_running = True
-        server.start()
+        for attempt in range(3):
+            try:
+                server = BaniUIServer(
+                    host="127.0.0.1",
+                    port=self.port,
+                )
+                server.auth_token = self.token
+                server.start()
+                break
+            except Exception:
+                if attempt < 2:
+                    _time.sleep(2)
+                    self.port += 1  # try next port
+                    self.title = f"B:{self.port}"
 
     def run(self, **kwargs: Any) -> None:
         """Start server then run the menu bar app."""
