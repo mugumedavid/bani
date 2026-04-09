@@ -12,6 +12,61 @@ from pathlib import Path
 
 from pkg_build.build_common import REPO_ROOT, assemble, get_version
 
+# macOS .app Info.plist template
+_INFO_PLIST = """\
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN"
+  "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>CFBundleName</key>
+    <string>Bani</string>
+    <key>CFBundleDisplayName</key>
+    <string>Bani</string>
+    <key>CFBundleIdentifier</key>
+    <string>dev.bani.app</string>
+    <key>CFBundleVersion</key>
+    <string>{version}</string>
+    <key>CFBundleShortVersionString</key>
+    <string>{version}</string>
+    <key>CFBundleExecutable</key>
+    <string>bani-launcher</string>
+    <key>CFBundleIconFile</key>
+    <string>AppIcon</string>
+    <key>LSMinimumSystemVersion</key>
+    <string>11.0</string>
+    <key>LSUIElement</key>
+    <true/>
+    <key>NSHighResolutionCapable</key>
+    <true/>
+</dict>
+</plist>
+"""
+
+
+def _create_app_bundle(payload: Path, opt_bani: Path) -> None:
+    """Create a Bani.app bundle in the pkg payload."""
+    version = get_version()
+
+    app_dir = payload / "Applications" / "Bani.app"
+    contents = app_dir / "Contents"
+    macos = contents / "MacOS"
+    resources = contents / "Resources"
+    macos.mkdir(parents=True)
+    resources.mkdir(parents=True)
+
+    # Info.plist
+    (contents / "Info.plist").write_text(_INFO_PLIST.format(version=version))
+
+    # Launcher script
+    launcher = macos / "bani-launcher"
+    launcher.write_text(
+        "#!/bin/sh\nexec /opt/bani/python/bin/python3 -m bani.desktop.menubar\n"
+    )
+    launcher.chmod(0o755)
+
+    print(f"Created {app_dir}")
+
 
 def build_pkg(arch: str = "aarch64") -> Path:
     """Build a macOS .pkg installer.
@@ -35,9 +90,25 @@ def build_pkg(arch: str = "aarch64") -> Path:
     if payload.exists():
         shutil.rmtree(payload)
 
-    # Install to /opt/bani/
+    # Install runtime to /opt/bani/
     opt_bani = payload / "opt" / "bani"
     shutil.copytree(install_dir, opt_bani)
+
+    # Install rumps + pyobjc for the menu bar app
+    pip_bin = opt_bani / "python" / "bin" / "pip3"
+    subprocess.run(
+        [
+            str(pip_bin),
+            "install",
+            "--no-cache-dir",
+            "rumps>=0.4.0",
+            "pyobjc-framework-Cocoa>=9.0",
+        ],
+        check=True,
+    )
+
+    # Create Bani.app bundle in /Applications/
+    _create_app_bundle(payload, opt_bani)
 
     # Create symlink in /usr/local/bin/
     usr_bin = payload / "usr" / "local" / "bin"

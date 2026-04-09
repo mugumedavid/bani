@@ -42,6 +42,7 @@ dependencies = [
 
 [project.optional-dependencies]
 sqlite-extras = ["apsw>=3.40"]
+macos-app = ["rumps>=0.4.0", "pyobjc-framework-Cocoa>=9.0"]
 
 [dependency-groups]
 dev = [
