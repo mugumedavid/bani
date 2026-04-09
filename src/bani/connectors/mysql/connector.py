@@ -141,6 +141,11 @@ class MySQLConnector(SourceConnector, SinkConnector):
         # Initialize schema reader on the primary connection
         self._schema_reader = MySQLSchemaReader(self.connection, self._database)
 
+    @property
+    def default_schema(self) -> str:
+        """Return the connected database name."""
+        return self._database
+
     def _schema(self, schema_name: str) -> str:
         """Default empty schema to the connected database name."""
         return schema_name or self._database
@@ -453,14 +458,16 @@ class MySQLConnector(SourceConnector, SinkConnector):
             return val
         if "(" in val and ")" in val:
             return val
+        if upper in ("TRUE", "FALSE"):
+            return val
+        # MySQL requires parentheses around temporal defaults
+        # for DATE/TIME columns: DEFAULT (CURRENT_DATE)
         if upper in (
             "CURRENT_TIMESTAMP",
-            "TRUE",
-            "FALSE",
             "CURRENT_DATE",
             "CURRENT_TIME",
         ):
-            return val
+            return f"({val})"
         escaped = val.replace("'", "''")
         return f"'{escaped}'"
 

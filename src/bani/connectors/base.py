@@ -173,6 +173,17 @@ class SinkConnector(ABC):
     recommended_batch_size: int | None = None
     recommended_parallel_workers: int | None = None
 
+    @property
+    def default_schema(self) -> str:
+        """Return the sink's default schema name.
+
+        The orchestrator uses this to remap source schema names so
+        tables are created in the correct target schema/database.
+        Subclasses should override to return the connected database
+        name (MySQL/MSSQL) or owner (Oracle) or 'public' (PG).
+        """
+        return ""
+
     @abstractmethod
     def connect(self, config: ConnectionConfig, pool_size: int = 1) -> None:
         """Establish a connection to the target database.

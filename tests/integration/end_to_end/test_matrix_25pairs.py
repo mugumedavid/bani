@@ -102,6 +102,5 @@ def test_25pair_cross_database_matrix(
     # Verify: total rows match the fixture data
     expected_total = sum(EXPECTED_ROW_COUNTS.values())
     assert result.total_rows_written == expected_total, (
-        f"Expected {expected_total} rows, "
-        f"got {result.total_rows_written}"
+        f"Expected {expected_total} rows, got {result.total_rows_written}"
     )

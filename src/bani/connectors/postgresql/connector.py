@@ -129,6 +129,11 @@ class PostgreSQLConnector(SourceConnector, SinkConnector):
         # Initialize schema reader on the primary connection
         self._schema_reader = PostgreSQLSchemaReader(self.connection)
 
+    @property
+    def default_schema(self) -> str:
+        """Return the default schema for PostgreSQL."""
+        return "public"
+
     def disconnect(self) -> None:
         """Close the database connection.
 

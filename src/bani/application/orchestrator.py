@@ -469,6 +469,10 @@ class MigrationOrchestrator:
         """
         failed: dict[str, str] = {}
 
+        # Remap source schema to the sink's default schema so tables
+        # are created in the correct target database/schema.
+        target_schema = self.sink.default_schema
+
         for table in source_schema.tables:
             # Skip tables with no columns (e.g. empty types or stubs)
             if not table.columns:
@@ -478,6 +482,12 @@ class MigrationOrchestrator:
                 )
                 self._skipped_tables.append(table.fully_qualified_name)
                 continue
+
+            # Remap schema name to target
+            if target_schema and table.schema_name != target_schema:
+                from dataclasses import replace as dc_replace
+
+                table = dc_replace(table, schema_name=target_schema)
 
             # Drop if requested
             if self.options.drop_target_tables_first:
@@ -898,9 +908,10 @@ class MigrationOrchestrator:
                 chunk_read += rows_in_batch
 
                 try:
+                    target_schema = self.sink.default_schema or table.schema_name
                     rows_written = self.sink.write_batch(
                         table.table_name,
-                        table.schema_name,
+                        target_schema,
                         batch,
                     )
                     chunk_written += rows_written
@@ -1156,9 +1167,10 @@ class MigrationOrchestrator:
                 total_rows_read += rows_read
 
                 try:
+                    target_schema = self.sink.default_schema or table.schema_name
                     rows_written = self.sink.write_batch(
                         table.table_name,
-                        table.schema_name,
+                        target_schema,
                         batch,
                     )
                     total_rows_written += rows_written

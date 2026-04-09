@@ -226,6 +226,11 @@ class OracleConnector(SourceConnector, SinkConnector):
         except Exception:
             pass  # Best-effort — don't fail the migration
 
+    @property
+    def default_schema(self) -> str:
+        """Return the default schema (owner) for Oracle."""
+        return self._owner
+
     def disconnect(self) -> None:
         """Close the database connection.
 

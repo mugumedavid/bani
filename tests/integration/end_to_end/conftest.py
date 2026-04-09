@@ -525,8 +525,11 @@ def mysql_source(
     # so all pool connections see committed data.
     try:
         raw = _pymysql.connect(
-            host=host, port=port, database=db,
-            user=user, password=pwd,
+            host=host,
+            port=port,
+            database=db,
+            user=user,
+            password=pwd,
         )
     except Exception as exc:
         pytest.skip(f"MySQL not available: {exc}")
@@ -665,8 +668,7 @@ def mssql_source(
     cursor = connector.connection.cursor()
     for tbl in reversed(TABLE_NAMES):
         cursor.execute(
-            f"IF OBJECT_ID('dbo.{tbl}', 'U') IS NOT NULL "
-            f"DROP TABLE dbo.{tbl}"
+            f"IF OBJECT_ID('dbo.{tbl}', 'U') IS NOT NULL DROP TABLE dbo.{tbl}"
         )
     connector.connection.commit()
 

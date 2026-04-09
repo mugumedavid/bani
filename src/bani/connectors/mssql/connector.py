@@ -308,6 +308,11 @@ class MSSQLConnector(SourceConnector, SinkConnector):
 
         return conn
 
+    @property
+    def default_schema(self) -> str:
+        """Return the default schema for MSSQL (dbo)."""
+        return "dbo"
+
     def disconnect(self) -> None:
         """Close the database connection.
 

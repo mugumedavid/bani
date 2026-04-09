@@ -125,6 +125,11 @@ class SQLiteConnector(SourceConnector, SinkConnector):
         # Initialize schema reader on the primary connection
         self._schema_reader = SQLiteSchemaReader(self.connection)
 
+    @property
+    def default_schema(self) -> str:
+        """Return the default schema for SQLite."""
+        return "main"
+
     def disconnect(self) -> None:
         """Close the database connection.
 
