@@ -66,7 +66,8 @@ def test_schema(
 
     yield schema_name
 
-    # Cleanup
+    # Cleanup — rollback any failed transaction first
+    pg_connection.rollback()
     with pg_connection.cursor() as cur:
         cur.execute(f'DROP SCHEMA IF EXISTS "{schema_name}" CASCADE')
 

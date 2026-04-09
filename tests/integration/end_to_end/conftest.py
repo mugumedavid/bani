@@ -326,6 +326,91 @@ INSERT INTO order_items (id, order_id, product_id, quantity, unit_price) VALUES
 """
 
 
+MSSQL_CREATE_SCHEMA = [
+    """CREATE TABLE dbo.categories (
+        id INT IDENTITY(1,1) PRIMARY KEY,
+        name NVARCHAR(100) NOT NULL,
+        description NVARCHAR(MAX),
+        created_at DATETIME2 NOT NULL DEFAULT GETDATE()
+    )""",
+    """CREATE TABLE dbo.products (
+        id INT IDENTITY(1,1) PRIMARY KEY,
+        category_id INT NOT NULL FOREIGN KEY REFERENCES dbo.categories(id),
+        name NVARCHAR(255) NOT NULL,
+        sku CHAR(12) NOT NULL UNIQUE,
+        price DECIMAL(10,2) NOT NULL,
+        weight_kg FLOAT,
+        is_active BIT NOT NULL DEFAULT 1,
+        metadata NVARCHAR(MAX),
+        created_at DATETIME2 NOT NULL DEFAULT GETDATE()
+    )""",
+    """CREATE TABLE dbo.customers (
+        id INT IDENTITY(1,1) PRIMARY KEY,
+        email NVARCHAR(255) NOT NULL UNIQUE,
+        full_name NVARCHAR(200) NOT NULL,
+        notes NVARCHAR(MAX),
+        registered_at DATE NOT NULL DEFAULT GETDATE()
+    )""",
+    """CREATE TABLE dbo.orders (
+        id INT IDENTITY(1,1) PRIMARY KEY,
+        customer_id INT NOT NULL FOREIGN KEY REFERENCES dbo.customers(id),
+        order_date DATETIME2 NOT NULL DEFAULT GETDATE(),
+        total_amount DECIMAL(12,2) NOT NULL,
+        status NVARCHAR(20) NOT NULL DEFAULT 'pending'
+    )""",
+    """CREATE TABLE dbo.order_items (
+        id INT IDENTITY(1,1) PRIMARY KEY,
+        order_id INT NOT NULL FOREIGN KEY REFERENCES dbo.orders(id),
+        product_id INT NOT NULL FOREIGN KEY REFERENCES dbo.products(id),
+        quantity INT NOT NULL,
+        unit_price DECIMAL(10,2) NOT NULL
+    )""",
+]
+
+MSSQL_INSERT_DATA = [
+    """SET IDENTITY_INSERT dbo.categories ON;
+    INSERT INTO dbo.categories (id, name, description) VALUES
+        (1, 'Electronics', 'Consumer electronics'),
+        (2, 'Books', NULL),
+        (3, 'Special Items', '');
+    SET IDENTITY_INSERT dbo.categories OFF""",
+    """SET IDENTITY_INSERT dbo.products ON;
+    INSERT INTO dbo.products
+        (id, category_id, name, sku, price, weight_kg, is_active, metadata)
+    VALUES
+        (1, 1, 'Laptop Pro', 'LAPTOP-PRO16', 2499.99, 2.1, 1,
+         '{"brand": "TechCo"}'),
+        (2, 1, 'USB Cable', 'USBC-CABLE01', 0.01, 0.05, 1, NULL),
+        (3, 2, 'Novel', 'NOVEL-SET001', 19.99, NULL, 1, '{}'),
+        (4, 3, 'Widget', 'WIDGET-PR01', 0.00, 0.0, 0, '{}');
+    SET IDENTITY_INSERT dbo.products OFF""",
+    """SET IDENTITY_INSERT dbo.customers ON;
+    INSERT INTO dbo.customers
+        (id, email, full_name, notes, registered_at)
+    VALUES
+        (1, 'alice@example.com', 'Alice Smith', 'VIP', '2020-01-15'),
+        (2, 'bob@example.com', 'Bob Jones', NULL, '2024-12-31'),
+        (3, 'charlie@test.com', 'Charlie Brown', '', '2000-01-01');
+    SET IDENTITY_INSERT dbo.customers OFF""",
+    """SET IDENTITY_INSERT dbo.orders ON;
+    INSERT INTO dbo.orders
+        (id, customer_id, order_date, total_amount, status)
+    VALUES
+        (1, 1, '2024-06-15 10:30:00', 2500.00, 'completed'),
+        (2, 2, '2024-12-31 23:59:59', 19.99, 'pending'),
+        (3, 3, '2024-01-01 00:00:00', 0.01, 'shipped');
+    SET IDENTITY_INSERT dbo.orders OFF""",
+    """SET IDENTITY_INSERT dbo.order_items ON;
+    INSERT INTO dbo.order_items
+        (id, order_id, product_id, quantity, unit_price)
+    VALUES
+        (1, 1, 1, 1, 2499.99),
+        (2, 1, 2, 1, 0.01),
+        (3, 2, 3, 1, 19.99),
+        (4, 3, 4, 1, 0.00);
+    SET IDENTITY_INSERT dbo.order_items OFF""",
+]
+
 # Table names in dependency order (parents first)
 TABLE_NAMES = ("categories", "products", "customers", "orders", "order_items")
 
@@ -534,6 +619,25 @@ def mssql_source(
         connector.connect(mssql_config)
     except Exception as exc:
         pytest.skip(f"MSSQL not available: {exc}")
+
+    # Drop existing tables and recreate with fixture data
+    assert connector.connection is not None
+    cursor = connector.connection.cursor()
+    for tbl in reversed(TABLE_NAMES):
+        cursor.execute(
+            f"IF OBJECT_ID('dbo.{tbl}', 'U') IS NOT NULL "
+            f"DROP TABLE dbo.{tbl}"
+        )
+    connector.connection.commit()
+
+    for stmt in MSSQL_CREATE_SCHEMA:
+        cursor.execute(stmt)
+    connector.connection.commit()
+
+    for stmt in MSSQL_INSERT_DATA:
+        cursor.execute(stmt)
+    connector.connection.commit()
+    cursor.close()
 
     yield connector
     connector.disconnect()

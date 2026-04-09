@@ -102,6 +102,12 @@ jobs:
             -S localhost -U sa -P 'BaniTest123!' -C \
             -Q "CREATE DATABASE bani_test" || true
 
+      - name: Grant MySQL user full privileges
+        run: |
+          docker exec ${{ job.services.mysql.id }} \
+            mysql -uroot -pbani_test \
+            -e "GRANT ALL PRIVILEGES ON bani_test.* TO 'bani_test'@'%'; FLUSH PRIVILEGES;"
+
       - name: Run integration tests
         env:
           PG_HOST: localhost
