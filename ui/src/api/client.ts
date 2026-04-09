@@ -219,8 +219,9 @@ export interface MigrateStatusResponse {
   elapsed_seconds: number;
 }
 
-export function getMigrateStatus(): Promise<MigrateStatusResponse> {
-  return request<MigrateStatusResponse>('/api/migrate/status');
+export function getMigrateStatus(includeTables = false): Promise<MigrateStatusResponse> {
+  const qs = includeTables ? '?include_tables=true' : '';
+  return request<MigrateStatusResponse>(`/api/migrate/status${qs}`);
 }
 
 export function cancelMigration(): Promise<{ detail: string }> {

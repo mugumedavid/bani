@@ -632,8 +632,18 @@ async def start_migration(body: MigrateRequest, request: Request) -> Any:
 
 
 @router.get("/migrate/status", response_model=MigrateStatus)
-async def get_status(request: Request) -> MigrateStatus:
+async def get_status(
+    request: Request,
+    include_tables: bool = False,
+) -> MigrateStatus:
     """Get the current migration status.
+
+    Args:
+        request: The incoming request.
+        include_tables: Include per-table progress in response.
+            Only needed on initial page load or refresh —
+            subsequent polls should omit this to keep the
+            response lightweight.
 
     Returns:
         Current migration state including progress counters.
@@ -657,7 +667,9 @@ async def get_status(request: Request) -> MigrateStatus:
         current_table=state.get("current_table"),
         table_failures=state.get("table_failures", []),
         warnings=state.get("warnings", []),
-        table_progress=state.get("table_progress", {}),
+        table_progress=(
+            state.get("table_progress", {}) if include_tables else {}
+        ),
         elapsed_seconds=elapsed,
     )
 

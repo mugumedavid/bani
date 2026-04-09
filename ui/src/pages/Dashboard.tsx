@@ -195,7 +195,7 @@ export function Dashboard() {
 
   const { data: migrateStatus } = useQuery<MigrateStatusResponse>({
     queryKey: ['migrateStatus'],
-    queryFn: getMigrateStatus,
+    queryFn: () => getMigrateStatus(),
     refetchInterval: (query) =>
       query.state.data?.running ? 5000 : false,
   });

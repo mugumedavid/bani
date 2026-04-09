@@ -35,7 +35,7 @@ export function MigrationMonitor() {
 
   const { data: migrateStatus } = useQuery<MigrateStatusResponse>({
     queryKey: ['migrateStatus'],
-    queryFn: getMigrateStatus,
+    queryFn: () => getMigrateStatus(),
     refetchInterval: (query) => {
       const running = query.state.data?.running;
       if (running) return 2000;
@@ -89,14 +89,21 @@ export function MigrationMonitor() {
   const events = useAppStore((s) => s.migrationEvents);
   const tableProgress = useAppStore((s) => s.tableProgress);
 
-  // Hydrate per-table progress from server state on page refresh
+  // Hydrate per-table progress from server on page refresh (one-time)
+  const [hydrated, setHydrated] = useState(false);
   useEffect(() => {
-    const tp = migrateStatus?.table_progress;
-    if (tp && Object.keys(tp).length > 0 && Object.keys(tableProgress).length === 0) {
+    if (hydrated || Object.keys(tableProgress).length > 0) return;
+    if (!isRunning && !migrateStatus?.tables_completed) return;
+    getMigrateStatus(true).then((full) => {
+      const tp = full.table_progress;
+      if (!tp || Object.keys(tp).length === 0) return;
       const store = useAppStore.getState();
       const entries = Object.values(tp);
       store.initTableProgress(
-        entries.map((e) => ({ name: e.table_name, estimated_rows: e.total_rows })),
+        entries.map((e) => ({
+          name: e.table_name,
+          estimated_rows: e.total_rows,
+        })),
       );
       for (const e of entries) {
         if (e.status === 'completed') {
@@ -108,8 +115,9 @@ export function MigrationMonitor() {
           store.updateTableStatus(e.table_name, 'failed');
         }
       }
-    }
-  }, [migrateStatus?.table_progress, tableProgress]);
+      setHydrated(true);
+    });
+  }, [hydrated, tableProgress, isRunning, migrateStatus?.tables_completed]);
 
   // Show only tables that have started (running/completed/failed).
   // Running tables at top, completed accumulate below.
