@@ -88,11 +88,17 @@ def assemble(
     print(f"Copying Python to {python_dest}...")
     shutil.copytree(python_src, python_dest)
 
-    # Determine pip path
+    # Determine Python executable path
     if target_os == "windows":
-        pip_bin = python_dest / "Scripts" / "pip.exe"
+        python_exe = python_dest / "python.exe"
     else:
-        pip_bin = python_dest / "bin" / "pip3"
+        python_exe = python_dest / "bin" / "python3"
+
+    # Bootstrap pip (stripped distributions may not have pip entry-point scripts)
+    subprocess.run(
+        [str(python_exe), "-m", "ensurepip", "--upgrade"],
+        check=True,
+    )
 
     # 2. Install Bani + dependencies
     print("\n=== Installing Bani + dependencies ===")
@@ -107,7 +113,7 @@ def assemble(
 
     wheel = next(wheel_dir.glob("bani-*.whl"))
     subprocess.run(
-        [str(pip_bin), "install", "--no-cache-dir", str(wheel)],
+        [str(python_exe), "-m", "pip", "install", "--no-cache-dir", str(wheel)],
         check=True,
     )
 
