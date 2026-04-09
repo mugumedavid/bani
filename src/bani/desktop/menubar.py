@@ -89,9 +89,10 @@ class BaniApp(rumps.App):  # type: ignore[misc]  # rumps has no type stubs
             mode="w",
         )
         script.write(
+            "#!/bin/sh\n"
             f"export PATH='{bin_dir}':$PATH\n"
-            "echo 'bani ready — try: bani --help'\n"
-            "exec $SHELL\n"
+            "echo 'bani ready - try: bani --help'\n"
+            'exec "$SHELL" -i\n'
         )
         script.close()
         os.chmod(script.name, 0o755)

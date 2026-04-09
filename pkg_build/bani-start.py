@@ -86,23 +86,21 @@ class AppDelegate(NSObject):
         subprocess.run(["pbcopy"], input=TOKEN.encode(), check=False)
 
     def openTerminal_(self, sender):
-        import tempfile
-
-        bin_dir = _runtime_bin()
-        script = tempfile.NamedTemporaryFile(
-            suffix=".command",
-            prefix="bani-",
-            delete=False,
-            mode="w",
-        )
-        script.write(
-            f"export PATH='{bin_dir}':$PATH\n"
-            "echo 'bani ready — try: bani --help'\n"
-            "exec $SHELL\n"
-        )
-        script.close()
-        os.chmod(script.name, 0o755)
-        subprocess.run(["open", script.name], check=False)
+        try:
+            bin_dir = _runtime_bin()
+            script_path = "/tmp/bani-terminal.command"
+            with open(script_path, "w", encoding="utf-8") as f:
+                f.write(
+                    "#!/bin/sh\n"
+                    f"export PATH='{bin_dir}':$PATH\n"
+                    "echo 'bani ready - try: bani --help'\n"
+                    'exec "$SHELL" -i\n'
+                )
+            os.chmod(script_path, 0o755)
+            subprocess.Popen(["open", script_path])
+        except Exception as exc:
+            with open("/tmp/bani-menu-debug.txt", "w") as dbg:
+                dbg.write(f"error: {exc}\n")
 
     def quitApp_(self, sender):
         NSApp.terminate_(self)
