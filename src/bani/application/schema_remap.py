@@ -77,23 +77,25 @@ class SchemaRemapper:
             new_schema_name = resolved_target if needs_remap else table.schema_name
 
             # Remap FK references
-            remapped_fks = tuple(
-                dc_replace(
-                    fk,
-                    source_table=SchemaRemapper._remap_fqn(
-                        fk.source_table, resolved_target
-                    ),
-                    referenced_table=SchemaRemapper._remap_fqn(
-                        fk.referenced_table, resolved_target
-                    ),
+            remapped_fks = (
+                tuple(
+                    dc_replace(
+                        fk,
+                        source_table=SchemaRemapper._remap_fqn(
+                            fk.source_table, resolved_target
+                        ),
+                        referenced_table=SchemaRemapper._remap_fqn(
+                            fk.referenced_table, resolved_target
+                        ),
+                    )
+                    for fk in table.foreign_keys
                 )
-                for fk in table.foreign_keys
-            ) if needs_remap else table.foreign_keys
+                if needs_remap
+                else table.foreign_keys
+            )
 
             # Strip check constraints for cross-dialect migrations
-            check_constraints = (
-                () if is_cross_dialect else table.check_constraints
-            )
+            check_constraints = () if is_cross_dialect else table.check_constraints
 
             tables.append(
                 dc_replace(

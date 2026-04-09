@@ -46,6 +46,7 @@ def _init_oracle_thick_if_needed() -> None:
                     from bani.connectors.oracle.connector import (
                         _init_thick_mode,
                     )
+
                     _init_thick_mode(opt_val)
                     return  # Only need to init once
     except Exception as exc:
@@ -190,8 +191,8 @@ class BaniUIServer:
         package_dir = Path(__file__).resolve().parent
         repo_root = package_dir.parent.parent.parent  # src/bani/ui -> repo root
         candidates = [
-            repo_root / "ui" / "dist",   # development layout
-            package_dir / "dist",         # bundled layout
+            repo_root / "ui" / "dist",  # development layout
+            package_dir / "dist",  # bundled layout
         ]
         dist_dir = next((d for d in candidates if d.is_dir()), None)
 

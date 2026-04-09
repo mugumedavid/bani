@@ -85,9 +85,7 @@ class ActiveMigrationTracker:
         active: list[dict[str, object]] = []
         for path in sorted(self._dir.glob("*.json")):
             try:
-                data: dict[str, object] = json.loads(
-                    path.read_text(encoding="utf-8")
-                )
+                data: dict[str, object] = json.loads(path.read_text(encoding="utf-8"))
             except (json.JSONDecodeError, OSError):
                 continue
             pid = data.get("pid")

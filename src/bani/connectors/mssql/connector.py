@@ -23,6 +23,7 @@ try:
     # /opt/homebrew/etc (Apple Silicon).
     if "ODBCSYSINI" not in os.environ:
         import platform as _plat
+
         # Apple Silicon first, then Intel, then system
         _candidates = ["/opt/homebrew/etc", "/usr/local/etc", "/etc"]
         if _plat.machine() != "arm64":
@@ -56,11 +57,20 @@ from bani.domain.schema import (
     TableDefinition,
 )
 
-register_dialect_defaults("mssql", DialectDefaultConfig(
-    timestamp_expression="GETDATE()",
-    temporal_keywords=("datetime", "date", "time", "smalldatetime",
-                       "datetime2", "datetimeoffset"),
-))
+register_dialect_defaults(
+    "mssql",
+    DialectDefaultConfig(
+        timestamp_expression="GETDATE()",
+        temporal_keywords=(
+            "datetime",
+            "date",
+            "time",
+            "smalldatetime",
+            "datetime2",
+            "datetimeoffset",
+        ),
+    ),
+)
 
 _log = logging.getLogger(__name__)
 
@@ -135,15 +145,18 @@ class MSSQLConnector(SourceConnector, SinkConnector):
         if pyodbc_module is not None:
             try:
                 test_conn = self._connect_pyodbc(
-                    config.host, port, config.database, username, password,
+                    config.host,
+                    port,
+                    config.database,
+                    username,
+                    password,
                 )
                 test_conn.close()
                 driver = "pyodbc"
                 _log.info("MSSQL: using pyodbc (fast_executemany)")
             except Exception as exc:
                 _log.info(
-                    "MSSQL: pyodbc connection failed (%s), "
-                    "falling back to pymssql",
+                    "MSSQL: pyodbc connection failed (%s), falling back to pymssql",
                     exc,
                 )
 
@@ -151,15 +164,25 @@ class MSSQLConnector(SourceConnector, SinkConnector):
 
         # Build pool factory based on chosen driver
         if driver == "pyodbc":
+
             def factory() -> Any:
                 return self._connect_pyodbc(
-                    config.host, port, config.database, username, password,
+                    config.host,
+                    port,
+                    config.database,
+                    username,
+                    password,
                 )
         else:
+
             def factory() -> Any:
                 return self._connect_pymssql(
-                    config.host, port, config.database,
-                    username, password, config.encrypt,
+                    config.host,
+                    port,
+                    config.database,
+                    username,
+                    password,
+                    config.encrypt,
                 )
 
         # pymssql/FreeTDS has known stability issues under concurrent
@@ -263,8 +286,11 @@ class MSSQLConnector(SourceConnector, SinkConnector):
 
         _log.info(
             "[MSSQL-CONN] pymssql connecting to %s:%d/%s timeout=%s tds=%s",
-            host, port, database,
-            connect_kwargs.get("timeout"), connect_kwargs.get("tds_version"),
+            host,
+            port,
+            database,
+            connect_kwargs.get("timeout"),
+            connect_kwargs.get("tds_version"),
         )
         conn = pymssql_module.connect(**connect_kwargs)
         _log.info("[MSSQL-CONN] pymssql connected OK: conn=%s", id(conn))
@@ -276,7 +302,8 @@ class MSSQLConnector(SourceConnector, SinkConnector):
         except Exception as exc:
             _log.warning(
                 "[MSSQL-CONN] SET TEXTSIZE failed on conn=%s: %s",
-                id(conn), exc,
+                id(conn),
+                exc,
             )
 
         return conn
@@ -344,7 +371,9 @@ class MSSQLConnector(SourceConnector, SinkConnector):
             conn = self._pool._factory()
             try:
                 reader = MSSQLDataReader(
-                    conn, self._driver, reconnect_fn=self._pool._factory,
+                    conn,
+                    self._driver,
+                    reconnect_fn=self._pool._factory,
                 )
                 yield from reader.read_table(
                     table_name=table_name,
@@ -430,9 +459,7 @@ class MSSQLConnector(SourceConnector, SinkConnector):
             if col.is_auto_increment:
                 col_def += " IDENTITY(1,1)"
             elif col.default_value:
-                translated = translate_default(
-                    col.default_value, "mssql", mssql_type
-                )
+                translated = translate_default(col.default_value, "mssql", mssql_type)
                 if translated is not None:
                     translated = self._normalize_default(translated, mssql_type)
                     col_def += f" DEFAULT {translated}"
@@ -468,10 +495,7 @@ class MSSQLConnector(SourceConnector, SinkConnector):
             f"IF OBJECT_ID('[{schema}].[{tname}]', 'U') "
             f"IS NOT NULL DROP TABLE [{schema}].[{tname}]"
         )
-        create_sql = (
-            f"CREATE TABLE [{schema}].[{tname}] "
-            f"({col_list})"
-        )
+        create_sql = f"CREATE TABLE [{schema}].[{tname}] ({col_list})"
 
         with self._pool.acquire() as conn:
             with conn.cursor() as cur:
@@ -537,7 +561,10 @@ class MSSQLConnector(SourceConnector, SinkConnector):
 
         # SQL keywords
         if upper in (
-            "CURRENT_TIMESTAMP", "GETDATE", "NEWID", "DEFAULT",
+            "CURRENT_TIMESTAMP",
+            "GETDATE",
+            "NEWID",
+            "DEFAULT",
         ):
             return val
 
@@ -708,8 +735,7 @@ class MSSQLConnector(SourceConnector, SinkConnector):
                 if is_conn_error:
                     consecutive_conn_failures += 1
                     _log.warning(
-                        "Connection broken during FK creation "
-                        "(%d/%d): %s",
+                        "Connection broken during FK creation (%d/%d): %s",
                         consecutive_conn_failures,
                         max_conn_failures,
                         exc,
@@ -718,8 +744,7 @@ class MSSQLConnector(SourceConnector, SinkConnector):
 
                 # 1785: cascade cycles — retry without cascade
                 if "(1785)" in exc_str and (
-                    on_delete != "NO ACTION"
-                    or on_update != "NO ACTION"
+                    on_delete != "NO ACTION" or on_update != "NO ACTION"
                 ):
                     retry_sql = (
                         f"ALTER TABLE [{src_schema}].[{src_table}] "
@@ -737,7 +762,9 @@ class MSSQLConnector(SourceConnector, SinkConnector):
                         _log.info(
                             "FK %s on %s.%s created with "
                             "NO ACTION (cascade would cycle)",
-                            unique_name, src_schema, src_table,
+                            unique_name,
+                            src_schema,
+                            src_table,
                         )
                         continue
                     except Exception:
@@ -747,9 +774,7 @@ class MSSQLConnector(SourceConnector, SinkConnector):
                 # unique index on the referenced columns first
                 if "(1776)" in exc_str:
                     idx_name = f"UQ_{ref_table}_{'_'.join(fk.referenced_columns)}"[:128]
-                    idx_cols = ", ".join(
-                        f"[{c}]" for c in fk.referenced_columns
-                    )
+                    idx_cols = ", ".join(f"[{c}]" for c in fk.referenced_columns)
                     try:
                         with self._pool.acquire() as conn:
                             with conn.cursor() as cur:
@@ -761,10 +786,12 @@ class MSSQLConnector(SourceConnector, SinkConnector):
                                 )
                                 cur.execute(alter_sql)
                         _log.info(
-                            "FK %s on %s.%s created after "
-                            "adding unique index on %s.%s",
-                            unique_name, src_schema, src_table,
-                            ref_schema, ref_table,
+                            "FK %s on %s.%s created after adding unique index on %s.%s",
+                            unique_name,
+                            src_schema,
+                            src_table,
+                            ref_schema,
+                            ref_table,
                         )
                         continue
                     except Exception:
@@ -799,9 +826,10 @@ class MSSQLConnector(SourceConnector, SinkConnector):
                                         )
                                 cur.execute(alter_sql)
                         _log.info(
-                            "FK %s on %s.%s created after "
-                            "aligning column types",
-                            unique_name, src_schema, src_table,
+                            "FK %s on %s.%s created after aligning column types",
+                            unique_name,
+                            src_schema,
+                            src_table,
                         )
                         continue
                     except Exception:

@@ -151,29 +151,19 @@ class TestPostgreSQLSchemaReader:
         reader = PostgreSQLSchemaReader(mock_conn)
 
         table_key = ("public", "users")
-        col = ColumnDefinition(
-            name="id", data_type="integer", ordinal_position=0
-        )
+        col = ColumnDefinition(name="id", data_type="integer", ordinal_position=0)
 
         with (
-            mock_patch.object(
-                reader, "_fetch_table_list", return_value=[table_key]
-            ),
+            mock_patch.object(reader, "_fetch_table_list", return_value=[table_key]),
             mock_patch.object(
                 reader, "_fetch_all_columns", return_value={table_key: [col]}
             ),
             mock_patch.object(
                 reader, "_fetch_all_primary_keys", return_value={table_key: ["id"]}
             ),
-            mock_patch.object(
-                reader, "_fetch_all_indexes", return_value={}
-            ),
-            mock_patch.object(
-                reader, "_fetch_all_foreign_keys", return_value={}
-            ),
-            mock_patch.object(
-                reader, "_fetch_all_check_constraints", return_value={}
-            ),
+            mock_patch.object(reader, "_fetch_all_indexes", return_value={}),
+            mock_patch.object(reader, "_fetch_all_foreign_keys", return_value={}),
+            mock_patch.object(reader, "_fetch_all_check_constraints", return_value={}),
             mock_patch.object(
                 reader, "_fetch_all_row_counts", return_value={table_key: 42}
             ),

@@ -42,9 +42,7 @@ class TestBaniUIServer:
         """Health endpoint does not require authentication."""
         server = BaniUIServer()
         transport = ASGITransport(app=server.app)  # type: ignore[arg-type]
-        async with AsyncClient(
-            transport=transport, base_url="http://testserver"
-        ) as ac:
+        async with AsyncClient(transport=transport, base_url="http://testserver") as ac:
             resp = await ac.get("/api/health")
         assert resp.status_code == 200
         assert resp.json() == {"status": "ok"}
@@ -54,9 +52,7 @@ class TestBaniUIServer:
         """Root returns either the SPA (200 HTML) or a fallback JSON message."""
         server = BaniUIServer()
         transport = ASGITransport(app=server.app)  # type: ignore[arg-type]
-        async with AsyncClient(
-            transport=transport, base_url="http://testserver"
-        ) as ac:
+        async with AsyncClient(transport=transport, base_url="http://testserver") as ac:
             resp = await ac.get("/")
         assert resp.status_code == 200
 

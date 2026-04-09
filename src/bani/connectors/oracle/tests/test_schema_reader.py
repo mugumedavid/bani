@@ -111,9 +111,7 @@ class TestOracleSchemaReader:
         reader = self._make_reader()
 
         table_name = "USERS"
-        col = ColumnDefinition(
-            name="ID", data_type="NUMBER(10,0)", ordinal_position=0
-        )
+        col = ColumnDefinition(name="ID", data_type="NUMBER(10,0)", ordinal_position=0)
         idx = IndexDefinition(
             name="IDX_USERS_NAME",
             columns=("NAME",),
@@ -131,9 +129,7 @@ class TestOracleSchemaReader:
         )
 
         with (
-            patch.object(
-                reader, "_fetch_table_list", return_value=[table_name]
-            ),
+            patch.object(reader, "_fetch_table_list", return_value=[table_name]),
             patch.object(
                 reader, "_fetch_all_columns", return_value={table_name: [col]}
             ),
@@ -182,9 +178,7 @@ class TestOracleSchemaReader:
         reader = self._make_reader()
 
         with (
-            patch.object(
-                reader, "_fetch_table_list", return_value=["ORPHAN_TABLE"]
-            ),
+            patch.object(reader, "_fetch_table_list", return_value=["ORPHAN_TABLE"]),
             patch.object(reader, "_fetch_all_columns", return_value={}),
             patch.object(reader, "_fetch_all_primary_keys", return_value={}),
             patch.object(reader, "_fetch_all_indexes", return_value={}),
@@ -244,14 +238,10 @@ class TestOracleSchemaReader:
         mock_cursor.fetchall.return_value = [
             # (table, col, data_type, data_len,
             #  precision, scale, nullable, col_id, default)
-            ("USERS", "ID", "NUMBER", None,
-             10, 0, "N", 1, None),
-            ("USERS", "NAME", "VARCHAR2", 100,
-             None, None, "N", 2, None),
-            ("USERS", "BALANCE", "NUMBER", None,
-             12, 2, "Y", 3, None),
-            ("USERS", "STATUS", "CHAR", 1,
-             None, None, "Y", 4, "'A'"),
+            ("USERS", "ID", "NUMBER", None, 10, 0, "N", 1, None),
+            ("USERS", "NAME", "VARCHAR2", 100, None, None, "N", 2, None),
+            ("USERS", "BALANCE", "NUMBER", None, 12, 2, "Y", 3, None),
+            ("USERS", "STATUS", "CHAR", 1, None, None, "Y", 4, "'A'"),
         ]
 
         reader = self._make_reader(mock_conn)
@@ -273,12 +263,19 @@ class TestOracleSchemaReader:
         mock_cursor = MagicMock()
         mock_conn.cursor.return_value = mock_cursor
         mock_cursor.fetchall.return_value = [
-            ("T", "ID", "NUMBER", None, 10, 0, "N", 1,
-             '"TESTUSER"."ISEQ$$_123".nextval'),
-            ("T", "SEQ", "NUMBER", None, 10, 0, "N", 2,
-             "my_seq.nextval"),
-            ("T", "NAME", "VARCHAR2", 50,
-             None, None, "Y", 3, None),
+            (
+                "T",
+                "ID",
+                "NUMBER",
+                None,
+                10,
+                0,
+                "N",
+                1,
+                '"TESTUSER"."ISEQ$$_123".nextval',
+            ),
+            ("T", "SEQ", "NUMBER", None, 10, 0, "N", 2, "my_seq.nextval"),
+            ("T", "NAME", "VARCHAR2", 50, None, None, "Y", 3, None),
         ]
 
         reader = self._make_reader(mock_conn)
@@ -432,8 +429,17 @@ class TestOracleSchemaReader:
         mock_cursor.fetchall.return_value = [
             # (src_table, fk_name, src_owner, delete_rule,
             #  src_col, src_pos, ref_owner, ref_table, ref_col)
-            ("ORDERS", "FK_ORDERS_USER", "TESTUSER", "CASCADE",
-             "USER_ID", 1, "TESTUSER", "USERS", "ID"),
+            (
+                "ORDERS",
+                "FK_ORDERS_USER",
+                "TESTUSER",
+                "CASCADE",
+                "USER_ID",
+                1,
+                "TESTUSER",
+                "USERS",
+                "ID",
+            ),
         ]
 
         reader = self._make_reader(mock_conn)
@@ -457,10 +463,28 @@ class TestOracleSchemaReader:
         mock_cursor = MagicMock()
         mock_conn.cursor.return_value = mock_cursor
         mock_cursor.fetchall.return_value = [
-            ("SHIPMENTS", "FK_SHIP_ITEM", "TESTUSER", None,
-             "ORDER_ID", 1, "TESTUSER", "ORDER_ITEMS", "ORDER_ID"),
-            ("SHIPMENTS", "FK_SHIP_ITEM", "TESTUSER", None,
-             "ITEM_ID", 2, "TESTUSER", "ORDER_ITEMS", "ITEM_ID"),
+            (
+                "SHIPMENTS",
+                "FK_SHIP_ITEM",
+                "TESTUSER",
+                None,
+                "ORDER_ID",
+                1,
+                "TESTUSER",
+                "ORDER_ITEMS",
+                "ORDER_ID",
+            ),
+            (
+                "SHIPMENTS",
+                "FK_SHIP_ITEM",
+                "TESTUSER",
+                None,
+                "ITEM_ID",
+                2,
+                "TESTUSER",
+                "ORDER_ITEMS",
+                "ITEM_ID",
+            ),
         ]
 
         reader = self._make_reader(mock_conn)
@@ -479,10 +503,28 @@ class TestOracleSchemaReader:
         mock_cursor = MagicMock()
         mock_conn.cursor.return_value = mock_cursor
         mock_cursor.fetchall.return_value = [
-            ("ORDERS", "FK_ORDERS_USER", "TESTUSER", "CASCADE",
-             "USER_ID", 1, "TESTUSER", "USERS", "ID"),
-            ("SHIPMENTS", "FK_SHIP_ORDER", "TESTUSER", "SET NULL",
-             "ORDER_ID", 1, "TESTUSER", "ORDERS", "ID"),
+            (
+                "ORDERS",
+                "FK_ORDERS_USER",
+                "TESTUSER",
+                "CASCADE",
+                "USER_ID",
+                1,
+                "TESTUSER",
+                "USERS",
+                "ID",
+            ),
+            (
+                "SHIPMENTS",
+                "FK_SHIP_ORDER",
+                "TESTUSER",
+                "SET NULL",
+                "ORDER_ID",
+                1,
+                "TESTUSER",
+                "ORDERS",
+                "ID",
+            ),
         ]
 
         reader = self._make_reader(mock_conn)

@@ -27,6 +27,7 @@ from uuid import UUID
 # Driver profile dataclass
 # ---------------------------------------------------------------------------
 
+
 @dataclass(frozen=True)
 class DriverProfile:
     """Declares what Python types a database driver can bind natively.
@@ -89,6 +90,7 @@ def register_driver_profile(driver_name: str, profile: DriverProfile) -> None:
 # ---------------------------------------------------------------------------
 # Coercion engine
 # ---------------------------------------------------------------------------
+
 
 def coerce_for_binding(py_val: Any, driver: str) -> Any:
     """Coerce a Python value so the target DB driver can bind it.
@@ -172,6 +174,7 @@ def coerce_for_binding(py_val: Any, driver: str) -> Any:
 # ---------------------------------------------------------------------------
 # Default coercion helpers (used as fallbacks when no custom_coercion given)
 # ---------------------------------------------------------------------------
+
 
 def _timedelta_to_hms(val: timedelta) -> str:
     """Convert a timedelta to ``[-]H:MM:SS`` string."""

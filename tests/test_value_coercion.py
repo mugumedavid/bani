@@ -43,6 +43,7 @@ _TEST_BYTES = b"\x00\x01\x02\xff"
 
 # ── Decimal coercion ─────────────────────────────────────────────────
 
+
 class TestDecimalCoercion:
     """Decimal must be float for sqlite3, pymysql, pymssql; native elsewhere."""
 
@@ -61,6 +62,7 @@ class TestDecimalCoercion:
 
 # ── UUID coercion ────────────────────────────────────────────────────
 
+
 class TestUUIDCoercion:
     """UUID must be string for all drivers except psycopg."""
 
@@ -76,6 +78,7 @@ class TestUUIDCoercion:
 
 
 # ── time coercion ────────────────────────────────────────────────────
+
 
 class TestTimeCoercion:
     """time needs coercion for sqlite3, pymssql, oracledb."""
@@ -102,6 +105,7 @@ class TestTimeCoercion:
 
 # ── timedelta coercion ───────────────────────────────────────────────
 
+
 class TestTimedeltaCoercion:
     """timedelta must become HH:MM:SS string for most drivers."""
 
@@ -124,6 +128,7 @@ class TestTimedeltaCoercion:
 
 # ── date coercion ────────────────────────────────────────────────────
 
+
 class TestDateCoercion:
     """date needs isoformat for sqlite3; native elsewhere."""
 
@@ -139,6 +144,7 @@ class TestDateCoercion:
 
 # ── datetime passthrough ─────────────────────────────────────────────
 
+
 class TestDatetimePassthrough:
     """datetime should pass through for ALL drivers."""
 
@@ -150,6 +156,7 @@ class TestDatetimePassthrough:
 
 
 # ── list / dict coercion ─────────────────────────────────────────────
+
 
 class TestCollectionCoercion:
     """list/dict must become JSON strings for drivers that don't handle them."""
@@ -174,6 +181,7 @@ class TestCollectionCoercion:
 
 # ── bytes coercion ───────────────────────────────────────────────────
 
+
 class TestBytesCoercion:
     """bytes should pass through for all drivers (all handle BLOB/BINARY)."""
 
@@ -184,6 +192,7 @@ class TestBytesCoercion:
 
 
 # ── Passthrough for basic types ──────────────────────────────────────
+
 
 class TestBasicPassthrough:
     """int, float, str, bool, None should pass through unchanged."""

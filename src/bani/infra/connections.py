@@ -86,10 +86,7 @@ class ConnectionRegistry:
                 raw_opts = entry.get("options", {})
                 opts: tuple[tuple[str, str], ...] = ()
                 if isinstance(raw_opts, dict):
-                    opts = tuple(
-                        (str(k), str(v))
-                        for k, v in raw_opts.items()
-                    )
+                    opts = tuple((str(k), str(v)) for k, v in raw_opts.items())
                 result[key] = RegisteredConnection(
                     key=key,
                     name=str(entry.get("name", key)),
@@ -102,15 +99,11 @@ class ConnectionRegistry:
                     options=opts,
                 )
             except (KeyError, TypeError, ValueError) as exc:
-                logger.warning(
-                    "Skipping malformed connection '%s': %s", key, exc
-                )
+                logger.warning("Skipping malformed connection '%s': %s", key, exc)
         return result
 
     @classmethod
-    def get(
-        cls, key: str, path: Path | None = None
-    ) -> RegisteredConnection:
+    def get(cls, key: str, path: Path | None = None) -> RegisteredConnection:
         """Look up a single connection by key.
 
         Args:
@@ -126,17 +119,12 @@ class ConnectionRegistry:
         connections = cls.load(path)
         if key not in connections:
             available = ", ".join(sorted(connections)) or "(none)"
-            msg = (
-                f"Connection '{key}' not found in registry. "
-                f"Available: {available}"
-            )
+            msg = f"Connection '{key}' not found in registry. Available: {available}"
             raise ValueError(msg)
         return connections[key]
 
     @classmethod
-    def to_connection_config(
-        cls, conn: RegisteredConnection
-    ) -> ConnectionConfig:
+    def to_connection_config(cls, conn: RegisteredConnection) -> ConnectionConfig:
         """Convert a ``RegisteredConnection`` to a domain ``ConnectionConfig``.
 
         If ``username`` or ``password`` contain ``${env:VAR}`` patterns
@@ -167,9 +155,7 @@ class ConnectionRegistry:
         )
 
     @classmethod
-    def safe_summary(
-        cls, conn: RegisteredConnection
-    ) -> dict[str, Any]:
+    def safe_summary(cls, conn: RegisteredConnection) -> dict[str, Any]:
         """Return a dict safe for AI consumption (no credentials).
 
         Args:
@@ -190,9 +176,7 @@ class ConnectionRegistry:
 
 def _is_env_ref(value: str) -> bool:
     """Check whether a value is an ``${env:VAR}`` reference."""
-    return value.startswith(_ENV_REF_PREFIX) and value.endswith(
-        _ENV_REF_SUFFIX
-    )
+    return value.startswith(_ENV_REF_PREFIX) and value.endswith(_ENV_REF_SUFFIX)
 
 
 def _ensure_env(conn_key: str, suffix: str, value: str) -> str:

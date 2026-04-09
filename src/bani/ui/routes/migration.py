@@ -91,6 +91,7 @@ def _ensure_registry_env_vars() -> None:
         for opt_key, opt_val in conn.options:
             if opt_key == "oracle_client_lib" and opt_val:
                 from bani.connectors.oracle.connector import _init_thick_mode
+
                 _init_thick_mode(opt_val)
                 break
 
@@ -129,8 +130,7 @@ def _event_to_sse(event: object) -> dict[str, Any] | None:
             "type": "introspection_complete",
             "source_dialect": event.source_dialect,
             "tables": [
-                {"name": name, "estimated_rows": rows}
-                for name, rows in event.tables
+                {"name": name, "estimated_rows": rows} for name, rows in event.tables
             ],
         }
     if isinstance(event, MigrationStarted):
@@ -312,8 +312,7 @@ async def _dry_run(project_path: Any, project_name: str) -> Any:
                 # Filter to listed tables if any
                 if project.table_mappings:
                     by_fqn = {
-                        f"{t.schema_name}.{t.table_name}": t
-                        for t in schema.tables
+                        f"{t.schema_name}.{t.table_name}": t for t in schema.tables
                     }
                     by_name: dict[str, list[Any]] = {}
                     for t in schema.tables:
@@ -337,7 +336,8 @@ async def _dry_run(project_path: Any, project_name: str) -> Any:
                         if t is None:
                             missing.append(
                                 f"{m.source_schema}.{m.source_table}"
-                                if m.source_schema else m.source_table
+                                if m.source_schema
+                                else m.source_table
                             )
                         elif t not in filtered:
                             filtered.append(t)
@@ -358,6 +358,7 @@ async def _dry_run(project_path: Any, project_name: str) -> Any:
                         }
 
                     from bani.domain.schema import DatabaseSchema
+
                     schema = DatabaseSchema(
                         tables=tuple(filtered),
                         source_dialect=schema.source_dialect,
@@ -371,9 +372,7 @@ async def _dry_run(project_path: Any, project_name: str) -> Any:
                     }
                     for t in schema.tables
                 ]
-                total_rows = sum(
-                    t.row_count_estimate or 0 for t in schema.tables
-                )
+                total_rows = sum(t.row_count_estimate or 0 for t in schema.tables)
                 return {
                     "status": "ok",
                     "dry_run": True,
@@ -512,21 +511,15 @@ async def start_migration(body: MigrateRequest, request: Request) -> Any:
                         + event.rows_written
                     )
             elif isinstance(event, TableComplete):
-                state["tables_completed"] = (
-                    state.get("tables_completed", 0) + 1
-                )
+                state["tables_completed"] = state.get("tables_completed", 0) + 1
                 running_tables.discard(event.table_name)
                 state["current_table"] = next(iter(running_tables), None)
                 tp = state.get("table_progress", {})
                 if event.table_name in tp:
                     tp[event.table_name]["status"] = "completed"
-                    tp[event.table_name]["rows_transferred"] = (
-                        event.total_rows_written
-                    )
+                    tp[event.table_name]["rows_transferred"] = event.total_rows_written
             elif isinstance(event, TableCreateFailed):
-                state["tables_failed"] = (
-                    state.get("tables_failed", 0) + 1
-                )
+                state["tables_failed"] = state.get("tables_failed", 0) + 1
                 fails = state.get("table_failures", [])
                 fails.append(f"{event.table_name}: {event.reason}")
                 state["table_failures"] = fails
@@ -554,10 +547,12 @@ async def start_migration(body: MigrateRequest, request: Request) -> Any:
             project = bp._project
             if project.options:
                 from dataclasses import replace as dc_replace
+
                 opts = project.options
                 # Only override if the project uses the hardcoded defaults
                 # (i.e., the BDL didn't explicitly set them)
                 from bani.domain.project import ProjectOptions
+
                 _defaults = ProjectOptions()
                 new_opts = dc_replace(
                     opts,
@@ -583,6 +578,7 @@ async def start_migration(body: MigrateRequest, request: Request) -> Any:
             ckpt_mgr = None
             if settings.checkpoint_enabled:
                 from bani.application.checkpoint import CheckpointManager
+
                 # CheckpointManager appends .bani/checkpoints internally,
                 # so base_dir should be the project root (cwd), not the
                 # checkpoint subdir.
@@ -667,9 +663,7 @@ async def get_status(
         current_table=state.get("current_table"),
         table_failures=state.get("table_failures", []),
         warnings=state.get("warnings", []),
-        table_progress=(
-            state.get("table_progress", {}) if include_tables else {}
-        ),
+        table_progress=(state.get("table_progress", {}) if include_tables else {}),
         elapsed_seconds=elapsed,
     )
 
@@ -739,9 +733,7 @@ async def get_checkpoint(project_name: str) -> dict[str, Any]:
         return {"exists": False}
 
     tables = data.get("tables", {})
-    completed = sum(
-        1 for t in tables.values() if t.get("status") == "completed"
-    )
+    completed = sum(1 for t in tables.values() if t.get("status") == "completed")
     return {
         "exists": True,
         "tables_completed": completed,

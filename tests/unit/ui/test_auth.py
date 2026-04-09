@@ -20,9 +20,7 @@ class TestAuthMiddleware:
     async def test_valid_token_passes(self, _server: BaniUIServer) -> None:
         """A request with the correct Bearer token succeeds."""
         transport = ASGITransport(app=_server.app)  # type: ignore[arg-type]
-        async with AsyncClient(
-            transport=transport, base_url="http://testserver"
-        ) as ac:
+        async with AsyncClient(transport=transport, base_url="http://testserver") as ac:
             resp = await ac.get(
                 "/api/connectors",
                 headers={"Authorization": f"Bearer {_server.auth_token}"},
@@ -33,9 +31,7 @@ class TestAuthMiddleware:
     async def test_missing_token_returns_401(self, _server: BaniUIServer) -> None:
         """A request without an Authorization header returns 401."""
         transport = ASGITransport(app=_server.app)  # type: ignore[arg-type]
-        async with AsyncClient(
-            transport=transport, base_url="http://testserver"
-        ) as ac:
+        async with AsyncClient(transport=transport, base_url="http://testserver") as ac:
             resp = await ac.get("/api/connectors")
         assert resp.status_code == 401
 
@@ -43,9 +39,7 @@ class TestAuthMiddleware:
     async def test_invalid_token_returns_401(self, _server: BaniUIServer) -> None:
         """A request with a wrong Bearer token returns 401."""
         transport = ASGITransport(app=_server.app)  # type: ignore[arg-type]
-        async with AsyncClient(
-            transport=transport, base_url="http://testserver"
-        ) as ac:
+        async with AsyncClient(transport=transport, base_url="http://testserver") as ac:
             resp = await ac.get(
                 "/api/connectors",
                 headers={"Authorization": "Bearer wrong-token"},
@@ -58,9 +52,7 @@ class TestAuthMiddleware:
     ) -> None:
         """A request with a non-Bearer Authorization header returns 401."""
         transport = ASGITransport(app=_server.app)  # type: ignore[arg-type]
-        async with AsyncClient(
-            transport=transport, base_url="http://testserver"
-        ) as ac:
+        async with AsyncClient(transport=transport, base_url="http://testserver") as ac:
             resp = await ac.get(
                 "/api/connectors",
                 headers={"Authorization": "Basic dXNlcjpwYXNz"},
@@ -71,8 +63,6 @@ class TestAuthMiddleware:
     async def test_health_does_not_require_auth(self, _server: BaniUIServer) -> None:
         """The health endpoint is accessible without auth."""
         transport = ASGITransport(app=_server.app)  # type: ignore[arg-type]
-        async with AsyncClient(
-            transport=transport, base_url="http://testserver"
-        ) as ac:
+        async with AsyncClient(transport=transport, base_url="http://testserver") as ac:
             resp = await ac.get("/api/health")
         assert resp.status_code == 200

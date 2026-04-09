@@ -88,14 +88,10 @@ class TestConnectorInsertErrorAggregation:
             names=["id", "name"],
         )
 
-        with patch(
-            "bani.connectors.oracle.connector.OracleDataWriter"
-        ) as MockWriter:
+        with patch("bani.connectors.oracle.connector.OracleDataWriter") as MockWriter:
             mock_writer = MockWriter.return_value
             mock_writer.write_batch.return_value = 0
-            mock_writer.batch_errors = [
-                "ORA-12899: value too large for column"
-            ]
+            mock_writer.batch_errors = ["ORA-12899: value too large for column"]
 
             connector.write_batch("test_table", "SA", batch)
 

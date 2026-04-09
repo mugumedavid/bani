@@ -64,10 +64,13 @@ class TestPymssqlReconnect:
 
         # Mock _get_all_column_types
         with patch.object(reader, "_get_all_column_types", return_value={"id": "int"}):
-            batches = list(reader.read_table(
-                "test_table", "dbo",
-                batch_size=batch_size,
-            ))
+            batches = list(
+                reader.read_table(
+                    "test_table",
+                    "dbo",
+                    batch_size=batch_size,
+                )
+            )
 
         assert len(batches) == 12
         # Reconnects after every full page (interval=1)
@@ -78,10 +81,12 @@ class TestPymssqlReconnect:
         conn = MagicMock()
         cursor_mock = MagicMock()
         cursor_mock.description = [("id", int, None, None, None, None, None)]
-        cursor_mock.fetchmany = MagicMock(side_effect=[
-            [(1,), (2,)],
-            [],
-        ])
+        cursor_mock.fetchmany = MagicMock(
+            side_effect=[
+                [(1,), (2,)],
+                [],
+            ]
+        )
         conn.cursor.return_value = cursor_mock
 
         reader = MSSQLDataReader(conn, driver="pyodbc", reconnect_fn=None)
@@ -133,10 +138,13 @@ class TestPymssqlReconnect:
         reader = MSSQLDataReader(conn, driver="pymssql", reconnect_fn=reconnect_fn)
 
         with patch.object(reader, "_get_all_column_types", return_value={"id": "int"}):
-            batches = list(reader.read_table(
-                "test_table", "dbo",
-                batch_size=batch_size,
-            ))
+            batches = list(
+                reader.read_table(
+                    "test_table",
+                    "dbo",
+                    batch_size=batch_size,
+                )
+            )
 
         assert len(batches) == 1
         reconnect_fn.assert_not_called()

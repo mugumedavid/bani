@@ -31,10 +31,13 @@ from bani.domain.schema import (
     TableDefinition,
 )
 
-register_dialect_defaults("postgresql", DialectDefaultConfig(
-    timestamp_expression="NOW()",
-    temporal_keywords=("timestamp", "date", "time", "interval"),
-))
+register_dialect_defaults(
+    "postgresql",
+    DialectDefaultConfig(
+        timestamp_expression="NOW()",
+        temporal_keywords=("timestamp", "date", "time", "interval"),
+    ),
+)
 
 
 class PostgreSQLConnector(SourceConnector, SinkConnector):
@@ -286,7 +289,7 @@ class PostgreSQLConnector(SourceConnector, SinkConnector):
 
         # Drop existing table if present, then create
         drop_sql = (
-            f'DROP TABLE IF EXISTS '
+            f"DROP TABLE IF EXISTS "
             f'"{table_def.schema_name}"."{table_def.table_name}" CASCADE'
         )
         create_sql = (
@@ -356,6 +359,7 @@ class PostgreSQLConnector(SourceConnector, SinkConnector):
                     # MSSQL [col] quoting to PG "col" quoting
                     if index.filter_expression:
                         import re
+
                         pg_filter = re.sub(
                             r"\[(\w+)\]",
                             r'"\1"',
@@ -367,9 +371,13 @@ class PostgreSQLConnector(SourceConnector, SinkConnector):
                         cur.execute(create_idx_sql)
                     except Exception as exc:
                         import logging as _logging
+
                         _logging.getLogger(__name__).warning(
                             "Index %s on %s.%s skipped: %s",
-                            index.name, schema_name, table_name, exc,
+                            index.name,
+                            schema_name,
+                            table_name,
+                            exc,
                         )
 
     def create_foreign_keys(self, fks: tuple[ForeignKeyDefinition, ...]) -> None:
@@ -414,9 +422,13 @@ class PostgreSQLConnector(SourceConnector, SinkConnector):
                         cur.execute(alter_sql)
                     except Exception as exc:
                         import logging as _logging
+
                         _logging.getLogger(__name__).warning(
                             "FK %s on %s.%s skipped: %s",
-                            fk.name, src_schema, src_table, exc,
+                            fk.name,
+                            src_schema,
+                            src_table,
+                            exc,
                         )
 
     def execute_sql(self, sql_str: str) -> None:

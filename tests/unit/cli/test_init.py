@@ -27,9 +27,7 @@ def test_init_help(runner: CliRunner) -> None:
 
 
 @patch("bani.cli.commands.init.ConnectorRegistry")
-def test_init_json_mode(
-    mock_registry: type, runner: CliRunner, tmp_path: Path
-) -> None:
+def test_init_json_mode(mock_registry: type, runner: CliRunner, tmp_path: Path) -> None:
     """Test init command in JSON mode with --source and --target flags."""
     mock_registry.discover.return_value = {
         "postgresql": type("FakeConnector", (), {}),
@@ -68,9 +66,7 @@ def test_init_json_mode(
 
 
 @patch("bani.cli.commands.init.ConnectorRegistry")
-def test_init_unknown_source(
-    mock_registry: type, runner: CliRunner
-) -> None:
+def test_init_unknown_source(mock_registry: type, runner: CliRunner) -> None:
     """Test init command with unknown source connector."""
     mock_registry.discover.return_value = {
         "postgresql": type("FakeConnector", (), {}),
@@ -94,9 +90,7 @@ def test_init_unknown_source(
 
 
 @patch("bani.cli.commands.init.ConnectorRegistry")
-def test_init_unknown_target(
-    mock_registry: type, runner: CliRunner
-) -> None:
+def test_init_unknown_target(mock_registry: type, runner: CliRunner) -> None:
     """Test init command with unknown target connector."""
     mock_registry.discover.return_value = {
         "postgresql": type("FakeConnector", (), {}),
@@ -120,9 +114,7 @@ def test_init_unknown_target(
 
 
 @patch("bani.cli.commands.init.ConnectorRegistry")
-def test_init_no_connectors(
-    mock_registry: type, runner: CliRunner
-) -> None:
+def test_init_no_connectors(mock_registry: type, runner: CliRunner) -> None:
     """Test init command when no connectors are available."""
     mock_registry.discover.return_value = {}
 
@@ -144,9 +136,7 @@ def test_init_no_connectors(
 
 
 @patch("bani.cli.commands.init.ConnectorRegistry")
-def test_init_json_mode_missing_flags(
-    mock_registry: type, runner: CliRunner
-) -> None:
+def test_init_json_mode_missing_flags(mock_registry: type, runner: CliRunner) -> None:
     """Test init command in JSON mode without --source flag."""
     mock_registry.discover.return_value = {
         "postgresql": type("FakeConnector", (), {}),

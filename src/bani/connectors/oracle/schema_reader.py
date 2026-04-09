@@ -427,9 +427,7 @@ class OracleSchemaReader:
         finally:
             cursor.close()
 
-        return {
-            row[0]: int(row[1]) if row[1] is not None else None for row in rows
-        }
+        return {row[0]: int(row[1]) if row[1] is not None else None for row in rows}
 
     # ------------------------------------------------------------------
     # Helpers

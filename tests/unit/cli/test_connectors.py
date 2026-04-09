@@ -36,8 +36,12 @@ class FakeSourceSink(SourceConnector, SinkConnector):
         pass
 
     def read_table(  # type: ignore[override]
-        self, table_name, schema_name="",
-        columns=None, filter_sql=None, batch_size=100000,
+        self,
+        table_name,
+        schema_name="",
+        columns=None,
+        filter_sql=None,
+        batch_size=100000,
     ):
         yield from ()
 
@@ -73,9 +77,7 @@ def test_connectors_info_help(runner: CliRunner) -> None:
 
 
 @patch("bani.cli.commands.connectors.ConnectorRegistry")
-def test_connectors_list_human(
-    mock_registry: type, runner: CliRunner
-) -> None:
+def test_connectors_list_human(mock_registry: type, runner: CliRunner) -> None:
     """Test connectors list in human mode."""
     mock_registry.discover.return_value = {
         "postgresql": FakeSourceSink,
@@ -87,9 +89,7 @@ def test_connectors_list_human(
 
 
 @patch("bani.cli.commands.connectors.ConnectorRegistry")
-def test_connectors_list_json(
-    mock_registry: type, runner: CliRunner
-) -> None:
+def test_connectors_list_json(mock_registry: type, runner: CliRunner) -> None:
     """Test connectors list JSON output matches Section 18.2."""
     mock_registry.discover.return_value = {
         "postgresql": FakeSourceSink,
@@ -112,9 +112,7 @@ def test_connectors_list_json(
 
 
 @patch("bani.cli.commands.connectors.ConnectorRegistry")
-def test_connectors_list_empty(
-    mock_registry: type, runner: CliRunner
-) -> None:
+def test_connectors_list_empty(mock_registry: type, runner: CliRunner) -> None:
     """Test connectors list when no connectors are available."""
     mock_registry.discover.return_value = {}
 
@@ -124,9 +122,7 @@ def test_connectors_list_empty(
 
 
 @patch("bani.cli.commands.connectors.ConnectorRegistry")
-def test_connectors_info_json(
-    mock_registry: type, runner: CliRunner
-) -> None:
+def test_connectors_info_json(mock_registry: type, runner: CliRunner) -> None:
     """Test connectors info in JSON mode."""
     mock_registry.get.return_value = FakeSourceSink
 
@@ -141,9 +137,7 @@ def test_connectors_info_json(
 
 
 @patch("bani.cli.commands.connectors.ConnectorRegistry")
-def test_connectors_info_human(
-    mock_registry: type, runner: CliRunner
-) -> None:
+def test_connectors_info_human(mock_registry: type, runner: CliRunner) -> None:
     """Test connectors info in human mode."""
     mock_registry.get.return_value = FakeSourceSink
 
@@ -153,9 +147,7 @@ def test_connectors_info_human(
 
 
 @patch("bani.cli.commands.connectors.ConnectorRegistry")
-def test_connectors_info_unknown(
-    mock_registry: type, runner: CliRunner
-) -> None:
+def test_connectors_info_unknown(mock_registry: type, runner: CliRunner) -> None:
     """Test connectors info with unknown connector."""
     mock_registry.get.side_effect = ValueError("Connector 'nosuchdb' not found")
 
@@ -165,15 +157,11 @@ def test_connectors_info_unknown(
 
 
 @patch("bani.cli.commands.connectors.ConnectorRegistry")
-def test_connectors_info_unknown_json(
-    mock_registry: type, runner: CliRunner
-) -> None:
+def test_connectors_info_unknown_json(mock_registry: type, runner: CliRunner) -> None:
     """Test connectors info with unknown connector in JSON mode."""
     mock_registry.get.side_effect = ValueError("Connector 'nosuchdb' not found")
 
-    result = runner.invoke(
-        app, ["--output", "json", "connectors", "info", "nosuchdb"]
-    )
+    result = runner.invoke(app, ["--output", "json", "connectors", "info", "nosuchdb"])
     assert result.exit_code != 0
     output = json.loads(result.stdout.strip())
     assert output["status"] == "error"

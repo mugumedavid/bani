@@ -71,9 +71,7 @@ class TestHookResult:
         assert result.error == ""
 
     def test_frozen(self) -> None:
-        result = HookResult(
-            name="x", phase="pre", success=True, duration_seconds=0.0
-        )
+        result = HookResult(name="x", phase="pre", success=True, duration_seconds=0.0)
         with pytest.raises(AttributeError):
             result.name = "y"  # type: ignore[misc]
 

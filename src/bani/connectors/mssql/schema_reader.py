@@ -105,7 +105,10 @@ class MSSQLSchemaReader:
                 if is_conn_error and attempt < max_retries - 1 and self._reconnect_fn:
                     _log.warning(
                         "[MSSQL-SCHEMA] %s failed (attempt %d/%d): %s — reconnecting",
-                        method_name, attempt + 1, max_retries, exc,
+                        method_name,
+                        attempt + 1,
+                        max_retries,
+                        exc,
                     )
                     self._reconnect()
                 else:
@@ -224,8 +227,12 @@ class MSSQLSchemaReader:
             char_max_len: int | None = None
             bt = data_type.lower()
             if bt in (
-                "char", "varchar", "binary", "varbinary",
-                "nchar", "nvarchar",
+                "char",
+                "varchar",
+                "binary",
+                "varbinary",
+                "nchar",
+                "nvarchar",
             ):
                 if max_length == -1:
                     char_max_len = -1  # MAX
@@ -524,10 +531,7 @@ class MSSQLSchemaReader:
             """)
             rows: list[tuple[Any, ...]] = list(cur.fetchall())
 
-        return {
-            (r[0], r[1]): int(r[2]) if r[2] is not None else None
-            for r in rows
-        }
+        return {(r[0], r[1]): int(r[2]) if r[2] is not None else None for r in rows}
 
     # ------------------------------------------------------------------
     # Helpers
@@ -550,7 +554,12 @@ class MSSQLSchemaReader:
 
         # Character / binary types with a length
         if bt in (
-            "char", "nchar", "varchar", "nvarchar", "binary", "varbinary",
+            "char",
+            "nchar",
+            "varchar",
+            "nvarchar",
+            "binary",
+            "varbinary",
         ):
             if char_max_len is not None and char_max_len > 0:
                 return f"{base_type}({char_max_len})"

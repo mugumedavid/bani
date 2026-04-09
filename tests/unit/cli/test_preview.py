@@ -55,12 +55,16 @@ def _mock_preview_result() -> PreviewResult:
     """Create a mock PreviewResult for testing."""
     columns = (
         ColumnPreview(
-            name="id", data_type="INTEGER",
-            nullable=False, arrow_type="int32",
+            name="id",
+            data_type="INTEGER",
+            nullable=False,
+            arrow_type="int32",
         ),
         ColumnPreview(
-            name="name", data_type="VARCHAR(255)",
-            nullable=True, arrow_type="string",
+            name="name",
+            data_type="VARCHAR(255)",
+            nullable=True,
+            arrow_type="string",
         ),
     )
     sample_rows = (

@@ -134,7 +134,11 @@ class MSSQLDataWriter:
 
         logger.info(
             "[MSSQL-WRITE] %s.%s: %d rows, driver=%s, conn=%s",
-            schema_name, table_name, batch.num_rows, self._driver, id(self.connection),
+            schema_name,
+            table_name,
+            batch.num_rows,
+            self._driver,
+            id(self.connection),
         )
         try:
             if self._driver == "pyodbc":
@@ -143,13 +147,19 @@ class MSSQLDataWriter:
                 result = self._write_pymssql(table_name, schema_name, batch)
             logger.info(
                 "[MSSQL-WRITE] %s.%s: wrote %d rows OK",
-                schema_name, table_name, result,
+                schema_name,
+                table_name,
+                result,
             )
             return result
         except Exception as exc:
             logger.error(
                 "[MSSQL-WRITE] %s.%s: FAILED writing %d rows: %s: %s",
-                schema_name, table_name, batch.num_rows, type(exc).__name__, exc,
+                schema_name,
+                table_name,
+                batch.num_rows,
+                type(exc).__name__,
+                exc,
             )
             raise
 
@@ -193,8 +203,7 @@ class MSSQLDataWriter:
             first_val = next((v for v in col if v is not None), None)
             if isinstance(first_val, (dict, list)):
                 columns[col_idx] = [
-                    json.dumps(v) if isinstance(v, (dict, list)) else v
-                    for v in col
+                    json.dumps(v) if isinstance(v, (dict, list)) else v for v in col
                 ]
 
         rows = [tuple(row) for row in zip(*columns, strict=True)]
@@ -259,9 +268,7 @@ class MSSQLDataWriter:
                         if value is None:
                             vals.append("NULL")
                         else:
-                            vals.append(
-                                _sql_literal(value, is_binary[col_idx])
-                            )
+                            vals.append(_sql_literal(value, is_binary[col_idx]))
                     row_literals.append("(" + ", ".join(vals) + ")")
 
                 sql = header + ", ".join(row_literals)

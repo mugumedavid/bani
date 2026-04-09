@@ -91,7 +91,8 @@ class MigrationOrchestrator:
         self.sink = sink
         self.tracker = tracker or ProgressTracker()
         self.options = self._apply_sink_recommendations(
-            project.options or ProjectOptions(), sink,
+            project.options or ProjectOptions(),
+            sink,
         )
         self._checkpoint = checkpoint or CheckpointManager()
         self._quarantine = quarantine or QuarantineManager()
@@ -121,7 +122,9 @@ class MigrationOrchestrator:
         defaults = ProjectOptions()
         rec_batch = getattr(sink, "recommended_batch_size", None)
         rec_workers = getattr(
-            sink, "recommended_parallel_workers", None,
+            sink,
+            "recommended_parallel_workers",
+            None,
         )
 
         if options.batch_size > 0:
@@ -129,7 +132,8 @@ class MigrationOrchestrator:
         elif rec_batch:
             new_batch = rec_batch
             logger.info(
-                "Using sink-recommended batch_size=%d", rec_batch,
+                "Using sink-recommended batch_size=%d",
+                rec_batch,
             )
         else:
             new_batch = defaults.batch_size
@@ -146,6 +150,7 @@ class MigrationOrchestrator:
             new_workers = defaults.parallel_workers
 
         from dataclasses import replace
+
         return replace(
             options,
             batch_size=new_batch,
@@ -305,30 +310,28 @@ class MigrationOrchestrator:
                     # On resume: only recreate tables that were NOT completed.
                     # This wipes partial data from interrupted tables.
                     completed = {
-                        t for t in ordered_tables
-                        if checkpoint.is_table_completed(
-                            self.project.name, t
-                        )
+                        t
+                        for t in ordered_tables
+                        if checkpoint.is_table_completed(self.project.name, t)
                     }
                     incomplete_tables = [
-                        t for t in source_schema.tables
+                        t
+                        for t in source_schema.tables
                         if t.fully_qualified_name not in completed
                     ]
                     incomplete_schema = DatabaseSchema(
                         tables=tuple(incomplete_tables),
                         source_dialect=source_schema.source_dialect,
                     )
-                    schema_failures = self._create_target_schema(
-                        incomplete_schema
-                    )
+                    schema_failures = self._create_target_schema(incomplete_schema)
                 else:
-                    schema_failures = self._create_target_schema(
-                        source_schema
-                    )
+                    schema_failures = self._create_target_schema(source_schema)
 
             # Transfer table data in parallel (skip tables that failed creation)
             transfer_results = self._transfer_tables_parallel(
-                source_schema, ordered_tables, resume=resume,
+                source_schema,
+                ordered_tables,
+                resume=resume,
                 skip_tables=schema_failures,
             )
 
@@ -344,10 +347,8 @@ class MigrationOrchestrator:
                         errors.append(result.error)
 
             # Create indexes and foreign keys after data transfer
-            if (
-                not self._cancelled
-                and (self.options.transfer_indexes
-                     or self.options.transfer_foreign_keys)
+            if not self._cancelled and (
+                self.options.transfer_indexes or self.options.transfer_foreign_keys
             ):
                 self.tracker.phase_change("indexes")
                 self._create_indexes_and_fks(source_schema, deferred_fks)
@@ -431,10 +432,9 @@ class MigrationOrchestrator:
         if insert_errors:
             # Deduplicate by message, show count per unique error
             from collections import Counter
+
             error_counts = Counter(insert_errors)
-            warnings.append(
-                f"{len(insert_errors)} row(s) failed to insert:"
-            )
+            warnings.append(f"{len(insert_errors)} row(s) failed to insert:")
             for err, count in error_counts.most_common():
                 prefix = f"  ({count}x) " if count > 1 else "  "
                 warnings.append(f"{prefix}{err}")
@@ -442,8 +442,7 @@ class MigrationOrchestrator:
         name_map = getattr(self.sink, "_name_map", {})
         if name_map:
             warnings.append(
-                f"Renamed {len(name_map)} identifier(s) to fit "
-                f"target database limits:"
+                f"Renamed {len(name_map)} identifier(s) to fit target database limits:"
             )
             for original, shortened in sorted(name_map.items()):
                 warnings.append(f"  {original} → {shortened}")
@@ -459,9 +458,7 @@ class MigrationOrchestrator:
             warnings=tuple(warnings),
         )
 
-    def _create_target_schema(
-        self, source_schema: DatabaseSchema
-    ) -> dict[str, str]:
+    def _create_target_schema(self, source_schema: DatabaseSchema) -> dict[str, str]:
         """Create tables in the target database.
 
         Args:
@@ -502,9 +499,7 @@ class MigrationOrchestrator:
                     table.fully_qualified_name,
                     reason,
                 )
-                self.tracker.table_create_failed(
-                    table.fully_qualified_name, reason
-                )
+                self.tracker.table_create_failed(table.fully_qualified_name, reason)
 
         return failed
 
@@ -548,7 +543,10 @@ class MigrationOrchestrator:
                     )
                     results.append(
                         _TableTransferResult(
-                            table_name, False, 0, 0,
+                            table_name,
+                            False,
+                            0,
+                            0,
                             f"Schema creation failed: {reason}",
                         )
                     )
@@ -589,7 +587,9 @@ class MigrationOrchestrator:
 
                 # Mark as in_progress in checkpoint
                 checkpoint.update_table_status(
-                    project_name, table_name, "in_progress",
+                    project_name,
+                    table_name,
+                    "in_progress",
                 )
 
                 future = executor.submit(self._transfer_table, table)
@@ -607,12 +607,16 @@ class MigrationOrchestrator:
                         results.append(result)
                         if result.success:
                             checkpoint.update_table_status(
-                                project_name, tbl, "completed",
+                                project_name,
+                                tbl,
+                                "completed",
                                 rows=result.rows_written,
                             )
                         else:
                             checkpoint.update_table_status(
-                                project_name, tbl, "failed",
+                                project_name,
+                                tbl,
+                                "failed",
                                 error=result.error,
                             )
 
@@ -646,7 +650,7 @@ class MigrationOrchestrator:
         (e.g. 'dbo'). For reading from the source, we need the original
         name (e.g. 'public').
         """
-        return getattr(self, '_source_schema_map', {}).get(
+        return getattr(self, "_source_schema_map", {}).get(
             table.table_name, table.schema_name
         )
 
@@ -683,8 +687,7 @@ class MigrationOrchestrator:
                 if len(matches) > 1:
                     schemas = [t.schema_name for t in matches]
                     ambiguous.append(
-                        f"{mapping.source_table} (exists in: "
-                        f"{', '.join(schemas)})"
+                        f"{mapping.source_table} (exists in: {', '.join(schemas)})"
                     )
                     continue
                 table = matches[0] if matches else None
@@ -700,21 +703,19 @@ class MigrationOrchestrator:
 
         if ambiguous:
             raise BaniError(
-                "Ambiguous table names — specify the schema: "
-                + "; ".join(ambiguous)
+                "Ambiguous table names — specify the schema: " + "; ".join(ambiguous)
             )
 
         if missing:
-            raise BaniError(
-                f"Tables not found in source: {', '.join(missing)}"
-            )
+            raise BaniError(f"Tables not found in source: {', '.join(missing)}")
 
         # Strip FKs that reference tables not in the selected set
         selected_names = {t.table_name for t in selected}
         cleaned: list[TableDefinition] = []
         for t in selected:
             kept_fks = tuple(
-                fk for fk in t.foreign_keys
+                fk
+                for fk in t.foreign_keys
                 if fk.referenced_table.split(".")[-1] in selected_names
             )
             if kept_fks != t.foreign_keys:
@@ -1139,7 +1140,10 @@ class MigrationOrchestrator:
                 if self._cancelled:
                     error_msg = "Migration cancelled by user"
                     return _TableTransferResult(
-                        table_name, False, total_rows_read, total_rows_written,
+                        table_name,
+                        False,
+                        total_rows_read,
+                        total_rows_written,
                         error_msg,
                     )
 

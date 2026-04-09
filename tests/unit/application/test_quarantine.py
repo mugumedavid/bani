@@ -226,9 +226,7 @@ class TestQuarantineRow:
         qm._table_ensured = True
 
         # Should not raise
-        qm.quarantine_row(
-            sink, "proj", "t1", 0, {"id": 1}, "err"
-        )
+        qm.quarantine_row(sink, "proj", "t1", 0, {"id": 1}, "err")
 
     def test_truncates_large_payloads(self) -> None:
         """Very large row data should be truncated."""
@@ -236,9 +234,7 @@ class TestQuarantineRow:
         qm = QuarantineManager()
 
         large_data = {"data": "x" * 2_000_000}
-        qm.quarantine_row(
-            sink, "proj", "t1", 0, large_data, "err"
-        )
+        qm.quarantine_row(sink, "proj", "t1", 0, large_data, "err")
 
         insert_sql = sink.executed_sql[1]
         assert "truncated" in insert_sql
@@ -282,6 +278,7 @@ class TestClear:
 
     def test_does_not_crash_on_delete_failure(self) -> None:
         """clear() should not raise if the DELETE fails."""
+
         class FailDeleteSink(MockSink):
             """Sink that fails on DELETE."""
 

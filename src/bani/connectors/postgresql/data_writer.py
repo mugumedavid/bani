@@ -114,8 +114,7 @@ class PostgreSQLDataWriter:
             first_val = next((v for v in col if v is not None), None)
             if isinstance(first_val, (dict, list)):
                 columns[col_idx] = [
-                    json.dumps(v) if isinstance(v, (dict, list)) else v
-                    for v in col
+                    json.dumps(v) if isinstance(v, (dict, list)) else v for v in col
                 ]
 
         # Transpose columns to rows
@@ -147,8 +146,7 @@ class PostgreSQLDataWriter:
         col_list = ", ".join(f'"{name}"' for name in col_names)
         fmt_clause = " (FORMAT BINARY)" if binary else ""
         copy_sql = (
-            f'COPY "{schema_name}"."{table_name}" ({col_list}) '
-            f"FROM STDIN{fmt_clause}"
+            f'COPY "{schema_name}"."{table_name}" ({col_list}) FROM STDIN{fmt_clause}'
         )
 
         rows = self._extract_rows(batch)
@@ -212,11 +210,14 @@ class PostgreSQLDataWriter:
                     # Bulk failed — time to carry each row across
                     # the finish line one by one. Slow? Yes. Reliable? Also yes.
                     import logging as _logging
+
                     _logging.getLogger(__name__).warning(
                         "Bulk INSERT failed for %s.%s — "
                         "falling back to row-by-row "
                         "insert (%d rows)",
-                        schema_name, table_name, len(chunk),
+                        schema_name,
+                        table_name,
+                        len(chunk),
                     )
                     for row in chunk:
                         row_ph = "(" + ", ".join(["%s"] * num_cols) + ")"

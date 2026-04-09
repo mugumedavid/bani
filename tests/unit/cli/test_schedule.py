@@ -36,9 +36,7 @@ def test_schedule_help(runner: CliRunner) -> None:
 
 def test_schedule_missing_file(runner: CliRunner) -> None:
     """Test schedule command with missing file."""
-    result = runner.invoke(
-        app, ["schedule", "nonexistent.bdl", "--cron", "0 2 * * *"]
-    )
+    result = runner.invoke(app, ["schedule", "nonexistent.bdl", "--cron", "0 2 * * *"])
     assert result.exit_code != 0
     assert "not found" in result.stdout.lower()
 

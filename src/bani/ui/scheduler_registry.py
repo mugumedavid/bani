@@ -76,12 +76,14 @@ class SchedulerRegistry:
                 thread = self._threads.get(name)
                 is_alive = thread is not None and thread.is_alive()
 
-            results.append({
-                "project": name,
-                "cron": cron_expr,
-                "next_run": next_run,
-                "status": "active" if is_alive else "failed",
-            })
+            results.append(
+                {
+                    "project": name,
+                    "cron": cron_expr,
+                    "next_run": next_run,
+                    "status": "active" if is_alive else "failed",
+                }
+            )
 
         return results
 
@@ -200,9 +202,7 @@ class SchedulerRegistry:
                 now = datetime.now(timezone.utc)
                 next_time = _next_cron_time(cron_expr, now)
                 if next_time is None:
-                    logger.warning(
-                        "No next cron time for project '%s'", project_name
-                    )
+                    logger.warning("No next cron time for project '%s'", project_name)
                     break
 
                 wait_seconds = (next_time - now).total_seconds()
@@ -226,9 +226,7 @@ class SchedulerRegistry:
                 self._execute_scheduled_run(project_name, bdl_path, stop_event)
 
             except Exception:
-                logger.exception(
-                    "Scheduler error for project '%s'", project_name
-                )
+                logger.exception("Scheduler error for project '%s'", project_name)
                 # Wait before retrying to avoid tight error loops
                 stop_event.wait(timeout=60)
 
@@ -248,9 +246,7 @@ class SchedulerRegistry:
         self._pre_setup_credentials_from_xml(bdl_path, project_name)
         project = parse(bdl_path)
 
-        pool_size = (
-            project.options.parallel_workers if project.options else 4
-        )
+        pool_size = project.options.parallel_workers if project.options else 4
 
         source_class = ConnectorRegistry.get(project.source.dialect)
         source = cast(type[SourceConnector], source_class)()
@@ -289,9 +285,7 @@ class SchedulerRegistry:
                 pass
 
     @staticmethod
-    def _pre_setup_credentials_from_xml(
-        bdl_path: Path, project_name: str
-    ) -> None:
+    def _pre_setup_credentials_from_xml(bdl_path: Path, project_name: str) -> None:
         """Set env vars for direct credentials before parsing.
 
         For direct credentials (e.g. ``username="postgres"``), we set

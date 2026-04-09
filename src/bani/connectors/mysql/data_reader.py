@@ -81,9 +81,7 @@ class MySQLDataReader:
             # PyMySQL's cursor.description is 7-element (DB-API 2.0)
             # and does NOT include column flags. Read them from the
             # internal _result.fields which carries the full wire info.
-            result_fields = getattr(
-                getattr(cursor, "_result", None), "fields", None
-            )
+            result_fields = getattr(getattr(cursor, "_result", None), "fields", None)
             if result_fields and len(result_fields) == len(col_names):
                 col_flags = [int(f.flags) for f in result_fields]
                 col_charsets = [int(f.charsetnr) for f in result_fields]

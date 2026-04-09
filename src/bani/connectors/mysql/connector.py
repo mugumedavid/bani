@@ -35,10 +35,13 @@ from bani.domain.schema import (
     TableDefinition,
 )
 
-register_dialect_defaults("mysql", DialectDefaultConfig(
-    timestamp_expression="CURRENT_TIMESTAMP",
-    temporal_keywords=("datetime", "timestamp", "date", "time"),
-))
+register_dialect_defaults(
+    "mysql",
+    DialectDefaultConfig(
+        timestamp_expression="CURRENT_TIMESTAMP",
+        temporal_keywords=("datetime", "timestamp", "date", "time"),
+    ),
+)
 
 logger = logging.getLogger(__name__)
 
@@ -291,7 +294,9 @@ class MySQLConnector(SourceConnector, SinkConnector):
 
             # PK columns: TEXT→VARCHAR, and shorten if needed
             if col.name in pk_col_set and mysql_type in (
-                "TEXT", "LONGTEXT", "MEDIUMTEXT",
+                "TEXT",
+                "LONGTEXT",
+                "MEDIUMTEXT",
             ):
                 mysql_type = "VARCHAR(191)" if shorten_pk else "VARCHAR(255)"
             elif col.name in pk_col_set and shorten_pk:
@@ -325,27 +330,20 @@ class MySQLConnector(SourceConnector, SinkConnector):
                 col_def += " AUTO_INCREMENT"
             elif col.default_value and not strip_defaults:
                 mu = mysql_type.upper()
-                is_lob = any(
-                    kw in mu
-                    for kw in ("TEXT", "BLOB", "JSON", "GEOMETRY")
-                )
+                is_lob = any(kw in mu for kw in ("TEXT", "BLOB", "JSON", "GEOMETRY"))
                 if not is_lob:
                     translated = translate_default(
                         col.default_value, "mysql", mysql_type
                     )
                     if translated is not None:
-                        translated = self._normalize_default(
-                            translated, mysql_type
-                        )
+                        translated = self._normalize_default(translated, mysql_type)
                         col_def += f" DEFAULT {translated}"
 
             col_defs.append(col_def)
 
         # Add primary key if present
         if table_def.primary_key:
-            pk_cols_sql = ", ".join(
-                f"`{col}`" for col in table_def.primary_key
-            )
+            pk_cols_sql = ", ".join(f"`{col}`" for col in table_def.primary_key)
             col_defs.append(f"PRIMARY KEY ({pk_cols_sql})")
 
         # Add check constraints
@@ -382,9 +380,7 @@ class MySQLConnector(SourceConnector, SinkConnector):
                     except Exception:
                         pass
 
-                cur.execute(
-                    f"DROP TABLE IF EXISTS `{schema}`.`{tname}`"
-                )
+                cur.execute(f"DROP TABLE IF EXISTS `{schema}`.`{tname}`")
 
                 create_sql = (
                     f"CREATE TABLE `{schema}`.`{tname}` "
@@ -458,8 +454,11 @@ class MySQLConnector(SourceConnector, SinkConnector):
         if "(" in val and ")" in val:
             return val
         if upper in (
-            "CURRENT_TIMESTAMP", "TRUE", "FALSE",
-            "CURRENT_DATE", "CURRENT_TIME",
+            "CURRENT_TIMESTAMP",
+            "TRUE",
+            "FALSE",
+            "CURRENT_DATE",
+            "CURRENT_TIME",
         ):
             return val
         escaped = val.replace("'", "''")
@@ -523,8 +522,16 @@ class MySQLConnector(SourceConnector, SinkConnector):
                     row[0]: row[1].upper() for row in cur.fetchall()
                 }
 
-                text_types = {"TEXT", "TINYTEXT", "MEDIUMTEXT", "LONGTEXT",
-                              "BLOB", "TINYBLOB", "MEDIUMBLOB", "LONGBLOB"}
+                text_types = {
+                    "TEXT",
+                    "TINYTEXT",
+                    "MEDIUMTEXT",
+                    "LONGTEXT",
+                    "BLOB",
+                    "TINYBLOB",
+                    "MEDIUMBLOB",
+                    "LONGBLOB",
+                }
 
                 for index in indexes:
                     unique_kw = "UNIQUE" if index.is_unique else ""
@@ -547,7 +554,10 @@ class MySQLConnector(SourceConnector, SinkConnector):
                     except Exception as exc:
                         logging.getLogger(__name__).warning(
                             "Index %s on %s.%s skipped: %s",
-                            index.name, schema, table_name, exc,
+                            index.name,
+                            schema,
+                            table_name,
+                            exc,
                         )
 
     def create_foreign_keys(self, fks: tuple[ForeignKeyDefinition, ...]) -> None:

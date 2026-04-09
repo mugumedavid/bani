@@ -17,16 +17,19 @@ from bani.connectors.value_coercion import (
     register_driver_profile,
 )
 
-register_driver_profile("sqlite3", DriverProfile(
-    decimal=False,   # sqlite3 cannot bind Decimal
-    uuid=False,      # sqlite3 cannot bind UUID
-    date=False,      # sqlite3 stores as TEXT
-    time=False,      # sqlite3 stores as TEXT
-    timedelta=False,
-    list_ok=False,
-    dict_ok=False,
-    bytes=True,      # sqlite3 handles bytes as BLOB
-))
+register_driver_profile(
+    "sqlite3",
+    DriverProfile(
+        decimal=False,  # sqlite3 cannot bind Decimal
+        uuid=False,  # sqlite3 cannot bind UUID
+        date=False,  # sqlite3 stores as TEXT
+        time=False,  # sqlite3 stores as TEXT
+        timedelta=False,
+        list_ok=False,
+        dict_ok=False,
+        bytes=True,  # sqlite3 handles bytes as BLOB
+    ),
+)
 
 
 class SQLiteDataWriter:

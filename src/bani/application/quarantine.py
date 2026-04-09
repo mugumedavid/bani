@@ -230,15 +230,10 @@ class QuarantineManager:
         """
         escaped_project = project_name.replace("'", "''")
         sql = (
-            f"DELETE FROM {_QUARANTINE_TABLE} "
-            f"WHERE project_name = '{escaped_project}'"
+            f"DELETE FROM {_QUARANTINE_TABLE} WHERE project_name = '{escaped_project}'"
         )
         try:
             sink.execute_sql(sql)
-            logger.info(
-                "Cleared quarantined rows for project '%s'", project_name
-            )
+            logger.info("Cleared quarantined rows for project '%s'", project_name)
         except Exception as exc:
-            logger.warning(
-                "Failed to clear quarantine for '%s': %s", project_name, exc
-            )
+            logger.warning("Failed to clear quarantine for '%s': %s", project_name, exc)

@@ -96,9 +96,7 @@ class BaniProject:
 
         # Determine pool size from project options
         pool_size = (
-            self._project.options.parallel_workers
-            if self._project.options
-            else 4
+            self._project.options.parallel_workers if self._project.options else 4
         )
 
         # Create source connector and connect
@@ -124,9 +122,7 @@ class BaniProject:
             }
             if checkpoint is not None:
                 kwargs["checkpoint"] = checkpoint
-            orchestrator = MigrationOrchestrator(
-                self._project, source, sink, **kwargs
-            )
+            orchestrator = MigrationOrchestrator(self._project, source, sink, **kwargs)
             if cancel_event is not None:
                 orchestrator.set_cancel_event(cancel_event)
             return orchestrator.execute(resume=resume)
@@ -156,9 +152,7 @@ class BaniProject:
         assert source_cfg is not None
 
         pool_size = (
-            self._project.options.parallel_workers
-            if self._project.options
-            else 1
+            self._project.options.parallel_workers if self._project.options else 1
         )
         source_connector_class = ConnectorRegistry.get(source_cfg.dialect)
         source = cast(type[SourceConnector], source_connector_class)()

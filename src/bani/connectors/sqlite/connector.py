@@ -37,11 +37,14 @@ from bani.domain.schema import (
     TableDefinition,
 )
 
-register_dialect_defaults("sqlite", DialectDefaultConfig(
-    timestamp_expression="CURRENT_TIMESTAMP",
-    temporal_keywords=("date", "datetime", "timestamp", "time"),
-    reject_function_calls=True,  # SQLite only accepts constant expressions
-))
+register_dialect_defaults(
+    "sqlite",
+    DialectDefaultConfig(
+        timestamp_expression="CURRENT_TIMESTAMP",
+        temporal_keywords=("date", "datetime", "timestamp", "time"),
+        reject_function_calls=True,  # SQLite only accepts constant expressions
+    ),
+)
 
 
 def _create_sqlite_connection(database: str) -> sqlite3.Connection:
@@ -246,9 +249,7 @@ class SQLiteConnector(SourceConnector, SinkConnector):
                 # handled via PRIMARY KEY below, so skip default here.
                 pass
             elif col.default_value:
-                translated = translate_default(
-                    col.default_value, "sqlite", sqlite_type
-                )
+                translated = translate_default(col.default_value, "sqlite", sqlite_type)
                 if translated is not None:
                     col_def += f" DEFAULT {translated}"
 
@@ -272,7 +273,7 @@ class SQLiteConnector(SourceConnector, SinkConnector):
             src_cols = ", ".join(f'"{c}"' for c in fk.source_columns)
             ref_cols = ", ".join(f'"{c}"' for c in fk.referenced_columns)
             fk_clause = (
-                f"FOREIGN KEY ({src_cols}) REFERENCES \"{ref_table}\" ({ref_cols})"
+                f'FOREIGN KEY ({src_cols}) REFERENCES "{ref_table}" ({ref_cols})'
             )
             if fk.on_delete and fk.on_delete != "NO ACTION":
                 fk_clause += f" ON DELETE {fk.on_delete}"

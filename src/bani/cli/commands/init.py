@@ -101,8 +101,7 @@ def init(
         msg = f"Unknown source connector: {source}. Available: {', '.join(available)}"
         if output_format == "json":
             sys.stdout.write(
-                json.dumps({"command": "init", "status": "error", "error": msg})
-                + "\n"
+                json.dumps({"command": "init", "status": "error", "error": msg}) + "\n"
             )
             sys.stdout.flush()
         else:
@@ -131,8 +130,7 @@ def init(
         msg = f"Unknown target connector: {target}. Available: {', '.join(available)}"
         if output_format == "json":
             sys.stdout.write(
-                json.dumps({"command": "init", "status": "error", "error": msg})
-                + "\n"
+                json.dumps({"command": "init", "status": "error", "error": msg}) + "\n"
             )
             sys.stdout.flush()
         else:

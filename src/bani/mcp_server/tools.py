@@ -113,9 +113,7 @@ def handle_connections(params: dict[str, Any]) -> ToolResult:
             key: ConnectionRegistry.safe_summary(conn)
             for key, conn in connections.items()
         }
-        return _json_result(
-            {"connections": summaries, "count": len(summaries)}
-        )
+        return _json_result({"connections": summaries, "count": len(summaries)})
     except Exception as exc:
         return _text_result(f"Error: {exc}", is_error=True)
 
@@ -151,8 +149,7 @@ def handle_schema_inspect(params: dict[str, Any]) -> ToolResult:
             connector = params.get("connector", "")
             if not connector:
                 return _text_result(
-                    "Error: 'connection' or 'connector' "
-                    "parameter is required.",
+                    "Error: 'connection' or 'connector' parameter is required.",
                     is_error=True,
                 )
 
@@ -345,16 +342,13 @@ def handle_save_project(params: dict[str, Any]) -> ToolResult:
                 {
                     "saved": False,
                     "errors": errors,
-                    "message": "BDL validation failed. "
-                    "Fix the errors and try again.",
+                    "message": "BDL validation failed. Fix the errors and try again.",
                 },
                 is_error=True,
             )
 
         # Resolve projects directory and ensure it exists.
-        projects_dir = Path(
-            _DEFAULT_PROJECTS_DIR
-        ).expanduser()
+        projects_dir = Path(_DEFAULT_PROJECTS_DIR).expanduser()
         projects_dir.mkdir(parents=True, exist_ok=True)
 
         file_path = projects_dir / f"{name}.bdl"
@@ -406,9 +400,7 @@ def handle_run(params: dict[str, Any]) -> ToolResult:
         table_names = params.get("table_names")
 
         # Resolve project file from the projects directory.
-        projects_dir = Path(
-            _DEFAULT_PROJECTS_DIR
-        ).expanduser()
+        projects_dir = Path(_DEFAULT_PROJECTS_DIR).expanduser()
         project_path = projects_dir / f"{project_name}.bdl"
 
         if not project_path.exists():
@@ -444,9 +436,7 @@ def handle_run(params: dict[str, Any]) -> ToolResult:
                             source_table=str(name),
                         )
                     )
-            object.__setattr__(
-                project, "table_mappings", tuple(mappings)
-            )
+            object.__setattr__(project, "table_mappings", tuple(mappings))
 
         # Validate
         is_valid, errors = bani_project.validate()
@@ -461,8 +451,7 @@ def handle_run(params: dict[str, Any]) -> ToolResult:
                 {
                     "success": True,
                     "dry_run": True,
-                    "message": "Validation passed. "
-                    "No migration executed.",
+                    "message": "Validation passed. No migration executed.",
                     "project_name": project.name,
                 }
             )
@@ -539,11 +528,7 @@ def _make_event_callback(
                 f"Phase: {event.phase}",
             )
         elif isinstance(event, TableStarted):
-            est = (
-                f", ~{event.estimated_rows:,} rows"
-                if event.estimated_rows
-                else ""
-            )
+            est = f", ~{event.estimated_rows:,} rows" if event.estimated_rows else ""
             notifier(
                 state["tables_done"],
                 state["total"],
@@ -830,10 +815,7 @@ TOOL_DEFINITIONS: tuple[ToolDefinition, ...] = (
             "properties": {
                 "connector_name": {
                     "type": "string",
-                    "description": (
-                        "Connector name, e.g. 'postgresql', "
-                        "'mysql'."
-                    ),
+                    "description": ("Connector name, e.g. 'postgresql', 'mysql'."),
                 },
             },
             "required": ["connector_name"],
@@ -884,16 +866,12 @@ TOOL_DEFINITIONS: tuple[ToolDefinition, ...] = (
                 },
                 "username_env": {
                     "type": "string",
-                    "description": (
-                        "Env var name holding the username."
-                    ),
+                    "description": ("Env var name holding the username."),
                     "default": "",
                 },
                 "password_env": {
                     "type": "string",
-                    "description": (
-                        "Env var name holding the password."
-                    ),
+                    "description": ("Env var name holding the password."),
                     "default": "",
                 },
             },
@@ -917,17 +895,11 @@ TOOL_DEFINITIONS: tuple[ToolDefinition, ...] = (
             "properties": {
                 "source_connection": {
                     "type": "string",
-                    "description": (
-                        "Source connection key from "
-                        "bani_connections."
-                    ),
+                    "description": ("Source connection key from bani_connections."),
                 },
                 "target_connection": {
                     "type": "string",
-                    "description": (
-                        "Target connection key from "
-                        "bani_connections."
-                    ),
+                    "description": ("Target connection key from bani_connections."),
                 },
                 "source_connector": {
                     "type": "string",
@@ -946,9 +918,7 @@ TOOL_DEFINITIONS: tuple[ToolDefinition, ...] = (
                 "tables": {
                     "type": "array",
                     "items": {"type": "string"},
-                    "description": (
-                        "Optional list of table names to include."
-                    ),
+                    "description": ("Optional list of table names to include."),
                 },
             },
         },
@@ -965,9 +935,7 @@ TOOL_DEFINITIONS: tuple[ToolDefinition, ...] = (
             "properties": {
                 "bdl_content": {
                     "type": "string",
-                    "description": (
-                        "BDL document content (XML or JSON string)."
-                    ),
+                    "description": ("BDL document content (XML or JSON string)."),
                 },
             },
             "required": ["bdl_content"],
@@ -997,9 +965,7 @@ TOOL_DEFINITIONS: tuple[ToolDefinition, ...] = (
                 },
                 "bdl_content": {
                     "type": "string",
-                    "description": (
-                        "BDL document content (XML or JSON string)."
-                    ),
+                    "description": ("BDL document content (XML or JSON string)."),
                 },
                 "overwrite": {
                     "type": "boolean",
@@ -1025,15 +991,11 @@ TOOL_DEFINITIONS: tuple[ToolDefinition, ...] = (
             "properties": {
                 "bdl_content": {
                     "type": "string",
-                    "description": (
-                        "BDL document content (XML or JSON string)."
-                    ),
+                    "description": ("BDL document content (XML or JSON string)."),
                 },
                 "sample_size": {
                     "type": "integer",
-                    "description": (
-                        "Number of sample rows per table."
-                    ),
+                    "description": ("Number of sample rows per table."),
                     "default": 10,
                 },
             },
@@ -1063,16 +1025,14 @@ TOOL_DEFINITIONS: tuple[ToolDefinition, ...] = (
                 "dry_run": {
                     "type": "boolean",
                     "description": (
-                        "Validate the project without executing "
-                        "the migration."
+                        "Validate the project without executing the migration."
                     ),
                     "default": False,
                 },
                 "resume": {
                     "type": "boolean",
                     "description": (
-                        "Resume from the last checkpoint. "
-                        "Completed tables are skipped."
+                        "Resume from the last checkpoint. Completed tables are skipped."
                     ),
                     "default": False,
                 },
@@ -1102,9 +1062,7 @@ TOOL_DEFINITIONS: tuple[ToolDefinition, ...] = (
             "properties": {
                 "project_name": {
                     "type": "string",
-                    "description": (
-                        "Name of the migration project."
-                    ),
+                    "description": ("Name of the migration project."),
                 },
             },
             "required": ["project_name"],

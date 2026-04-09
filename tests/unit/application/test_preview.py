@@ -356,16 +356,12 @@ class TestPreviewSource:
     def test_only_first_batch_consumed(self) -> None:
         table = _make_table(
             "big",
-            columns=(
-                ColumnDefinition(name="id", data_type="INTEGER", nullable=False),
-            ),
+            columns=(ColumnDefinition(name="id", data_type="INTEGER", nullable=False),),
         )
         batch1 = pa.RecordBatch.from_pydict({"id": [1, 2, 3]})
         batch2 = pa.RecordBatch.from_pydict({"id": [4, 5, 6]})
         schema = _make_schema([table])
-        source = MockSourceConnector(
-            schema, table_data={"big": [batch1, batch2]}
-        )
+        source = MockSourceConnector(schema, table_data={"big": [batch1, batch2]})
         result = preview_source(source)
 
         rows = result.tables[0].sample_rows
@@ -375,9 +371,7 @@ class TestPreviewSource:
     def test_large_text_values_truncated_in_rows(self) -> None:
         table = _make_table(
             "docs",
-            columns=(
-                ColumnDefinition(name="body", data_type="TEXT", nullable=True),
-            ),
+            columns=(ColumnDefinition(name="body", data_type="TEXT", nullable=True),),
         )
         long_text = "x" * 500
         batch = pa.RecordBatch.from_pydict({"body": [long_text]})
@@ -392,9 +386,7 @@ class TestPreviewSource:
     def test_binary_values_shown_as_hex(self) -> None:
         table = _make_table(
             "files",
-            columns=(
-                ColumnDefinition(name="data", data_type="BYTEA", nullable=True),
-            ),
+            columns=(ColumnDefinition(name="data", data_type="BYTEA", nullable=True),),
         )
         batch = pa.RecordBatch.from_pydict({"data": [b"\xca\xfe\xba\xbe"]})
         schema = _make_schema([table])
@@ -406,9 +398,7 @@ class TestPreviewSource:
     def test_large_binary_values_truncated(self) -> None:
         table = _make_table(
             "blobs",
-            columns=(
-                ColumnDefinition(name="blob", data_type="BYTEA", nullable=True),
-            ),
+            columns=(ColumnDefinition(name="blob", data_type="BYTEA", nullable=True),),
         )
         big_blob = bytes(range(256)) * 2
         batch = pa.RecordBatch.from_pydict({"blob": [big_blob]})
@@ -516,15 +506,11 @@ class TestPreviewSource:
     def test_multiple_tables_previewed(self) -> None:
         t1 = _make_table(
             "users",
-            columns=(
-                ColumnDefinition(name="id", data_type="INTEGER", nullable=False),
-            ),
+            columns=(ColumnDefinition(name="id", data_type="INTEGER", nullable=False),),
         )
         t2 = _make_table(
             "orders",
-            columns=(
-                ColumnDefinition(name="id", data_type="INTEGER", nullable=False),
-            ),
+            columns=(ColumnDefinition(name="id", data_type="INTEGER", nullable=False),),
         )
         batch1 = pa.RecordBatch.from_pydict({"id": [1]})
         batch2 = pa.RecordBatch.from_pydict({"id": [10, 20]})

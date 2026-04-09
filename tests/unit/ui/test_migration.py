@@ -37,9 +37,7 @@ class TestMigrationRoutes:
     ) -> None:
         """Starting a migration for a non-existent project returns 404."""
         transport = ASGITransport(app=_server.app)  # type: ignore[arg-type]
-        async with AsyncClient(
-            transport=transport, base_url="http://testserver"
-        ) as ac:
+        async with AsyncClient(transport=transport, base_url="http://testserver") as ac:
             resp = await ac.post(
                 "/api/migrate",
                 json={"project_name": "nonexistent"},
@@ -86,9 +84,7 @@ class TestMigrationRoutes:
     ) -> None:
         """Validating a non-existent project returns 404."""
         transport = ASGITransport(app=_server.app)  # type: ignore[arg-type]
-        async with AsyncClient(
-            transport=transport, base_url="http://testserver"
-        ) as ac:
+        async with AsyncClient(transport=transport, base_url="http://testserver") as ac:
             resp = await ac.post(
                 "/api/migrate/validate",
                 json={"project_name": "nonexistent"},
@@ -102,9 +98,7 @@ class TestMigrationRoutes:
     ) -> None:
         """Status returns idle when no migration is running."""
         transport = ASGITransport(app=_server.app)  # type: ignore[arg-type]
-        async with AsyncClient(
-            transport=transport, base_url="http://testserver"
-        ) as ac:
+        async with AsyncClient(transport=transport, base_url="http://testserver") as ac:
             resp = await ac.get("/api/migrate/status", headers=_headers)
         assert resp.status_code == 200
         assert resp.json()["running"] is False
@@ -115,8 +109,6 @@ class TestMigrationRoutes:
     ) -> None:
         """Cancel when no migration is running returns 409."""
         transport = ASGITransport(app=_server.app)  # type: ignore[arg-type]
-        async with AsyncClient(
-            transport=transport, base_url="http://testserver"
-        ) as ac:
+        async with AsyncClient(transport=transport, base_url="http://testserver") as ac:
             resp = await ac.post("/api/migrate/cancel", headers=_headers)
         assert resp.status_code == 409

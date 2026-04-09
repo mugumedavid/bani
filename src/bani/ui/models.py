@@ -44,7 +44,8 @@ class MigrateRequest(BaseModel):
     project_name: str = Field(..., description="Name of the project (.bdl file)")
     resume: bool = Field(default=False, description="Resume from checkpoint")
     dry_run: bool = Field(
-        default=False, description="Dry run (validate only)",
+        default=False,
+        description="Dry run (validate only)",
     )
 
 
@@ -108,10 +109,12 @@ class SchemaInspectRequest(BaseModel):
     username_env: str = Field(default="", description="Env var or username")
     password_env: str = Field(default="", description="Env var or password")
     username_is_env: bool = Field(
-        default=False, description="username_env is an env var",
+        default=False,
+        description="username_env is an env var",
     )
     password_is_env: bool = Field(
-        default=False, description="password_env is an env var",
+        default=False,
+        description="password_env is an env var",
     )
     extra: dict[str, str] = Field(default_factory=dict, description="Extra params")
 

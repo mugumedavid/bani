@@ -105,9 +105,7 @@ class TestOracleDataWriter:
         connection.commit.assert_called_once()
 
     @patch("bani.connectors.oracle.data_writer.OracleDataWriter._arrow_to_input_sizes")
-    def test_write_batch_setinputsizes_called_once(
-        self, mock_sizes: MagicMock
-    ) -> None:
+    def test_write_batch_setinputsizes_called_once(self, mock_sizes: MagicMock) -> None:
         """setinputsizes should be called once before the loop, not per chunk."""
         mock_sizes.return_value = [None]
 
@@ -177,16 +175,12 @@ class TestOracleDataWriter:
             names=["id"],
         )
 
-        with patch(
-            "bani.connectors.oracle.data_writer.logger"
-        ) as mock_logger:
+        with patch("bani.connectors.oracle.data_writer.logger") as mock_logger:
             writer.write_batch("test_table", "TEST_SCHEMA", batch)
             mock_logger.warning.assert_called_once()
 
     @patch("bani.connectors.oracle.data_writer.OracleDataWriter._arrow_to_input_sizes")
-    def test_write_batch_cursor_closed_on_error(
-        self, mock_sizes: MagicMock
-    ) -> None:
+    def test_write_batch_cursor_closed_on_error(self, mock_sizes: MagicMock) -> None:
         """Cursor should be closed even if executemany raises."""
         mock_sizes.return_value = [None]
 

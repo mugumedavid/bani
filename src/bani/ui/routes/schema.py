@@ -68,9 +68,12 @@ async def inspect_schema(body: SchemaInspectRequest) -> SchemaInspectResponse:
 
         try:
             import logging as _log
+
             _log.getLogger("bani.ui").info(
                 "Schema inspect: dialect=%s host=%s port=%s ODBCSYSINI=%s",
-                body.resolved_dialect, body.host, body.port,
+                body.resolved_dialect,
+                body.host,
+                body.port,
                 os.environ.get("ODBCSYSINI", "NOT SET"),
             )
             db_schema = SchemaInspector.inspect(

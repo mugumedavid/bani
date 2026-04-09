@@ -151,10 +151,7 @@ def preview_source(
         # Filter tables if a list was provided
         if tables is not None:
             fqn = table_def.fully_qualified_name
-            if (
-                table_def.table_name not in tables
-                and fqn not in tables
-            ):
+            if table_def.table_name not in tables and fqn not in tables:
                 continue
 
         # Build column previews from introspected schema

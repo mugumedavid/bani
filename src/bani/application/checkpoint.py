@@ -151,9 +151,7 @@ class CheckpointManager:
             data: dict[str, Any] = json.loads(path.read_text(encoding="utf-8"))
             return data
         except (json.JSONDecodeError, OSError) as exc:
-            logger.warning(
-                "Failed to load checkpoint for '%s': %s", project_name, exc
-            )
+            logger.warning("Failed to load checkpoint for '%s': %s", project_name, exc)
             return None
 
     def update_table_status(
@@ -289,9 +287,7 @@ class CheckpointManager:
             path.unlink(missing_ok=True)
             logger.info("Checkpoint cleared for project '%s'", project_name)
         except OSError as exc:
-            logger.warning(
-                "Failed to clear checkpoint for '%s': %s", project_name, exc
-            )
+            logger.warning("Failed to clear checkpoint for '%s': %s", project_name, exc)
 
     def _write(self, project_name: str, data: dict[str, Any]) -> None:
         """Atomically write checkpoint data to disk.

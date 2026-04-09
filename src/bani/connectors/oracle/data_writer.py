@@ -24,18 +24,20 @@ logger = logging.getLogger(__name__)
 
 def _oracle_time_to_datetime(val: time) -> datetime:
     """Oracle has no TIME type; promote to TIMESTAMP."""
-    return datetime(1970, 1, 1, val.hour, val.minute,
-                    val.second, val.microsecond)
+    return datetime(1970, 1, 1, val.hour, val.minute, val.second, val.microsecond)
 
 
-register_driver_profile("oracledb", DriverProfile(
-    uuid=False,      # oracledb has no UUID support
-    time=False,      # Oracle has no TIME type
-    timedelta=False,
-    list_ok=False,
-    dict_ok=False,
-    custom_coercions=(("time", _oracle_time_to_datetime),),
-))
+register_driver_profile(
+    "oracledb",
+    DriverProfile(
+        uuid=False,  # oracledb has no UUID support
+        time=False,  # Oracle has no TIME type
+        timedelta=False,
+        list_ok=False,
+        dict_ok=False,
+        custom_coercions=(("time", _oracle_time_to_datetime),),
+    ),
+)
 
 if TYPE_CHECKING:
     import oracledb

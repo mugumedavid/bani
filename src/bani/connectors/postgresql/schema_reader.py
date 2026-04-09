@@ -368,10 +368,7 @@ class PostgreSQLSchemaReader:
             """)
             rows = cur.fetchall()
 
-        return {
-            (r[0], r[1]): int(r[2]) if r[2] is not None else None
-            for r in rows
-        }
+        return {(r[0], r[1]): int(r[2]) if r[2] is not None else None for r in rows}
 
     # ------------------------------------------------------------------
     # Helpers

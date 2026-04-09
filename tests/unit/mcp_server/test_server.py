@@ -162,9 +162,7 @@ class TestToolsCall:
     def test_handler_exception_returns_is_error(self) -> None:
         """If a handler raises an unhandled exception, isError is True."""
         server = McpServer()
-        server._tools["bani_explode"] = MagicMock(
-            side_effect=RuntimeError("boom")
-        )
+        server._tools["bani_explode"] = MagicMock(side_effect=RuntimeError("boom"))
 
         response = server._handle_request(
             _make_request(
@@ -216,9 +214,7 @@ class TestUnknownMethod:
     def test_returns_method_not_found(self) -> None:
         """Unknown methods get a -32601 error."""
         server = McpServer()
-        response = server._handle_request(
-            _make_request("some/unknown/method")
-        )
+        response = server._handle_request(_make_request("some/unknown/method"))
 
         assert "error" in response
         assert response["error"]["code"] == -32601
@@ -244,18 +240,14 @@ class TestMalformedRequests:
     def test_missing_id_field(self) -> None:
         """A request without 'id' is a JSON-RPC notification — no response."""
         server = McpServer()
-        response = server._handle_request(
-            {"jsonrpc": "2.0", "method": "initialize"}
-        )
+        response = server._handle_request({"jsonrpc": "2.0", "method": "initialize"})
 
         assert response is None
 
     def test_tools_call_missing_params(self) -> None:
         """tools/call with no params still dispatches (with empty name)."""
         server = McpServer()
-        response = server._handle_request(
-            _make_request("tools/call")
-        )
+        response = server._handle_request(_make_request("tools/call"))
 
         # Should fail because empty tool name is unknown
         assert "error" in response

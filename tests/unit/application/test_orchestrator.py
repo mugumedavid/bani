@@ -870,9 +870,7 @@ class TestResumeExecution:
         # Note: PG→MSSQL remaps public→dbo, so checkpoint uses dbo names
         project_hash = ckpt.compute_hash(project)
         ckpt.create(project.name, project_hash, ("dbo.users", "dbo.orders"))
-        ckpt.update_table_status(
-            project.name, "dbo.users", "completed", rows=100
-        )
+        ckpt.update_table_status(project.name, "dbo.users", "completed", rows=100)
 
         orch = MigrationOrchestrator(project, source, sink, checkpoint=ckpt)
         result = orch.execute(resume=True)
@@ -899,9 +897,7 @@ class TestResumeExecution:
         assert result.tables_failed == 0
         assert ckpt.load(project.name) is None
 
-    def test_resume_with_invalid_checkpoint_starts_fresh(
-        self, tmp_path: Path
-    ) -> None:
+    def test_resume_with_invalid_checkpoint_starts_fresh(self, tmp_path: Path) -> None:
         """resume=True with a stale checkpoint should start fresh."""
         project = create_test_project()
         schema = create_test_schema()
@@ -911,9 +907,7 @@ class TestResumeExecution:
 
         # Create checkpoint with wrong hash
         ckpt.create(project.name, "wrong_hash", ("public.users",))
-        ckpt.update_table_status(
-            project.name, "public.users", "completed", rows=100
-        )
+        ckpt.update_table_status(project.name, "public.users", "completed", rows=100)
 
         orch = MigrationOrchestrator(project, source, sink, checkpoint=ckpt)
         result = orch.execute(resume=True)
@@ -1009,14 +1003,10 @@ class TestQuarantineIntegration:
         sink = MockSinkConnector()
         qm = QuarantineManager()
 
-        orch = MigrationOrchestrator(
-            project, source, sink, quarantine=qm
-        )
+        orch = MigrationOrchestrator(project, source, sink, quarantine=qm)
         assert orch._quarantine is qm
 
-    def test_failed_batch_quarantined_on_log_and_continue(
-        self, tmp_path: Path
-    ) -> None:
+    def test_failed_batch_quarantined_on_log_and_continue(self, tmp_path: Path) -> None:
         """Failed batches should be quarantined with LOG_AND_CONTINUE."""
         project = ProjectModel(
             name="test_quarantine",
@@ -1059,9 +1049,7 @@ class TestQuarantineIntegration:
         sink = FailWriteSink()
         ckpt = CheckpointManager(base_dir=tmp_path)
 
-        orch = MigrationOrchestrator(
-            project, source, sink, checkpoint=ckpt
-        )
+        orch = MigrationOrchestrator(project, source, sink, checkpoint=ckpt)
         result = orch.execute()
 
         # Migration should complete (not abort)
@@ -1069,7 +1057,6 @@ class TestQuarantineIntegration:
         # The quarantine INSERT was attempted via execute_sql
         # (FailWriteSink inherits MockSinkConnector.execute_sql which records calls)
         quarantine_inserts = [
-            sql for sql in sink.executed_sql
-            if "INSERT INTO bani_quarantine" in sql
+            sql for sql in sink.executed_sql if "INSERT INTO bani_quarantine" in sql
         ]
         assert len(quarantine_inserts) >= 1

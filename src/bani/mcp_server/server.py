@@ -223,9 +223,7 @@ class McpServer:
 # ---------------------------------------------------------------------------
 
 
-def _success_response(
-    request: dict[str, Any], result: Any
-) -> dict[str, Any]:
+def _success_response(request: dict[str, Any], result: Any) -> dict[str, Any]:
     return {
         "jsonrpc": "2.0",
         "id": request.get("id"),
@@ -233,9 +231,7 @@ def _success_response(
     }
 
 
-def _error_response(
-    request: dict[str, Any], code: int, message: str
-) -> dict[str, Any]:
+def _error_response(request: dict[str, Any], code: int, message: str) -> dict[str, Any]:
     return {
         "jsonrpc": "2.0",
         "id": request.get("id"),

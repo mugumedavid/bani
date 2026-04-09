@@ -85,7 +85,8 @@ class TestHookConfig:
 
     def test_defaults(self) -> None:
         hook = HookConfig(
-            name="backup", event="before-migration",
+            name="backup",
+            event="before-migration",
             command="pg_dump mydb",
         )
         assert hook.timeout_seconds == 300

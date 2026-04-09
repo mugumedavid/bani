@@ -235,9 +235,7 @@ class TestSyncStateManager:
         reader = MockSourceConnector()
         mgr = SyncStateManager(sink, reader)
 
-        mgr.update_state(
-            "proj", "public.users", last_timestamp="2025-06-01T00:00:00"
-        )
+        mgr.update_state("proj", "public.users", last_timestamp="2025-06-01T00:00:00")
 
         # One for CREATE TABLE, one for DELETE+INSERT.
         assert len(sink.executed_sql) == 2
@@ -357,8 +355,7 @@ class TestFullSync:
 
         # Should have DDL (CREATE TABLE) + DELETE target + UPDATE state.
         state_sql = [
-            s for s in target.executed_sql
-            if "INSERT INTO _bani_sync_state" in s
+            s for s in target.executed_sql if "INSERT INTO _bani_sync_state" in s
         ]
         assert len(state_sql) == 1
 
@@ -375,7 +372,8 @@ class TestTimestampSync:
         """First timestamp sync (no prior state) reads everything."""
         batch = _make_batch(
             {
-                "id": [1, 2], "name": ["a", "b"],
+                "id": [1, 2],
+                "name": ["a", "b"],
                 "updated_at": ["2025-06-01", "2025-06-02"],
             }
         )
@@ -468,9 +466,7 @@ class TestTimestampSync:
 
     def test_wildcard_tracking_column(self) -> None:
         """A wildcard '*' tracking column matches any table."""
-        batch = _make_batch(
-            {"id": [1], "name": ["a"], "modified": ["2025-06-01"]}
-        )
+        batch = _make_batch({"id": [1], "name": ["a"], "modified": ["2025-06-01"]})
         source = MockSourceConnector(table_data={"public.orders": [batch]})
         target = MockCombinedConnector()
 
@@ -492,7 +488,8 @@ class TestTimestampSync:
         """After sync, the state table stores the max timestamp seen."""
         batch = _make_batch(
             {
-                "id": [1, 2], "name": ["a", "b"],
+                "id": [1, 2],
+                "name": ["a", "b"],
                 "updated_at": ["2025-06-01", "2025-06-02"],
             }
         )
@@ -513,8 +510,7 @@ class TestTimestampSync:
         engine.sync_table("users", "public", primary_key_columns=("id",))
 
         state_sql = [
-            s for s in target.executed_sql
-            if "INSERT INTO _bani_sync_state" in s
+            s for s in target.executed_sql if "INSERT INTO _bani_sync_state" in s
         ]
         assert len(state_sql) == 1
         assert "2025-06-02" in state_sql[0]
@@ -625,9 +621,7 @@ class TestRowversionSync:
 
     def test_mssql_rowversion_column(self) -> None:
         """MSSQL uses 'rowversion' as the change-tracking column."""
-        batch = _make_batch(
-            {"id": [1], "name": ["a"], "rowversion": [500]}
-        )
+        batch = _make_batch({"id": [1], "name": ["a"], "rowversion": [500]})
         source = MockSourceConnector(table_data={"dbo.users": [batch]})
         target = MockCombinedConnector()
 
@@ -645,9 +639,7 @@ class TestRowversionSync:
 
     def test_oracle_ora_rowscn(self) -> None:
         """Oracle uses ORA_ROWSCN as the change-tracking column."""
-        batch = _make_batch(
-            {"id": [1], "name": ["a"], "ORA_ROWSCN": [12345]}
-        )
+        batch = _make_batch({"id": [1], "name": ["a"], "ORA_ROWSCN": [12345]})
         source = MockSourceConnector(table_data={"hr.users": [batch]})
         target = MockCombinedConnector()
 
@@ -681,8 +673,7 @@ class TestRowversionSync:
         engine.sync_table("users", "public", primary_key_columns=("id",))
 
         state_sql = [
-            s for s in target.executed_sql
-            if "INSERT INTO _bani_sync_state" in s
+            s for s in target.executed_sql if "INSERT INTO _bani_sync_state" in s
         ]
         assert len(state_sql) == 1
         assert "200" in state_sql[0]
@@ -724,9 +715,7 @@ class TestChecksumSync:
         target_batch = _make_batch({"id": [1], "name": ["old_name"]})
 
         source = MockSourceConnector(table_data={"public.users": [source_batch]})
-        target = MockCombinedConnector(
-            table_data={"public.users": [target_batch]}
-        )
+        target = MockCombinedConnector(table_data={"public.users": [target_batch]})
 
         engine = IncrementalSyncEngine(
             sync_config=_sync_config(SyncStrategy.CHECKSUM),
@@ -747,9 +736,7 @@ class TestChecksumSync:
         target_batch = _make_batch({"id": [1, 2], "name": ["a", "b"]})
 
         source = MockSourceConnector(table_data={"public.users": [source_batch]})
-        target = MockCombinedConnector(
-            table_data={"public.users": [target_batch]}
-        )
+        target = MockCombinedConnector(table_data={"public.users": [target_batch]})
 
         engine = IncrementalSyncEngine(
             sync_config=_sync_config(SyncStrategy.CHECKSUM),
@@ -807,9 +794,7 @@ class TestChecksumSync:
         source_batch = _make_batch(
             {"tenant_id": [1, 1], "user_id": [10, 20], "name": ["a", "b"]}
         )
-        target_batch = _make_batch(
-            {"tenant_id": [1], "user_id": [10], "name": ["a"]}
-        )
+        target_batch = _make_batch({"tenant_id": [1], "user_id": [10], "name": ["a"]})
 
         source = MockSourceConnector(table_data={"public.memberships": [source_batch]})
         target = MockCombinedConnector(
@@ -837,9 +822,7 @@ class TestChecksumSync:
         target_batch = _make_batch({"id": [1, 2], "name": ["a", "b"]})
 
         source = MockSourceConnector(table_data={"public.users": []})
-        target = MockCombinedConnector(
-            table_data={"public.users": [target_batch]}
-        )
+        target = MockCombinedConnector(table_data={"public.users": [target_batch]})
 
         engine = IncrementalSyncEngine(
             sync_config=_sync_config(SyncStrategy.CHECKSUM),
@@ -909,9 +892,7 @@ class TestEdgeCases:
         """Engine handles multiple batches from source."""
         batch1 = _make_batch({"id": [1, 2], "name": ["a", "b"]})
         batch2 = _make_batch({"id": [3, 4], "name": ["c", "d"]})
-        source = MockSourceConnector(
-            table_data={"public.users": [batch1, batch2]}
-        )
+        source = MockSourceConnector(table_data={"public.users": [batch1, batch2]})
         target = MockCombinedConnector()
 
         engine = IncrementalSyncEngine(
@@ -981,9 +962,7 @@ class TestEdgeCases:
                 "last_sync_at": ["2025-01-01T00:00:00"],
             }
         )
-        delta_batch = _make_batch(
-            {"msg": ["hello"], "ts": ["2025-06-01"]}
-        )
+        delta_batch = _make_batch({"msg": ["hello"], "ts": ["2025-06-01"]})
         target = MockCombinedConnector(
             table_data={"public._bani_sync_state": [state_batch]}
         )

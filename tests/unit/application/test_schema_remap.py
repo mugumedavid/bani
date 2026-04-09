@@ -225,12 +225,8 @@ class TestEmptyTableFiltering:
         assert result.tables[0].table_name == "users"
 
     def test_all_empty_returns_empty(self) -> None:
-        empty1 = TableDefinition(
-            schema_name="public", table_name="a", columns=()
-        )
-        empty2 = TableDefinition(
-            schema_name="public", table_name="b", columns=()
-        )
+        empty1 = TableDefinition(schema_name="public", table_name="a", columns=())
+        empty2 = TableDefinition(schema_name="public", table_name="b", columns=())
         schema = _make_schema((empty1, empty2), "postgresql")
 
         result = SchemaRemapper.remap_schema(schema, "postgresql", "mssql")
@@ -343,9 +339,7 @@ class MockSinkConnector(SinkConnector):
     def create_table(self, table_def: TableDefinition) -> None:
         pass
 
-    def write_batch(
-        self, table_name: str, schema_name: str, batch: Any
-    ) -> int:
+    def write_batch(self, table_name: str, schema_name: str, batch: Any) -> int:
         self.write_batch_calls.append((table_name, schema_name))
         return len(batch)
 

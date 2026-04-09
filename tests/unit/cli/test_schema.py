@@ -136,9 +136,7 @@ def test_schema_inspect_human(
 
 
 @patch("bani.cli.commands.schema.ConnectorRegistry")
-def test_schema_inspect_json(
-    mock_registry_class: MagicMock, runner: CliRunner
-) -> None:
+def test_schema_inspect_json(mock_registry_class: MagicMock, runner: CliRunner) -> None:
     """Test schema inspect with JSON output matching Section 18.2."""
     os.environ["TEST_USERNAME"] = "testuser"
     os.environ["TEST_PASSWORD"] = "testpass"

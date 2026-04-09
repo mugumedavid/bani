@@ -80,9 +80,7 @@ class TestMySQLCreateTableRetry:
                 arrow_type_str="string",
             ),
         ]
-        table_def = _make_table_def(
-            columns=columns, pk=["owneruid", "key"]
-        )
+        table_def = _make_table_def(columns=columns, pk=["owneruid", "key"])
 
         executed_sqls: list[str] = []
 
@@ -209,9 +207,7 @@ class TestMySQLCreateTableRetry:
 
         def execute_side_effect(sql: str, *args: object) -> None:
             if "CREATE TABLE" in sql:
-                raise pymysql.err.OperationalError(
-                    9999, "Unknown error"
-                )
+                raise pymysql.err.OperationalError(9999, "Unknown error")
             if "KEY_COLUMN_USAGE" in sql:
                 return None
 

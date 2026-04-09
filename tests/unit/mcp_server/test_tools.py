@@ -190,9 +190,7 @@ class TestValidateBdl:
 
     def test_valid_xml(self) -> None:
         """Valid XML triggers validate_xml and returns valid: True."""
-        with patch(
-            "bani.bdl.validator.validate_xml", return_value=[]
-        ) as mock_val:
+        with patch("bani.bdl.validator.validate_xml", return_value=[]) as mock_val:
             result = handle_validate_bdl({"bdl_content": "<baniProject />"})
 
         assert result.is_error is False
@@ -214,9 +212,7 @@ class TestValidateBdl:
 
     def test_valid_json(self) -> None:
         """JSON content triggers validate_json."""
-        with patch(
-            "bani.bdl.validator.validate_json", return_value=[]
-        ) as mock_val:
+        with patch("bani.bdl.validator.validate_json", return_value=[]) as mock_val:
             result = handle_validate_bdl({"bdl_content": '{"name": "test"}'})
 
         assert result.is_error is False
@@ -336,9 +332,7 @@ class TestRun:
             )
             (tmp_path / "test.bdl").write_text(bdl)
 
-            result = handle_run(
-                {"project_name": "test", "dry_run": True}
-            )
+            result = handle_run({"project_name": "test", "dry_run": True})
 
         assert result.is_error is False
         data = json.loads(result.content[0]["text"])
@@ -358,9 +352,7 @@ class TestRun:
             patch("bani.sdk.bani.Bani.load", return_value=mock_bp),
         ):
             (tmp_path / "bad.bdl").write_text("<p/>")
-            result = handle_run(
-                {"project_name": "bad", "dry_run": True}
-            )
+            result = handle_run({"project_name": "bad", "dry_run": True})
 
         assert result.is_error is True
         data = json.loads(result.content[0]["text"])
@@ -508,9 +500,13 @@ class TestConnectorInfo:
             def disconnect(self) -> None: ...
             def introspect_schema(self) -> object: ...  # type: ignore[override]
             def read_table(self, *a: object, **kw: object) -> object: ...  # type: ignore[override]
-            def estimate_row_count(self, *a: object, **kw: object) -> int: return 0  # type: ignore[override]
+            def estimate_row_count(self, *a: object, **kw: object) -> int:
+                return 0  # type: ignore[override]
+
             def create_table(self, *a: object, **kw: object) -> None: ...  # type: ignore[override]
-            def write_batch(self, *a: object, **kw: object) -> int: return 0  # type: ignore[override]
+            def write_batch(self, *a: object, **kw: object) -> int:
+                return 0  # type: ignore[override]
+
             def create_indexes(self, *a: object, **kw: object) -> None: ...  # type: ignore[override]
             def create_foreign_keys(self, *a: object, **kw: object) -> None: ...  # type: ignore[override]
             def execute_sql(self, *a: object, **kw: object) -> None: ...  # type: ignore[override]

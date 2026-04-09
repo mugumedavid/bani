@@ -314,9 +314,7 @@ class TestResumeFlow:
         mgr.update_table_status(project.name, "t1", STATUS_IN_PROGRESS)
         mgr.update_row_offset(project.name, "t1", 50_000)
         mgr.update_row_offset(project.name, "t1", 100_000)
-        mgr.update_table_status(
-            project.name, "t1", STATUS_COMPLETED, rows=100_000
-        )
+        mgr.update_table_status(project.name, "t1", STATUS_COMPLETED, rows=100_000)
 
         # 3. t2 in progress
         mgr.update_table_status(project.name, "t2", STATUS_IN_PROGRESS)

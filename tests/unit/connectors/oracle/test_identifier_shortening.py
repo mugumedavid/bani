@@ -132,9 +132,7 @@ class TestOracleCreateTableRetry:
         assert len(connector._name_map[long_name]) == 30
 
     @patch("bani.connectors.oracle.connector.oracledb")
-    def test_ora_02000_retries_without_identity(
-        self, mock_oracledb: MagicMock
-    ) -> None:
+    def test_ora_02000_retries_without_identity(self, mock_oracledb: MagicMock) -> None:
         """ORA-02000 should trigger retry without IDENTITY syntax."""
         connector = OracleConnector()
         pool = MagicMock()
@@ -192,9 +190,7 @@ class TestOracleCreateTableRetry:
 
         connector.create_table(table_def)
 
-        create_sql = next(
-            s for s in executed_sqls if "CREATE TABLE" in s
-        )
+        create_sql = next(s for s in executed_sqls if "CREATE TABLE" in s)
         assert "VARCHAR2(255)" in create_sql
         assert "VARCHAR2(4000)" not in create_sql
 
@@ -212,9 +208,7 @@ class TestNameMapPropagation:
         assert connector._resolve_name("some_name") == "some_name"
 
     @patch("bani.connectors.oracle.connector.oracledb")
-    def test_write_batch_renames_columns(
-        self, mock_oracledb: MagicMock
-    ) -> None:
+    def test_write_batch_renames_columns(self, mock_oracledb: MagicMock) -> None:
         """write_batch should rename Arrow columns using _name_map."""
         connector = OracleConnector()
         pool = MagicMock()
@@ -231,9 +225,7 @@ class TestNameMapPropagation:
             names=["id", "long_column_name"],
         )
 
-        with patch(
-            "bani.connectors.oracle.connector.OracleDataWriter"
-        ) as MockWriter:
+        with patch("bani.connectors.oracle.connector.OracleDataWriter") as MockWriter:
             mock_writer = MockWriter.return_value
             mock_writer.write_batch.return_value = 1
             mock_writer.batch_errors = []

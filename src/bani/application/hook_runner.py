@@ -123,9 +123,7 @@ class HookRunner:
                     if hook.target == "source"
                     else self._target_executor
                 )
-                result = self._execute_sql_hook(
-                    hook, command, phase, executor
-                )
+                result = self._execute_sql_hook(hook, command, phase, executor)
             elif hook.hook_type in ("bdl", "migrate"):
                 result = self._execute_migrate_hook(hook, command, phase)
             else:
@@ -347,9 +345,7 @@ class HookRunner:
                     error=f"Project '{project_name}' has no source/target config",
                 )
 
-            pool_size = (
-                project.options.parallel_workers if project.options else 4
-            )
+            pool_size = project.options.parallel_workers if project.options else 4
 
             source_class = ConnectorRegistry.get(project.source.dialect)
             source = cast(type[SourceConnector], source_class)()

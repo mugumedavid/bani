@@ -21,6 +21,7 @@ from dataclasses import dataclass
 # Dialect config dataclass
 # ---------------------------------------------------------------------------
 
+
 @dataclass(frozen=True)
 class DialectDefaultConfig:
     """Per-dialect configuration for default-value translation.
@@ -49,14 +50,16 @@ class DialectDefaultConfig:
 # ---------------------------------------------------------------------------
 
 # Timestamp default expressions recognised across all dialects
-_TIMESTAMP_DEFAULTS = frozenset({
-    "now()",
-    "current_timestamp",
-    "current_timestamp()",
-    "getdate()",
-    "sysdate",
-    "localtimestamp",
-})
+_TIMESTAMP_DEFAULTS = frozenset(
+    {
+        "now()",
+        "current_timestamp",
+        "current_timestamp()",
+        "getdate()",
+        "sysdate",
+        "localtimestamp",
+    }
+)
 
 # Substrings that mark a default as non-portable (skip entirely)
 _NON_PORTABLE_MARKERS = (
@@ -78,9 +81,7 @@ _NON_PORTABLE_MARKERS = (
 _DIALECT_REGISTRY: dict[str, DialectDefaultConfig] = {}
 
 
-def register_dialect_defaults(
-    dialect: str, config: DialectDefaultConfig
-) -> None:
+def register_dialect_defaults(dialect: str, config: DialectDefaultConfig) -> None:
     """Register a dialect's default-translation configuration.
 
     Called once per connector module at import time.  For example::
@@ -104,6 +105,7 @@ def register_dialect_defaults(
 # ---------------------------------------------------------------------------
 # Translation engine
 # ---------------------------------------------------------------------------
+
 
 def translate_default(
     raw_default: str,

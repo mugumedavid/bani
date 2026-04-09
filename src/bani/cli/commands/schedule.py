@@ -35,14 +35,17 @@ schedule_app = typer.Typer(help="Manage scheduled migrations")
 @schedule_app.command("register")
 def schedule_register(
     project_file: str = typer.Argument(
-        ..., help="Path to BDL project file",
+        ...,
+        help="Path to BDL project file",
     ),
     cron: str = typer.Option(
-        ..., "--cron",
+        ...,
+        "--cron",
         help='Cron expression (e.g., "0 2 * * *")',
     ),
     timezone: str = typer.Option(
-        "UTC", "--timezone",
+        "UTC",
+        "--timezone",
         help="IANA timezone (default: UTC)",
     ),
 ) -> None:
@@ -153,9 +156,7 @@ def schedule_unregister(
             )
             sys.stdout.flush()
         else:
-            console.print(
-                f"[bold green]✓ Unregistered:[/bold green] {project_name}"
-            )
+            console.print(f"[bold green]✓ Unregistered:[/bold green] {project_name}")
     except SchedulerError as e:
         if output_format == "json":
             sys.stdout.write(
@@ -232,14 +233,17 @@ def schedule_list() -> None:
 
 def schedule(
     project_file: str = typer.Argument(
-        ..., help="Path to BDL project file",
+        ...,
+        help="Path to BDL project file",
     ),
     cron: str = typer.Option(
-        ..., "--cron",
+        ...,
+        "--cron",
         help='Cron expression (e.g., "0 2 * * *")',
     ),
     timezone: str = typer.Option(
-        "UTC", "--timezone",
+        "UTC",
+        "--timezone",
         help="IANA timezone (default: UTC)",
     ),
 ) -> None:

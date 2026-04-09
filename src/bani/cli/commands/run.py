@@ -114,7 +114,8 @@ def _make_json_callback(quiet: bool) -> Any:
 def run(
     project_file: str = typer.Argument(..., help="Path to BDL project file"),
     dry_run: bool = typer.Option(
-        False, "--dry-run",
+        False,
+        "--dry-run",
         help="Validate and plan but don't execute.",
     ),
     tables: str | None = typer.Option(
@@ -122,10 +123,13 @@ def run(
     ),
     parallel: int = typer.Option(1, help="Number of parallel workers."),
     batch_size: int = typer.Option(
-        100_000, "--batch-size", help="Rows per batch.",
+        100_000,
+        "--batch-size",
+        help="Rows per batch.",
     ),
     resume: bool = typer.Option(
-        False, "--resume",
+        False,
+        "--resume",
         help="Resume a previously failed migration.",
     ),
 ) -> None:
@@ -230,10 +234,12 @@ def run(
         for name in table_names:
             parts = name.split(".", 1)
             if len(parts) == 2:
-                mappings.append(TableMapping(
-                    source_schema=parts[0],
-                    source_table=parts[1],
-                ))
+                mappings.append(
+                    TableMapping(
+                        source_schema=parts[0],
+                        source_table=parts[1],
+                    )
+                )
             else:
                 mappings.append(TableMapping(source_schema="", source_table=name))
         object.__setattr__(project, "table_mappings", tuple(mappings))
@@ -265,9 +271,7 @@ def run(
         sink.connect(target_cfg, pool_size=pool_size)
 
         try:
-            orchestrator = MigrationOrchestrator(
-                project, source, sink, tracker=tracker
-            )
+            orchestrator = MigrationOrchestrator(project, source, sink, tracker=tracker)
             result = orchestrator.execute(resume=resume)
 
             if output_format == "human" and not quiet:

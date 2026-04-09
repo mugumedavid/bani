@@ -35,8 +35,12 @@ class FakeConnector(SourceConnector, SinkConnector):
         pass
 
     def read_table(  # type: ignore[override]
-        self, table_name, schema_name="",
-        columns=None, filter_sql=None, batch_size=100000,
+        self,
+        table_name,
+        schema_name="",
+        columns=None,
+        filter_sql=None,
+        batch_size=100000,
     ):
         yield from ()
 

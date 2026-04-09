@@ -151,9 +151,7 @@ class SyncStateManager:
             logger.debug("_bani_sync_state table may already exist; ignoring DDL error")
         self._table_ensured = True
 
-    def read_state(
-        self, project: str, table: str
-    ) -> SyncStateRow | None:
+    def read_state(self, project: str, table: str) -> SyncStateRow | None:
         """Read the sync state for a given project/table pair.
 
         Args:
@@ -165,9 +163,7 @@ class SyncStateManager:
         """
         self._ensure_table()
 
-        filter_sql = (
-            f"project_name = '{project}' AND table_name = '{table}'"
-        )
+        filter_sql = f"project_name = '{project}' AND table_name = '{table}'"
         try:
             for batch in self._reader.read_table(
                 table_name=_SYNC_STATE_TABLE,
@@ -177,10 +173,7 @@ class SyncStateManager:
             ):
                 if batch.num_rows == 0:
                     continue
-                row = {
-                    col: batch.column(col)[0].as_py()
-                    for col in batch.schema.names
-                }
+                row = {col: batch.column(col)[0].as_py() for col in batch.schema.names}
                 return SyncStateRow(
                     project_name=str(row.get("project_name", "")),
                     table_name=str(row.get("table_name", "")),
@@ -413,9 +406,7 @@ class IncrementalSyncEngine:
                     val = col_data[i].as_py()
                     if val is not None:
                         val_str = (
-                            val.isoformat()
-                            if isinstance(val, datetime)
-                            else str(val)
+                            val.isoformat() if isinstance(val, datetime) else str(val)
                         )
                         if max_ts is None or val_str > max_ts:
                             max_ts = val_str
@@ -431,13 +422,9 @@ class IncrementalSyncEngine:
                     )
                     updated += count
                 else:
-                    inserted += self._sink.write_batch(
-                        table_name, schema_name, batch
-                    )
+                    inserted += self._sink.write_batch(table_name, schema_name, batch)
 
-        self._state_mgr.update_state(
-            self._project, fq_name, last_timestamp=max_ts
-        )
+        self._state_mgr.update_state(self._project, fq_name, last_timestamp=max_ts)
         return _StrategyResult(inserted=inserted, updated=updated, is_full=is_full)
 
     def _rowversion_sync(
@@ -499,13 +486,9 @@ class IncrementalSyncEngine:
                     )
                     updated += count
                 else:
-                    inserted += self._sink.write_batch(
-                        table_name, schema_name, batch
-                    )
+                    inserted += self._sink.write_batch(table_name, schema_name, batch)
 
-        self._state_mgr.update_state(
-            self._project, fq_name, last_rowversion=max_rv
-        )
+        self._state_mgr.update_state(self._project, fq_name, last_rowversion=max_rv)
         return _StrategyResult(inserted=inserted, updated=updated, is_full=is_full)
 
     def _checksum_sync(
@@ -567,9 +550,7 @@ class IncrementalSyncEngine:
                 schema_name=schema_name,
                 batch_size=self._batch_size,
             ):
-                filtered = _filter_batch_by_pk(
-                    batch, primary_key_columns, keys_needed
-                )
+                filtered = _filter_batch_by_pk(batch, primary_key_columns, keys_needed)
                 if filtered is None or filtered.num_rows == 0:
                     continue
 
@@ -583,9 +564,7 @@ class IncrementalSyncEngine:
                             f".{_quote_ident(table_name)} WHERE {where}"
                         )
 
-                self._sink.write_batch(
-                    table_name, schema_name, filtered
-                )
+                self._sink.write_batch(table_name, schema_name, filtered)
                 # Count inserts vs updates.
                 for row_idx in range(filtered.num_rows):
                     pk_val = _extract_pk_tuple(filtered, primary_key_columns, row_idx)
@@ -655,9 +634,7 @@ class IncrementalSyncEngine:
                 row_data = "|".join(
                     str(batch.column(c)[row_idx].as_py()) for c in col_names
                 )
-                hashes[pk_val] = hashlib.sha256(
-                    row_data.encode("utf-8")
-                ).hexdigest()
+                hashes[pk_val] = hashlib.sha256(row_data.encode("utf-8")).hexdigest()
         return hashes
 
 
@@ -698,9 +675,7 @@ def _pk_where_clause(
         elif isinstance(val, (int, float)):
             parts.append(f"{_quote_ident(col)} = {val}")
         else:
-            parts.append(
-                f"{_quote_ident(col)} = '{_escape_single_quotes(str(val))}'"
-            )
+            parts.append(f"{_quote_ident(col)} = '{_escape_single_quotes(str(val))}'")
     return " AND ".join(parts)
 
 

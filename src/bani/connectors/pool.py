@@ -77,7 +77,8 @@ class ConnectionPool(Generic[C]):
         pool_total = len(self._all)
         logger.info(
             "[POOL] acquire: waiting for connection (available=%d, total=%d)",
-            pool_qsize, pool_total,
+            pool_qsize,
+            pool_total,
         )
         try:
             conn = self._queue.get(timeout=30)
@@ -85,7 +86,8 @@ class ConnectionPool(Generic[C]):
             logger.error(
                 "[POOL] acquire: TIMEOUT — no connection available after 30s "
                 "(pool_total=%d, queue_size=%d)",
-                len(self._all), self._queue.qsize(),
+                len(self._all),
+                self._queue.qsize(),
             )
             raise ConnectionError(
                 "No database connection available — all pool connections "
@@ -99,7 +101,9 @@ class ConnectionPool(Generic[C]):
             failed = True
             logger.warning(
                 "[POOL] acquire: connection %s failed with %s: %s",
-                id(conn), type(exc).__name__, exc,
+                id(conn),
+                type(exc).__name__,
+                exc,
             )
             raise
         finally:
@@ -109,14 +113,15 @@ class ConnectionPool(Generic[C]):
                     self._reset(conn)
                     self._queue.put(conn)
                     logger.info(
-                        "[POOL] connection %s reset OK, "
-                        "returned to pool", id(conn),
+                        "[POOL] connection %s reset OK, returned to pool",
+                        id(conn),
                     )
                 except Exception as reset_exc:
                     logger.warning(
                         "[POOL] reset FAILED for connection "
                         "%s: %s — attempting replacement",
-                        id(conn), reset_exc,
+                        id(conn),
+                        reset_exc,
                     )
                     try:
                         self._close(conn)
@@ -130,12 +135,14 @@ class ConnectionPool(Generic[C]):
                                 break
                         self._queue.put(new_conn)
                         logger.info(
-                            "[POOL] replacement connection %s created OK", id(new_conn),
+                            "[POOL] replacement connection %s created OK",
+                            id(new_conn),
                         )
                     except Exception as factory_exc:
                         logger.error(
                             "[POOL] replacement FAILED: %s — pool shrunk to %d",
-                            factory_exc, self._queue.qsize(),
+                            factory_exc,
+                            self._queue.qsize(),
                         )
             else:
                 self._queue.put(conn)

@@ -65,7 +65,8 @@ class TestMSSQLConnector:
         assert result is None
 
     @patch(
-        "bani.connectors.mssql.connector.pyodbc_module", None,
+        "bani.connectors.mssql.connector.pyodbc_module",
+        None,
     )
     @patch("bani.connectors.mssql.connector.pymssql_module")
     def test_connect_pymssql_fallback(self, mock_pymssql: Any) -> None:
@@ -84,7 +85,9 @@ class TestMSSQLConnector:
     @patch("bani.connectors.mssql.connector.pyodbc_module")
     @patch("bani.connectors.mssql.connector.pymssql_module")
     def test_connect_pyodbc_preferred(
-        self, mock_pymssql: Any, mock_pyodbc: Any,
+        self,
+        mock_pymssql: Any,
+        mock_pyodbc: Any,
     ) -> None:
         """Test that pyodbc is tried first when available."""
         mock_connection = MagicMock()
@@ -101,7 +104,9 @@ class TestMSSQLConnector:
     @patch("bani.connectors.mssql.connector.pyodbc_module")
     @patch("bani.connectors.mssql.connector.pymssql_module")
     def test_connect_pyodbc_failure_falls_back(
-        self, mock_pymssql: Any, mock_pyodbc: Any,
+        self,
+        mock_pymssql: Any,
+        mock_pyodbc: Any,
     ) -> None:
         """Test fallback to pymssql when pyodbc connect fails."""
         mock_pyodbc.connect.side_effect = Exception("ODBC driver not found")
@@ -135,7 +140,8 @@ class TestMSSQLConnector:
         connector.disconnect()  # Should not raise
 
     @patch(
-        "bani.connectors.mssql.connector.pyodbc_module", None,
+        "bani.connectors.mssql.connector.pyodbc_module",
+        None,
     )
     @patch("bani.connectors.mssql.connector.pymssql_module")
     def test_disconnect_connected(self, mock_pymssql: Any) -> None:

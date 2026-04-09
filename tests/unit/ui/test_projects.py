@@ -36,9 +36,7 @@ class TestProjectCRUD:
     ) -> None:
         """List returns empty when no projects exist."""
         transport = ASGITransport(app=_server.app)  # type: ignore[arg-type]
-        async with AsyncClient(
-            transport=transport, base_url="http://testserver"
-        ) as ac:
+        async with AsyncClient(transport=transport, base_url="http://testserver") as ac:
             resp = await ac.get("/api/projects", headers=_headers)
         assert resp.status_code == 200
         assert resp.json() == []
@@ -49,9 +47,7 @@ class TestProjectCRUD:
     ) -> None:
         """Create a new project and verify it's returned."""
         transport = ASGITransport(app=_server.app)  # type: ignore[arg-type]
-        async with AsyncClient(
-            transport=transport, base_url="http://testserver"
-        ) as ac:
+        async with AsyncClient(transport=transport, base_url="http://testserver") as ac:
             resp = await ac.post(
                 "/api/projects",
                 json={"name": "test-proj", "content": "<bani/>"},
@@ -69,9 +65,7 @@ class TestProjectCRUD:
         """Creating a project with an existing name returns 409."""
         Path(_projects_dir, "dup.bdl").write_text("<existing/>")
         transport = ASGITransport(app=_server.app)  # type: ignore[arg-type]
-        async with AsyncClient(
-            transport=transport, base_url="http://testserver"
-        ) as ac:
+        async with AsyncClient(transport=transport, base_url="http://testserver") as ac:
             resp = await ac.post(
                 "/api/projects",
                 json={"name": "dup", "content": "<new/>"},
@@ -86,9 +80,7 @@ class TestProjectCRUD:
         """Read a project by name."""
         Path(_projects_dir, "myproj.bdl").write_text("<hello/>")
         transport = ASGITransport(app=_server.app)  # type: ignore[arg-type]
-        async with AsyncClient(
-            transport=transport, base_url="http://testserver"
-        ) as ac:
+        async with AsyncClient(transport=transport, base_url="http://testserver") as ac:
             resp = await ac.get("/api/projects/myproj", headers=_headers)
         assert resp.status_code == 200
         assert resp.json()["content"] == "<hello/>"
@@ -99,9 +91,7 @@ class TestProjectCRUD:
     ) -> None:
         """Get a non-existent project returns 404."""
         transport = ASGITransport(app=_server.app)  # type: ignore[arg-type]
-        async with AsyncClient(
-            transport=transport, base_url="http://testserver"
-        ) as ac:
+        async with AsyncClient(transport=transport, base_url="http://testserver") as ac:
             resp = await ac.get("/api/projects/nope", headers=_headers)
         assert resp.status_code == 404
 
@@ -112,9 +102,7 @@ class TestProjectCRUD:
         """Update an existing project's content."""
         Path(_projects_dir, "upd.bdl").write_text("<old/>")
         transport = ASGITransport(app=_server.app)  # type: ignore[arg-type]
-        async with AsyncClient(
-            transport=transport, base_url="http://testserver"
-        ) as ac:
+        async with AsyncClient(transport=transport, base_url="http://testserver") as ac:
             resp = await ac.put(
                 "/api/projects/upd",
                 json={"content": "<new/>"},
@@ -131,9 +119,7 @@ class TestProjectCRUD:
     ) -> None:
         """Update a non-existent project returns 404."""
         transport = ASGITransport(app=_server.app)  # type: ignore[arg-type]
-        async with AsyncClient(
-            transport=transport, base_url="http://testserver"
-        ) as ac:
+        async with AsyncClient(transport=transport, base_url="http://testserver") as ac:
             resp = await ac.put(
                 "/api/projects/nope",
                 json={"content": "<x/>"},
@@ -148,9 +134,7 @@ class TestProjectCRUD:
         """Delete an existing project."""
         Path(_projects_dir, "del.bdl").write_text("<bye/>")
         transport = ASGITransport(app=_server.app)  # type: ignore[arg-type]
-        async with AsyncClient(
-            transport=transport, base_url="http://testserver"
-        ) as ac:
+        async with AsyncClient(transport=transport, base_url="http://testserver") as ac:
             resp = await ac.delete("/api/projects/del", headers=_headers)
         assert resp.status_code == 204
         assert not Path(_projects_dir, "del.bdl").exists()
@@ -161,9 +145,7 @@ class TestProjectCRUD:
     ) -> None:
         """Delete a non-existent project returns 404."""
         transport = ASGITransport(app=_server.app)  # type: ignore[arg-type]
-        async with AsyncClient(
-            transport=transport, base_url="http://testserver"
-        ) as ac:
+        async with AsyncClient(transport=transport, base_url="http://testserver") as ac:
             resp = await ac.delete("/api/projects/nope", headers=_headers)
         assert resp.status_code == 404
 
@@ -176,9 +158,7 @@ class TestProjectCRUD:
         Path(_projects_dir, "beta.bdl").write_text("<b/>")
         Path(_projects_dir, "not-bdl.txt").write_text("skip me")
         transport = ASGITransport(app=_server.app)  # type: ignore[arg-type]
-        async with AsyncClient(
-            transport=transport, base_url="http://testserver"
-        ) as ac:
+        async with AsyncClient(transport=transport, base_url="http://testserver") as ac:
             resp = await ac.get("/api/projects", headers=_headers)
         assert resp.status_code == 200
         names = [p["name"] for p in resp.json()]

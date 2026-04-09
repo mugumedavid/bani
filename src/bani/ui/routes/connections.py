@@ -27,8 +27,7 @@ async def list_connections() -> dict[str, Any]:
 
     connections = ConnectionRegistry.load()
     summaries = {
-        key: ConnectionRegistry.safe_summary(conn)
-        for key, conn in connections.items()
+        key: ConnectionRegistry.safe_summary(conn) for key, conn in connections.items()
     }
     return {"connections": summaries, "count": len(summaries)}
 
@@ -83,12 +82,8 @@ async def get_connection_config(key: str) -> dict[str, Any]:
     password_is_env = _is_env_ref(conn.password)
 
     # Strip ${env:...} wrapper for the form value if it's an env ref.
-    username_val = (
-        conn.username[6:-1] if username_is_env else conn.username
-    )
-    password_val = (
-        conn.password[6:-1] if password_is_env else conn.password
-    )
+    username_val = conn.username[6:-1] if username_is_env else conn.username
+    password_val = conn.password[6:-1] if password_is_env else conn.password
 
     extra: dict[str, str] = dict(conn.options)
 

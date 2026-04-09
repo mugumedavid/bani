@@ -28,6 +28,7 @@ DIALECTS = ["postgresql", "mysql", "mssql", "oracle", "sqlite"]
 
 # ── Timestamp defaults: accepted on temporal columns ─────────────────
 
+
 class TestTimestampOnTemporalColumns:
     """Timestamp defaults should be translated when the column IS temporal."""
 
@@ -47,10 +48,17 @@ class TestTimestampOnTemporalColumns:
         "sqlite": "CURRENT_TIMESTAMP",
     }
 
-    @pytest.mark.parametrize("source_default", [
-        "now()", "CURRENT_TIMESTAMP", "current_timestamp()",
-        "GETDATE()", "SYSDATE", "localtimestamp",
-    ])
+    @pytest.mark.parametrize(
+        "source_default",
+        [
+            "now()",
+            "CURRENT_TIMESTAMP",
+            "current_timestamp()",
+            "GETDATE()",
+            "SYSDATE",
+            "localtimestamp",
+        ],
+    )
     @pytest.mark.parametrize("dialect", DIALECTS)
     def test_timestamp_on_temporal_column(
         self, source_default: str, dialect: str
@@ -62,20 +70,30 @@ class TestTimestampOnTemporalColumns:
 
 # ── Timestamp defaults: rejected on non-temporal columns ─────────────
 
+
 class TestTimestampOnNonTemporalColumns:
     """Timestamp defaults should be SKIPPED when the column is NOT temporal."""
 
-    @pytest.mark.parametrize("source_default", [
-        "now()", "CURRENT_TIMESTAMP", "GETDATE()", "SYSDATE",
-    ])
-    @pytest.mark.parametrize("dialect,col_type", [
-        ("mysql", "TEXT"),
-        ("mysql", "VARCHAR(255)"),
-        ("mssql", "NVARCHAR(MAX)"),
-        ("oracle", "VARCHAR2(200)"),
-        ("oracle", "CLOB"),
-        ("sqlite", "TEXT"),
-    ])
+    @pytest.mark.parametrize(
+        "source_default",
+        [
+            "now()",
+            "CURRENT_TIMESTAMP",
+            "GETDATE()",
+            "SYSDATE",
+        ],
+    )
+    @pytest.mark.parametrize(
+        "dialect,col_type",
+        [
+            ("mysql", "TEXT"),
+            ("mysql", "VARCHAR(255)"),
+            ("mssql", "NVARCHAR(MAX)"),
+            ("oracle", "VARCHAR2(200)"),
+            ("oracle", "CLOB"),
+            ("sqlite", "TEXT"),
+        ],
+    )
     def test_timestamp_on_non_temporal_column(
         self, source_default: str, dialect: str, col_type: str
     ) -> None:
@@ -85,66 +103,77 @@ class TestTimestampOnNonTemporalColumns:
 
 # ── Non-portable defaults: always skipped ────────────────────────────
 
+
 class TestNonPortableDefaults:
     """Source-specific defaults should always be dropped."""
 
-    @pytest.mark.parametrize("default_val", [
-        "nextval('seq'::regclass)",
-        "gen_random_uuid()",
-        "sys_guid()",
-        "'hello'::text",
-        "GENERATED ALWAYS",
-        "NEWID()",
-    ])
+    @pytest.mark.parametrize(
+        "default_val",
+        [
+            "nextval('seq'::regclass)",
+            "gen_random_uuid()",
+            "sys_guid()",
+            "'hello'::text",
+            "GENERATED ALWAYS",
+            "NEWID()",
+        ],
+    )
     @pytest.mark.parametrize("dialect", DIALECTS)
-    def test_non_portable_always_none(
-        self, default_val: str, dialect: str
-    ) -> None:
+    def test_non_portable_always_none(self, default_val: str, dialect: str) -> None:
         result = translate_default(default_val, dialect, "TEXT")
         assert result is None
 
 
 # ── Pass-through defaults ────────────────────────────────────────────
 
+
 class TestPassthroughDefaults:
     """Normal defaults (literals, quoted strings) should pass through."""
 
-    @pytest.mark.parametrize("default_val", [
-        "'pending'",
-        "0",
-        "1",
-        "42.5",
-        "'hello world'",
-        "NULL",
-        "TRUE",
-        "FALSE",
-    ])
+    @pytest.mark.parametrize(
+        "default_val",
+        [
+            "'pending'",
+            "0",
+            "1",
+            "42.5",
+            "'hello world'",
+            "NULL",
+            "TRUE",
+            "FALSE",
+        ],
+    )
     @pytest.mark.parametrize("dialect", DIALECTS)
-    def test_literal_passthrough(
-        self, default_val: str, dialect: str
-    ) -> None:
+    def test_literal_passthrough(self, default_val: str, dialect: str) -> None:
         result = translate_default(default_val, dialect, "TEXT")
         assert result == default_val
 
 
 # ── SQLite: function calls in defaults are rejected ──────────────────
 
+
 class TestSQLiteFunctionReject:
     """SQLite cannot handle arbitrary function calls in DEFAULT clauses."""
 
-    @pytest.mark.parametrize("default_val", [
-        "random()",
-        "upper('hello')",
-        "substr('abc', 1, 2)",
-    ])
+    @pytest.mark.parametrize(
+        "default_val",
+        [
+            "random()",
+            "upper('hello')",
+            "substr('abc', 1, 2)",
+        ],
+    )
     def test_sqlite_rejects_functions(self, default_val: str) -> None:
         result = translate_default(default_val, "sqlite", "TEXT")
         assert result is None
 
-    @pytest.mark.parametrize("default_val", [
-        "random()",
-        "upper('hello')",
-    ])
+    @pytest.mark.parametrize(
+        "default_val",
+        [
+            "random()",
+            "upper('hello')",
+        ],
+    )
     @pytest.mark.parametrize("dialect", ["mysql", "mssql", "oracle", "postgresql"])
     def test_other_dialects_allow_functions(
         self, default_val: str, dialect: str
