@@ -1,0 +1,68 @@
+---
+import Base from '../../layouts/Base.astro';
+import ComparisonTable from '../../components/ComparisonTable.astro';
+
+const comparisons = [
+  {
+    tool: 'FullConvert',
+    tagline: 'Open-source alternative to proprietary migration software',
+    href: '/compare/vs-fullconvert',
+    highlights: ['Free vs $499+', 'Cross-platform vs Windows-only', 'AI-native vs GUI-only'],
+  },
+  {
+    tool: 'pgloader',
+    tagline: 'More versatile target support with a modern architecture',
+    href: '/compare/vs-pgloader',
+    highlights: ['5 target databases vs PG-only', 'Declarative BDL vs CLI flags', 'SDK + MCP + Web UI'],
+  },
+];
+---
+
+<Base title="Compare Bani" description="See how Bani compares to other database migration tools like FullConvert and pgloader.">
+  <section class="section-padding bg-gradient-to-b from-slate-50 to-white dark:from-slate-900 dark:to-slate-950">
+    <div class="container-narrow text-center">
+      <h1 class="text-4xl sm:text-5xl font-bold tracking-tight text-slate-900 dark:text-white">
+        Compare Bani
+      </h1>
+      <p class="mt-4 text-lg text-slate-600 dark:text-slate-300 max-w-2xl mx-auto">
+        Honest, detailed comparisons with other database migration tools. We believe in transparency about strengths and trade-offs.
+      </p>
+    </div>
+  </section>
+
+  <ComparisonTable />
+
+  <section class="section-padding bg-white dark:bg-slate-950">
+    <div class="container-narrow">
+      <h2 class="text-2xl font-bold text-slate-900 dark:text-white mb-8 text-center">
+        Detailed comparisons
+      </h2>
+      <div class="grid grid-cols-1 gap-6 md:grid-cols-2">
+        {comparisons.map((comp) => (
+          <a
+            href={comp.href}
+            class="group block rounded-xl border border-slate-200 dark:border-slate-800 p-8 hover:border-brand-300 dark:hover:border-brand-700 hover:shadow-lg transition-all"
+          >
+            <h3 class="text-xl font-bold text-slate-900 dark:text-white mb-2">
+              Bani vs {comp.tool}
+            </h3>
+            <p class="text-slate-600 dark:text-slate-400 mb-6">{comp.tagline}</p>
+            <ul class="space-y-2 mb-6">
+              {comp.highlights.map((h) => (
+                <li class="flex items-center gap-2 text-sm text-slate-600 dark:text-slate-300">
+                  <svg class="h-4 w-4 text-brand-500 shrink-0" fill="none" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor">
+                    <path stroke-linecap="round" stroke-linejoin="round" d="M4.5 12.75l6 6 9-13.5" />
+                  </svg>
+                  {h}
+                </li>
+              ))}
+            </ul>
+            <span class="text-sm font-medium text-brand-600 dark:text-brand-400 group-hover:text-brand-700 dark:group-hover:text-brand-300">
+              Read full comparison &rarr;
+            </span>
+          </a>
+        ))}
+      </div>
+    </div>
+  </section>
+</Base>

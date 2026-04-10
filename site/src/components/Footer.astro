@@ -1,0 +1,73 @@
+---
+const columns = [
+  {
+    title: 'Product',
+    links: [
+      { label: 'Features', href: '/features' },
+      { label: 'Connectors', href: '/connectors' },
+      { label: 'Roadmap', href: '/roadmap' },
+      { label: 'Compare', href: '/compare' },
+    ],
+  },
+  {
+    title: 'Resources',
+    links: [
+      { label: 'Documentation', href: 'https://docs.bani.dev', external: true },
+      { label: 'Blog', href: '/blog' },
+      { label: 'GitHub', href: 'https://github.com/mugumedavid/bani', external: true },
+    ],
+  },
+  {
+    title: 'Community',
+    links: [
+      { label: 'Discussions', href: 'https://github.com/mugumedavid/bani/discussions', external: true },
+      { label: 'Discord', href: 'https://discord.gg/ffVYuNQz', external: true },
+      { label: 'Contributing', href: 'https://github.com/mugumedavid/bani/blob/main/CONTRIBUTING.md', external: true },
+    ],
+  },
+  {
+    title: 'Legal',
+    links: [
+      { label: 'License (Apache-2.0)', href: 'https://github.com/mugumedavid/bani/blob/main/LICENSE', external: true },
+      { label: 'Privacy', href: '#' },
+    ],
+  },
+];
+---
+
+<footer class="border-t border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-900">
+  <div class="mx-auto max-w-7xl px-6 py-16 lg:px-8">
+    <!-- Footer columns -->
+    <div class="grid grid-cols-2 gap-8 md:grid-cols-4">
+      {columns.map((col) => (
+        <div>
+          <h3 class="text-sm font-semibold text-slate-900 dark:text-white">{col.title}</h3>
+          <ul class="mt-4 space-y-3">
+            {col.links.map((link) => (
+              <li>
+                <a
+                  href={link.href}
+                  class="text-sm text-slate-500 dark:text-slate-400 hover:text-slate-700 dark:hover:text-slate-200 transition-colors"
+                  {...(link.external ? { target: '_blank', rel: 'noopener noreferrer' } : {})}
+                >
+                  {link.label}
+                </a>
+              </li>
+            ))}
+          </ul>
+        </div>
+      ))}
+    </div>
+
+    <!-- Bottom bar -->
+    <div class="mt-12 border-t border-slate-200 dark:border-slate-800 pt-8 flex flex-col sm:flex-row items-center justify-between gap-4">
+      <div class="flex items-center gap-2">
+        <img src="/favicon.svg" alt="" class="h-6 w-6" aria-hidden="true" />
+        <span class="text-sm font-semibold text-slate-900 dark:text-white">Bani</span>
+      </div>
+      <p class="text-sm text-slate-500 dark:text-slate-400">
+        Apache-2.0 &middot; Built by <a href="/about" class="text-brand-600 dark:text-brand-400 hover:underline">David Mugume</a>
+      </p>
+    </div>
+  </div>
+</footer>

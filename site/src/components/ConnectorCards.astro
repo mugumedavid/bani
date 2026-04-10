@@ -1,0 +1,99 @@
+---
+const connectors = [
+  {
+    name: 'PostgreSQL',
+    abbr: 'PG',
+    color: 'bg-blue-50 dark:bg-blue-900/20 text-blue-600 dark:text-blue-400',
+    versions: '12 - 17',
+    status: 'Stable',
+    docs: 'https://docs.bani.dev/connectors/postgresql',
+  },
+  {
+    name: 'MySQL',
+    abbr: 'My',
+    color: 'bg-orange-50 dark:bg-orange-900/20 text-orange-600 dark:text-orange-400',
+    versions: '5.7 - 8.4',
+    status: 'Stable',
+    docs: 'https://docs.bani.dev/connectors/mysql',
+  },
+  {
+    name: 'Microsoft SQL Server',
+    abbr: 'MS',
+    color: 'bg-red-50 dark:bg-red-900/20 text-red-600 dark:text-red-400',
+    versions: '2017 - 2022',
+    status: 'Stable',
+    docs: 'https://docs.bani.dev/connectors/mssql',
+  },
+  {
+    name: 'Oracle',
+    abbr: 'Or',
+    color: 'bg-rose-50 dark:bg-rose-900/20 text-rose-600 dark:text-rose-400',
+    versions: '19c - 23ai',
+    status: 'Stable',
+    docs: 'https://docs.bani.dev/connectors/oracle',
+  },
+  {
+    name: 'SQLite',
+    abbr: 'SL',
+    color: 'bg-sky-50 dark:bg-sky-900/20 text-sky-600 dark:text-sky-400',
+    versions: '3.x',
+    status: 'Stable',
+    docs: 'https://docs.bani.dev/connectors/sqlite',
+  },
+];
+---
+
+<section class="section-padding bg-white dark:bg-slate-950">
+  <div class="container-wide">
+    <div class="text-center mb-12">
+      <h2 class="text-3xl sm:text-4xl font-bold tracking-tight text-slate-900 dark:text-white">
+        Built-in connectors
+      </h2>
+      <p class="mt-4 text-lg text-slate-600 dark:text-slate-300 max-w-2xl mx-auto">
+        Five production-ready connectors with a pluggable architecture for community extensions.
+      </p>
+    </div>
+
+    <div class="grid grid-cols-1 gap-6 sm:grid-cols-2 lg:grid-cols-3">
+      {connectors.map((conn) => (
+        <div class="rounded-xl border border-slate-200 dark:border-slate-800 p-6 hover:shadow-lg transition-shadow">
+          <div class="flex items-center gap-4 mb-4">
+            <div class:list={['flex h-14 w-14 items-center justify-center rounded-lg font-bold text-lg', conn.color]}>
+              {conn.abbr}
+            </div>
+            <div>
+              <h3 class="font-semibold text-slate-900 dark:text-white">{conn.name}</h3>
+              <span class="inline-flex items-center rounded-full bg-green-50 dark:bg-green-900/20 px-2 py-0.5 text-xs font-medium text-green-700 dark:text-green-400">
+                {conn.status}
+              </span>
+            </div>
+          </div>
+          <p class="text-sm text-slate-600 dark:text-slate-400 mb-4">
+            Supported versions: <span class="font-medium text-slate-700 dark:text-slate-300">{conn.versions}</span>
+          </p>
+          <a
+            href={conn.docs}
+            class="text-sm font-medium text-brand-600 dark:text-brand-400 hover:text-brand-700 dark:hover:text-brand-300"
+            target="_blank"
+            rel="noopener noreferrer"
+          >
+            Learn more &rarr;
+          </a>
+        </div>
+      ))}
+
+      <!-- Coming soon card -->
+      <div class="rounded-xl border-2 border-dashed border-slate-300 dark:border-slate-700 p-6 flex flex-col items-center justify-center text-center">
+        <div class="flex h-14 w-14 items-center justify-center rounded-lg bg-slate-100 dark:bg-slate-800 text-slate-400 dark:text-slate-500 mb-4">
+          <svg class="h-7 w-7" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor">
+            <path stroke-linecap="round" stroke-linejoin="round" d="M12 4.5v15m7.5-7.5h-15" />
+          </svg>
+        </div>
+        <h3 class="font-semibold text-slate-500 dark:text-slate-400 mb-1">More coming soon</h3>
+        <p class="text-sm text-slate-400 dark:text-slate-500">
+          MariaDB, MongoDB, CSV, and more on the <a href="/roadmap" class="text-brand-600 dark:text-brand-400 hover:underline">roadmap</a>.
+        </p>
+      </div>
+    </div>
+  </div>
+</section>

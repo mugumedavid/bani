@@ -1,0 +1,86 @@
+---
+const configSnippet = `{
+  "mcpServers": {
+    "bani": {
+      "command": "bani",
+      "args": ["mcp", "serve"],
+      "env": {
+        "SOURCE_DSN": "postgresql://...",
+        "TARGET_DSN": "mysql://..."
+      }
+    }
+  }
+}`;
+---
+
+<section class="section-padding bg-slate-900 dark:bg-slate-950 text-white">
+  <div class="container-wide">
+    <div class="grid grid-cols-1 lg:grid-cols-2 gap-12 items-center">
+      <!-- Text content -->
+      <div>
+        <div class="inline-flex items-center gap-2 rounded-full bg-brand-900/30 border border-brand-700 px-3 py-1 text-xs font-medium text-brand-300 mb-6">
+          <svg class="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor">
+            <path stroke-linecap="round" stroke-linejoin="round" d="M9.813 15.904L9 18.75l-.813-2.846a4.5 4.5 0 00-3.09-3.09L2.25 12l2.846-.813a4.5 4.5 0 003.09-3.09L9 5.25l.813 2.846a4.5 4.5 0 003.09 3.09L15.75 12l-2.846.813a4.5 4.5 0 00-3.09 3.09z" />
+          </svg>
+          AI-Native
+        </div>
+
+        <h2 class="text-3xl sm:text-4xl font-bold tracking-tight mb-4">
+          AI-Native Database Migrations
+        </h2>
+        <p class="text-lg text-slate-300 mb-6 leading-relaxed">
+          Bani ships with a built-in MCP (Model Context Protocol) server exposing 10 tools.
+          Connect it to Claude Desktop, Cursor, or any MCP-compatible AI agent to run migrations
+          through natural language.
+        </p>
+        <ul class="space-y-3 text-slate-300 mb-8">
+          <li class="flex items-start gap-2">
+            <svg class="h-5 w-5 mt-0.5 text-brand-400 shrink-0" fill="none" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor">
+              <path stroke-linecap="round" stroke-linejoin="round" d="M4.5 12.75l6 6 9-13.5" />
+            </svg>
+            Inspect source and target schemas
+          </li>
+          <li class="flex items-start gap-2">
+            <svg class="h-5 w-5 mt-0.5 text-brand-400 shrink-0" fill="none" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor">
+              <path stroke-linecap="round" stroke-linejoin="round" d="M4.5 12.75l6 6 9-13.5" />
+            </svg>
+            Generate and validate BDL configurations
+          </li>
+          <li class="flex items-start gap-2">
+            <svg class="h-5 w-5 mt-0.5 text-brand-400 shrink-0" fill="none" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor">
+              <path stroke-linecap="round" stroke-linejoin="round" d="M4.5 12.75l6 6 9-13.5" />
+            </svg>
+            Preview and execute migrations safely
+          </li>
+          <li class="flex items-start gap-2">
+            <svg class="h-5 w-5 mt-0.5 text-brand-400 shrink-0" fill="none" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor">
+              <path stroke-linecap="round" stroke-linejoin="round" d="M4.5 12.75l6 6 9-13.5" />
+            </svg>
+            Monitor progress in real time
+          </li>
+        </ul>
+        <a
+          href="https://docs.bani.dev/mcp"
+          class="inline-flex items-center text-sm font-semibold text-brand-400 hover:text-brand-300"
+          target="_blank"
+          rel="noopener noreferrer"
+        >
+          Read the MCP guide &rarr;
+        </a>
+      </div>
+
+      <!-- Code snippet -->
+      <div class="rounded-xl bg-slate-800 border border-slate-700 overflow-hidden">
+        <div class="flex items-center gap-2 px-4 py-3 border-b border-slate-700">
+          <div class="flex gap-1.5">
+            <div class="h-3 w-3 rounded-full bg-red-500/60"></div>
+            <div class="h-3 w-3 rounded-full bg-yellow-500/60"></div>
+            <div class="h-3 w-3 rounded-full bg-green-500/60"></div>
+          </div>
+          <span class="text-xs text-slate-400 ml-2">claude_desktop_config.json</span>
+        </div>
+        <pre class="px-4 py-4 text-sm text-slate-300 overflow-x-auto"><code>{configSnippet}</code></pre>
+      </div>
+    </div>
+  </div>
+</section>

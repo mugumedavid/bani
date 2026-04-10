@@ -1,0 +1,68 @@
+---
+const rows = [
+  { feature: 'License', bani: 'Apache-2.0', fullconvert: 'Proprietary', pgloader: 'PostgreSQL' },
+  { feature: 'Platforms', bani: 'All', fullconvert: 'Windows', pgloader: 'Linux + macOS' },
+  { feature: 'Connectors', bani: '5', fullconvert: '10+', pgloader: 'PG target only' },
+  { feature: 'CLI', bani: true, fullconvert: false, pgloader: true },
+  { feature: 'SDK', bani: true, fullconvert: false, pgloader: false },
+  { feature: 'AI Integration', bani: 'MCP Server', fullconvert: false, pgloader: false },
+  { feature: 'Declarative Config', bani: 'BDL', fullconvert: 'GUI', pgloader: 'CLI flags' },
+  { feature: 'Web UI', bani: true, fullconvert: true, pgloader: false },
+  { feature: 'Price', bani: 'Free', fullconvert: 'From $499', pgloader: 'Free' },
+];
+
+function renderCell(value: string | boolean) {
+  if (value === true) return { text: 'Yes', class: 'text-green-600 dark:text-green-400 font-medium' };
+  if (value === false) return { text: 'No', class: 'text-slate-400 dark:text-slate-500' };
+  return { text: value, class: 'text-slate-700 dark:text-slate-300' };
+}
+---
+
+<section class="section-padding bg-slate-50 dark:bg-slate-900">
+  <div class="container-wide">
+    <div class="text-center mb-12">
+      <h2 class="text-3xl sm:text-4xl font-bold tracking-tight text-slate-900 dark:text-white">
+        How Bani compares
+      </h2>
+      <p class="mt-4 text-lg text-slate-600 dark:text-slate-300 max-w-2xl mx-auto">
+        An honest comparison with other database migration tools.
+      </p>
+    </div>
+
+    <div class="overflow-x-auto rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-950">
+      <table class="w-full text-sm">
+        <thead>
+          <tr class="border-b border-slate-200 dark:border-slate-800">
+            <th class="px-6 py-4 text-left font-semibold text-slate-900 dark:text-white">Feature</th>
+            <th class="px-6 py-4 text-left font-semibold text-brand-600 dark:text-brand-400">
+              Bani
+            </th>
+            <th class="px-6 py-4 text-left font-semibold text-slate-900 dark:text-white">FullConvert</th>
+            <th class="px-6 py-4 text-left font-semibold text-slate-900 dark:text-white">pgloader</th>
+          </tr>
+        </thead>
+        <tbody class="divide-y divide-slate-100 dark:divide-slate-800">
+          {rows.map((row) => {
+            const bani = renderCell(row.bani);
+            const fc = renderCell(row.fullconvert);
+            const pg = renderCell(row.pgloader);
+            return (
+              <tr class="hover:bg-slate-50 dark:hover:bg-slate-900/50">
+                <td class="px-6 py-3.5 font-medium text-slate-900 dark:text-white">{row.feature}</td>
+                <td class:list={['px-6 py-3.5', bani.class]}>{bani.text}</td>
+                <td class:list={['px-6 py-3.5', fc.class]}>{fc.text}</td>
+                <td class:list={['px-6 py-3.5', pg.class]}>{pg.text}</td>
+              </tr>
+            );
+          })}
+        </tbody>
+      </table>
+    </div>
+
+    <div class="mt-6 text-center">
+      <a href="/compare" class="text-sm font-medium text-brand-600 dark:text-brand-400 hover:text-brand-700 dark:hover:text-brand-300">
+        See detailed comparisons &rarr;
+      </a>
+    </div>
+  </div>
+</section>

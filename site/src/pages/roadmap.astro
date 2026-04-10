@@ -1,0 +1,139 @@
+---
+import Base from '../layouts/Base.astro';
+
+const completed = [
+  { item: '5 database connectors (PostgreSQL, MySQL, MSSQL, Oracle, SQLite)', tier: 'oss' },
+  { item: 'Apache Arrow migration engine', tier: 'oss' },
+  { item: 'Bani Definition Language (BDL) in XML and JSON', tier: 'oss' },
+  { item: 'CLI with 11 commands', tier: 'oss' },
+  { item: 'Python SDK with ProjectBuilder API', tier: 'oss' },
+  { item: 'MCP server with 10 tools', tier: 'oss' },
+  { item: 'React web dashboard with SSE', tier: 'oss' },
+  { item: 'macOS menu bar application', tier: 'oss' },
+  { item: 'Docker image', tier: 'oss' },
+  { item: 'Cross-platform installers (macOS, Linux, Windows)', tier: 'oss' },
+];
+
+const comingSoon = [
+  { item: 'REST and gRPC API server', tier: 'oss' },
+  { item: 'MariaDB connector', tier: 'oss' },
+  { item: 'MongoDB connector', tier: 'oss' },
+  { item: 'CSV/Parquet import and export', tier: 'oss' },
+  { item: 'Apache Arrow Flight for distributed migrations', tier: 'oss' },
+  { item: 'Schema diff and drift detection', tier: 'oss' },
+  { item: 'Data masking and transformation rules', tier: 'oss' },
+  { item: 'Migration checkpoints and resume', tier: 'oss' },
+  { item: 'Parallel table migration', tier: 'oss' },
+];
+
+const enterprise = [
+  { item: 'Role-based access control (RBAC)', tier: 'enterprise' },
+  { item: 'Secrets manager integration (Vault, AWS Secrets Manager)', tier: 'enterprise' },
+  { item: 'Webhook notifications', tier: 'enterprise' },
+  { item: 'Advanced MCP tools (approval workflows, audit logging)', tier: 'enterprise' },
+  { item: 'Multi-tenant Bani Cloud', tier: 'enterprise' },
+  { item: 'Priority support and SLAs', tier: 'enterprise' },
+];
+
+function tierBadge(tier: string) {
+  if (tier === 'oss') return { text: 'Open Source', class: 'bg-green-50 dark:bg-green-900/20 text-green-700 dark:text-green-400' };
+  return { text: 'Enterprise', class: 'bg-purple-50 dark:bg-purple-900/20 text-purple-700 dark:text-purple-400' };
+}
+---
+
+<Base title="Roadmap" description="Bani's public roadmap: completed features, what's coming next, and enterprise plans.">
+  <section class="section-padding bg-gradient-to-b from-slate-50 to-white dark:from-slate-900 dark:to-slate-950">
+    <div class="container-narrow text-center">
+      <h1 class="text-4xl sm:text-5xl font-bold tracking-tight text-slate-900 dark:text-white">
+        Roadmap
+      </h1>
+      <p class="mt-4 text-lg text-slate-600 dark:text-slate-300 max-w-2xl mx-auto">
+        Where Bani is today and where it is headed. Open-source features are free forever.
+      </p>
+    </div>
+  </section>
+
+  <section class="section-padding bg-white dark:bg-slate-950">
+    <div class="container-narrow">
+      <!-- Completed -->
+      <div class="mb-16">
+        <div class="flex items-center gap-3 mb-8">
+          <div class="flex h-8 w-8 items-center justify-center rounded-full bg-green-100 dark:bg-green-900/30 text-green-600 dark:text-green-400">
+            <svg class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor">
+              <path stroke-linecap="round" stroke-linejoin="round" d="M4.5 12.75l6 6 9-13.5" />
+            </svg>
+          </div>
+          <h2 class="text-2xl font-bold text-slate-900 dark:text-white">Completed (v1.0)</h2>
+        </div>
+        <div class="grid grid-cols-1 gap-3 sm:grid-cols-2">
+          {completed.map((item) => {
+            const badge = tierBadge(item.tier);
+            return (
+              <div class="flex items-center gap-3 rounded-lg border border-slate-200 dark:border-slate-800 p-4">
+                <svg class="h-5 w-5 text-green-500 shrink-0" fill="none" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor">
+                  <path stroke-linecap="round" stroke-linejoin="round" d="M4.5 12.75l6 6 9-13.5" />
+                </svg>
+                <span class="text-sm text-slate-700 dark:text-slate-300 flex-1">{item.item}</span>
+                <span class:list={['inline-flex rounded-full px-2 py-0.5 text-xs font-medium', badge.class]}>
+                  {badge.text}
+                </span>
+              </div>
+            );
+          })}
+        </div>
+      </div>
+
+      <!-- Coming soon -->
+      <div class="mb-16">
+        <div class="flex items-center gap-3 mb-8">
+          <div class="flex h-8 w-8 items-center justify-center rounded-full bg-brand-100 dark:bg-brand-900/30 text-brand-600 dark:text-brand-400">
+            <svg class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor">
+              <path stroke-linecap="round" stroke-linejoin="round" d="M12 6v6h4.5m4.5 0a9 9 0 11-18 0 9 9 0 0118 0z" />
+            </svg>
+          </div>
+          <h2 class="text-2xl font-bold text-slate-900 dark:text-white">Coming Soon</h2>
+        </div>
+        <div class="grid grid-cols-1 gap-3 sm:grid-cols-2">
+          {comingSoon.map((item) => {
+            const badge = tierBadge(item.tier);
+            return (
+              <div class="flex items-center gap-3 rounded-lg border border-slate-200 dark:border-slate-800 p-4">
+                <div class="h-5 w-5 rounded-full border-2 border-brand-300 dark:border-brand-600 shrink-0"></div>
+                <span class="text-sm text-slate-700 dark:text-slate-300 flex-1">{item.item}</span>
+                <span class:list={['inline-flex rounded-full px-2 py-0.5 text-xs font-medium', badge.class]}>
+                  {badge.text}
+                </span>
+              </div>
+            );
+          })}
+        </div>
+      </div>
+
+      <!-- Enterprise -->
+      <div>
+        <div class="flex items-center gap-3 mb-8">
+          <div class="flex h-8 w-8 items-center justify-center rounded-full bg-purple-100 dark:bg-purple-900/30 text-purple-600 dark:text-purple-400">
+            <svg class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor">
+              <path stroke-linecap="round" stroke-linejoin="round" d="M2.25 21h19.5m-18-18v18m10.5-18v18m6-13.5V21M6.75 6.75h.75m-.75 3h.75m-.75 3h.75m3-6h.75m-.75 3h.75m-.75 3h.75M6.75 21v-3.375c0-.621.504-1.125 1.125-1.125h2.25c.621 0 1.125.504 1.125 1.125V21M3 3h12m-.75 4.5H21m-3.75 3H21m-3.75 3H21" />
+            </svg>
+          </div>
+          <h2 class="text-2xl font-bold text-slate-900 dark:text-white">Enterprise (Planned)</h2>
+        </div>
+        <div class="grid grid-cols-1 gap-3 sm:grid-cols-2">
+          {enterprise.map((item) => {
+            const badge = tierBadge(item.tier);
+            return (
+              <div class="flex items-center gap-3 rounded-lg border border-slate-200 dark:border-slate-800 p-4">
+                <div class="h-5 w-5 rounded-full border-2 border-purple-300 dark:border-purple-600 shrink-0"></div>
+                <span class="text-sm text-slate-700 dark:text-slate-300 flex-1">{item.item}</span>
+                <span class:list={['inline-flex rounded-full px-2 py-0.5 text-xs font-medium', badge.class]}>
+                  {badge.text}
+                </span>
+              </div>
+            );
+          })}
+        </div>
+      </div>
+    </div>
+  </section>
+</Base>

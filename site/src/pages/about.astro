@@ -1,0 +1,95 @@
+---
+import Base from '../layouts/Base.astro';
+---
+
+<Base title="About" description="The story behind Bani: why it exists, who created it, and the values that guide its development.">
+  <section class="section-padding bg-gradient-to-b from-slate-50 to-white dark:from-slate-900 dark:to-slate-950">
+    <div class="container-narrow text-center">
+      <h1 class="text-4xl sm:text-5xl font-bold tracking-tight text-slate-900 dark:text-white">
+        About Bani
+      </h1>
+      <p class="mt-4 text-lg text-slate-600 dark:text-slate-300 max-w-2xl mx-auto">
+        Open-source database migrations, built the right way.
+      </p>
+    </div>
+  </section>
+
+  <section class="section-padding bg-white dark:bg-slate-950">
+    <div class="container-narrow">
+      <div class="prose prose-lg prose-slate dark:prose-invert max-w-3xl mx-auto">
+        <h2>Why Bani exists</h2>
+        <p>
+          Database migrations are one of the most common yet painful operations in software engineering.
+          You need to move data from one database to another — maybe you are switching vendors,
+          upgrading versions, consolidating systems, or splitting a monolith. The operation should be
+          straightforward, but existing tools make it harder than it needs to be.
+        </p>
+        <p>
+          Commercial tools like FullConvert work, but they are expensive, Windows-only, and closed
+          source. pgloader is excellent for PostgreSQL targets but cannot write to MySQL, MSSQL,
+          Oracle, or SQLite. Most teams end up writing custom scripts that are fragile, untested,
+          and thrown away after a single use.
+        </p>
+        <p>
+          Bani was created to be the open-source, cross-platform, any-to-any database migration
+          engine that the industry needs. It uses Apache Arrow as a universal columnar interchange
+          format, so adding a new database requires only one reader and one writer — not an N-to-N
+          matrix of converters.
+        </p>
+
+        <h2>How it works</h2>
+        <p>
+          Bani reads data from a source database into Apache Arrow RecordBatches — a columnar,
+          memory-efficient in-memory format. It then writes those RecordBatches to the target
+          database. Schema, data, and indexes are all handled. This architecture means five
+          connectors give you 20 migration paths (any-to-any), not 20 custom converters.
+        </p>
+        <p>
+          Migrations are defined declaratively using the Bani Definition Language (BDL) in XML or
+          JSON. BDL files are designed to live in version control alongside your application code.
+          No more undocumented one-off scripts.
+        </p>
+
+        <h2>About the creator</h2>
+        <p>
+          Bani was created by <strong>David Mugume</strong>, a software engineer who got tired of
+          writing throw-away migration scripts and paying for proprietary tools that only ran on
+          Windows. David built Bani to be the tool he wanted to use: open source, cross-platform,
+          automation-friendly, and designed for the age of AI-assisted development.
+        </p>
+
+        <h2>Project values</h2>
+        <ul>
+          <li>
+            <strong>Open source:</strong> Apache-2.0 licensed. Free to use, modify, and distribute.
+            The core migration engine will always be open source.
+          </li>
+          <li>
+            <strong>Clean code:</strong> Well-tested, type-hinted Python. Comprehensive documentation.
+            A codebase that contributors can understand and improve.
+          </li>
+          <li>
+            <strong>Agent-native:</strong> Built from the start with AI agents in mind. The MCP
+            server is not an afterthought — it is a first-class interface alongside the CLI and SDK.
+          </li>
+          <li>
+            <strong>Data correctness:</strong> Migrations must be correct. Type mappings are
+            carefully designed, edge cases are handled, and data integrity is validated.
+          </li>
+        </ul>
+
+        <h2>Get involved</h2>
+        <p>
+          Bani is a community project. Whether you want to report a bug, request a feature,
+          contribute code, or just star the repository, your involvement is welcome.
+        </p>
+        <ul>
+          <li><a href="https://github.com/mugumedavid/bani" target="_blank" rel="noopener noreferrer">GitHub repository</a></li>
+          <li><a href="https://github.com/mugumedavid/bani/discussions" target="_blank" rel="noopener noreferrer">GitHub Discussions</a></li>
+          <li><a href="https://github.com/mugumedavid/bani/blob/main/CONTRIBUTING.md" target="_blank" rel="noopener noreferrer">Contributing guide</a></li>
+          <li><a href="https://docs.bani.dev" target="_blank" rel="noopener noreferrer">Documentation</a></li>
+        </ul>
+      </div>
+    </div>
+  </section>
+</Base>

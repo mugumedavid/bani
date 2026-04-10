@@ -1,0 +1,149 @@
+---
+import Base from '../../layouts/Base.astro';
+
+const featureMatrix = [
+  { feature: 'License', bani: 'Apache-2.0', pgloader: 'PostgreSQL License' },
+  { feature: 'Target Databases', bani: '5 (PG, MySQL, MSSQL, Oracle, SQLite)', pgloader: 'PostgreSQL only' },
+  { feature: 'Source Databases', bani: '5 (any-to-any)', pgloader: 'MySQL, MSSQL, SQLite, CSV, more' },
+  { feature: 'Language', bani: 'Python', pgloader: 'Common Lisp' },
+  { feature: 'Data Format', bani: 'Apache Arrow (columnar batches)', pgloader: 'Row-by-row with COPY' },
+  { feature: 'Configuration', bani: 'BDL (XML/JSON)', pgloader: 'CLI flags + command files' },
+  { feature: 'CLI', bani: '11 commands', pgloader: 'Single command with flags' },
+  { feature: 'SDK', bani: 'Python SDK with ProjectBuilder', pgloader: 'None' },
+  { feature: 'AI Integration', bani: 'MCP Server (10 tools)', pgloader: 'None' },
+  { feature: 'Web UI', bani: 'React dashboard with SSE', pgloader: 'None' },
+  { feature: 'Platforms', bani: 'macOS, Linux, Windows, Docker', pgloader: 'Linux, macOS' },
+];
+---
+
+<Base title="Bani vs pgloader" description="A detailed comparison of Bani and pgloader for database migrations. Multi-target vs PostgreSQL-only, Arrow vs row-based, and more.">
+  <section class="section-padding bg-gradient-to-b from-slate-50 to-white dark:from-slate-900 dark:to-slate-950">
+    <div class="container-narrow text-center">
+      <h1 class="text-4xl sm:text-5xl font-bold tracking-tight text-slate-900 dark:text-white">
+        Bani vs pgloader
+      </h1>
+      <p class="mt-4 text-lg text-slate-600 dark:text-slate-300 max-w-2xl mx-auto">
+        An honest comparison between Bani and pgloader for database migration.
+      </p>
+    </div>
+  </section>
+
+  <section class="section-padding bg-white dark:bg-slate-950">
+    <div class="container-narrow">
+      <div class="grid grid-cols-1 gap-8 md:grid-cols-2 mb-16">
+        <!-- Bani -->
+        <div class="rounded-xl border-2 border-brand-200 dark:border-brand-800 p-8">
+          <h2 class="text-2xl font-bold text-brand-600 dark:text-brand-400 mb-4">Bani</h2>
+          <p class="text-slate-600 dark:text-slate-300 mb-4">
+            A modern, any-to-any database migration engine. Migrate between any supported database pair, with a complete toolkit of CLI, SDK, AI integration, and web dashboard.
+          </p>
+          <p class="text-sm text-slate-500 dark:text-slate-400">
+            Best for: any-to-any migrations, automation, AI-assisted workflows, teams needing SDK/API access.
+          </p>
+        </div>
+
+        <!-- pgloader -->
+        <div class="rounded-xl border border-slate-200 dark:border-slate-800 p-8">
+          <h2 class="text-2xl font-bold text-slate-900 dark:text-white mb-4">pgloader</h2>
+          <p class="text-slate-600 dark:text-slate-300 mb-4">
+            A battle-tested, highly performant tool for migrating data into PostgreSQL. Written in Common Lisp, optimized for PostgreSQL's COPY protocol, and trusted by the PostgreSQL community for years.
+          </p>
+          <p class="text-sm text-slate-500 dark:text-slate-400">
+            Best for: one-way migrations into PostgreSQL, especially from MySQL.
+          </p>
+        </div>
+      </div>
+
+      <!-- Feature matrix -->
+      <h2 class="text-2xl font-bold text-slate-900 dark:text-white mb-6">Feature comparison</h2>
+      <div class="overflow-x-auto rounded-xl border border-slate-200 dark:border-slate-800 mb-16">
+        <table class="w-full text-sm">
+          <thead>
+            <tr class="border-b border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-900">
+              <th class="px-6 py-3 text-left font-semibold text-slate-900 dark:text-white">Feature</th>
+              <th class="px-6 py-3 text-left font-semibold text-brand-600 dark:text-brand-400">Bani</th>
+              <th class="px-6 py-3 text-left font-semibold text-slate-900 dark:text-white">pgloader</th>
+            </tr>
+          </thead>
+          <tbody class="divide-y divide-slate-100 dark:divide-slate-800">
+            {featureMatrix.map((row) => (
+              <tr>
+                <td class="px-6 py-3 font-medium text-slate-900 dark:text-white">{row.feature}</td>
+                <td class="px-6 py-3 text-slate-700 dark:text-slate-300">{row.bani}</td>
+                <td class="px-6 py-3 text-slate-700 dark:text-slate-300">{row.pgloader}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+
+      <!-- Honest assessment -->
+      <div class="grid grid-cols-1 gap-8 md:grid-cols-2">
+        <div>
+          <h3 class="text-xl font-bold text-slate-900 dark:text-white mb-4">Where Bani excels</h3>
+          <ul class="space-y-3">
+            {[
+              'Any-to-any migration: 5 databases as both source and target',
+              'Apache Arrow columnar engine for efficient batch processing',
+              'Complete toolkit: CLI + SDK + MCP + Web UI',
+              'AI-native MCP server for agent-driven migrations',
+              'Declarative BDL for version-controlled configurations',
+              'Cross-platform including Windows and Docker',
+            ].map((item) => (
+              <li class="flex items-start gap-2 text-slate-600 dark:text-slate-300">
+                <svg class="h-5 w-5 mt-0.5 text-green-500 shrink-0" fill="none" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor">
+                  <path stroke-linecap="round" stroke-linejoin="round" d="M4.5 12.75l6 6 9-13.5" />
+                </svg>
+                {item}
+              </li>
+            ))}
+          </ul>
+        </div>
+        <div>
+          <h3 class="text-xl font-bold text-slate-900 dark:text-white mb-4">Where pgloader excels</h3>
+          <ul class="space-y-3">
+            {[
+              'Battle-tested over many years with a large user base',
+              'Deeply optimized for PostgreSQL COPY protocol',
+              'Handles edge cases in MySQL-to-PG migrations very well',
+              'Lightweight single binary deployment',
+              'Extensive documentation and community knowledge base',
+              'Proven at scale with very large databases',
+            ].map((item) => (
+              <li class="flex items-start gap-2 text-slate-600 dark:text-slate-300">
+                <svg class="h-5 w-5 mt-0.5 text-green-500 shrink-0" fill="none" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor">
+                  <path stroke-linecap="round" stroke-linejoin="round" d="M4.5 12.75l6 6 9-13.5" />
+                </svg>
+                {item}
+              </li>
+            ))}
+          </ul>
+        </div>
+      </div>
+
+      <!-- When to choose -->
+      <div class="mt-16 grid grid-cols-1 gap-6 md:grid-cols-2">
+        <div class="rounded-xl bg-brand-50 dark:bg-brand-900/20 border border-brand-200 dark:border-brand-800 p-8">
+          <h3 class="text-lg font-bold text-slate-900 dark:text-white mb-3">Choose Bani when:</h3>
+          <ul class="space-y-2 text-sm text-slate-600 dark:text-slate-300">
+            <li>You need to migrate to databases other than PostgreSQL</li>
+            <li>You want AI-assisted migration workflows</li>
+            <li>You need a Python SDK for programmatic control</li>
+            <li>You want declarative, version-controlled configurations</li>
+            <li>You need a web dashboard for monitoring</li>
+          </ul>
+        </div>
+        <div class="rounded-xl bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-800 p-8">
+          <h3 class="text-lg font-bold text-slate-900 dark:text-white mb-3">Choose pgloader when:</h3>
+          <ul class="space-y-2 text-sm text-slate-600 dark:text-slate-300">
+            <li>Your target is always PostgreSQL</li>
+            <li>You are doing a well-understood MySQL-to-PG migration</li>
+            <li>You want the most battle-tested tool for PG loading</li>
+            <li>You prefer a lightweight, single-purpose tool</li>
+            <li>You have an existing pgloader workflow</li>
+          </ul>
+        </div>
+      </div>
+    </div>
+  </section>
+</Base>

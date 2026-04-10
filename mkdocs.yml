@@ -1,0 +1,87 @@
+site_name: Bani
+site_url: https://docs.bani.dev
+repo_url: https://github.com/mugumedavid/bani
+repo_name: mugumedavid/bani
+site_dir: _docs_site
+
+theme:
+  name: material
+  palette:
+    - scheme: default
+      primary: teal
+      toggle:
+        icon: material/brightness-7
+        name: Switch to dark mode
+    - scheme: slate
+      primary: teal
+      toggle:
+        icon: material/brightness-4
+        name: Switch to light mode
+  features:
+    - navigation.tabs
+    - navigation.sections
+    - toc.follow
+    - content.code.copy
+    - search.suggest
+    - search.highlight
+
+plugins:
+  - search
+  - mkdocstrings:
+      handlers:
+        python:
+          paths: [src]
+          options:
+            show_source: true
+            show_root_heading: true
+            members_order: source
+  - mike
+
+markdown_extensions:
+  - admonition
+  - pymdownx.highlight:
+      anchor_linenums: true
+  - pymdownx.superfences
+  - pymdownx.tabbed:
+      alternate_style: true
+  - pymdownx.details
+  - toc:
+      permalink: true
+  - attr_list
+  - def_list
+  - tables
+
+extra:
+  version:
+    provider: mike
+
+nav:
+  - Home: index.md
+  - Getting Started: getting-started.md
+  - Guides:
+      - BDL Reference: guides/bdl-reference.md
+      - CLI Reference: guides/cli-reference.md
+      - Python SDK: guides/python-sdk.md
+      - MCP Server: guides/mcp-server.md
+      - Docker: guides/docker.md
+      - Incremental Sync: guides/incremental-sync.md
+      - Error Handling: guides/error-handling.md
+      - Type Mappings: guides/type-mappings.md
+      - Configuration: guides/configuration.md
+  - Connectors:
+      - Overview: connectors/index.md
+      - PostgreSQL: connectors/postgresql.md
+      - MySQL: connectors/mysql.md
+      - SQL Server: connectors/mssql.md
+      - Oracle: connectors/oracle.md
+      - SQLite: connectors/sqlite.md
+  - Developer:
+      - Architecture: developer/architecture.md
+      - Building a Connector: developer/building-a-connector.md
+      - Contributing: developer/contributing.md
+  - API Reference:
+      - Overview: api/index.md
+      - SDK: api/sdk.md
+      - Domain Models: api/domain.md
+      - Connectors: api/connectors.md
+  - Changelog: changelog.md

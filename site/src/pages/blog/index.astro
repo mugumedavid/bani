@@ -1,0 +1,68 @@
+---
+import Base from '../../layouts/Base.astro';
+import { getCollection } from 'astro:content';
+
+const posts = (await getCollection('blog'))
+  .filter((post) => !post.data.draft)
+  .sort((a, b) => b.data.date.valueOf() - a.data.date.valueOf());
+---
+
+<Base title="Blog" description="Articles about database migrations, Apache Arrow, AI-native tooling, and Bani updates.">
+  <section class="section-padding bg-gradient-to-b from-slate-50 to-white dark:from-slate-900 dark:to-slate-950">
+    <div class="container-narrow text-center">
+      <h1 class="text-4xl sm:text-5xl font-bold tracking-tight text-slate-900 dark:text-white">
+        Blog
+      </h1>
+      <p class="mt-4 text-lg text-slate-600 dark:text-slate-300 max-w-2xl mx-auto">
+        Technical articles about database migrations, Apache Arrow, AI integration, and project updates.
+      </p>
+    </div>
+  </section>
+
+  <section class="section-padding bg-white dark:bg-slate-950">
+    <div class="container-narrow">
+      {posts.length === 0 ? (
+        <p class="text-center text-slate-500 dark:text-slate-400">No posts yet. Check back soon.</p>
+      ) : (
+        <div class="space-y-8">
+          {posts.map((post) => {
+            const formattedDate = post.data.date.toLocaleDateString('en-US', {
+              year: 'numeric',
+              month: 'long',
+              day: 'numeric',
+            });
+            return (
+              <article class="group">
+                <a
+                  href={`/blog/${post.slug}`}
+                  class="block rounded-xl border border-slate-200 dark:border-slate-800 p-8 hover:border-brand-300 dark:hover:border-brand-700 hover:shadow-lg transition-all"
+                >
+                  <div class="flex items-center gap-3 text-sm text-slate-500 dark:text-slate-400 mb-3">
+                    <time datetime={post.data.date.toISOString()}>{formattedDate}</time>
+                    <span aria-hidden="true">&middot;</span>
+                    <span>{post.data.author}</span>
+                  </div>
+                  <h2 class="text-xl font-bold text-slate-900 dark:text-white mb-2 group-hover:text-brand-600 dark:group-hover:text-brand-400 transition-colors">
+                    {post.data.title}
+                  </h2>
+                  <p class="text-slate-600 dark:text-slate-300 mb-4">
+                    {post.data.description}
+                  </p>
+                  {post.data.tags.length > 0 && (
+                    <div class="flex flex-wrap gap-2">
+                      {post.data.tags.map((tag) => (
+                        <span class="inline-flex items-center rounded-full bg-slate-100 dark:bg-slate-800 px-2.5 py-0.5 text-xs font-medium text-slate-600 dark:text-slate-400">
+                          {tag}
+                        </span>
+                      ))}
+                    </div>
+                  )}
+                </a>
+              </article>
+            );
+          })}
+        </div>
+      )}
+    </div>
+  </section>
+</Base>

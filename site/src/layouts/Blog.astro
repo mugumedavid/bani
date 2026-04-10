@@ -1,0 +1,67 @@
+---
+import Base from './Base.astro';
+
+interface Props {
+  title: string;
+  description: string;
+  date: Date;
+  author: string;
+  tags?: string[];
+}
+
+const { title, description, date, author, tags = [] } = Astro.props;
+
+const formattedDate = date.toLocaleDateString('en-US', {
+  year: 'numeric',
+  month: 'long',
+  day: 'numeric',
+});
+---
+
+<Base title={title} description={description}>
+  <article class="section-padding">
+    <div class="container-narrow">
+      <!-- Header -->
+      <header class="mb-12 text-center">
+        <div class="flex items-center justify-center gap-3 text-sm text-slate-500 dark:text-slate-400 mb-4">
+          <time datetime={date.toISOString()}>{formattedDate}</time>
+          <span aria-hidden="true">&middot;</span>
+          <span>{author}</span>
+        </div>
+        <h1 class="text-4xl sm:text-5xl font-bold tracking-tight text-slate-900 dark:text-white mb-4">
+          {title}
+        </h1>
+        <p class="text-lg text-slate-600 dark:text-slate-300 max-w-2xl mx-auto">
+          {description}
+        </p>
+        {tags.length > 0 && (
+          <div class="mt-6 flex flex-wrap justify-center gap-2">
+            {tags.map((tag) => (
+              <span class="inline-flex items-center rounded-full bg-brand-50 dark:bg-brand-900/30 px-3 py-1 text-xs font-medium text-brand-700 dark:text-brand-300">
+                {tag}
+              </span>
+            ))}
+          </div>
+        )}
+      </header>
+
+      <!-- Content -->
+      <div class="prose prose-lg prose-slate dark:prose-invert mx-auto max-w-3xl prose-headings:scroll-mt-20 prose-a:text-brand-600 dark:prose-a:text-brand-400 prose-code:text-brand-700 dark:prose-code:text-brand-300 prose-pre:bg-slate-900 dark:prose-pre:bg-slate-800">
+        <slot />
+      </div>
+
+      <!-- Back to blog -->
+      <div class="mt-16 text-center">
+        <a
+          href="/blog"
+          class="inline-flex items-center text-sm font-medium text-brand-600 dark:text-brand-400 hover:text-brand-700 dark:hover:text-brand-300"
+        >
+          <svg class="mr-2 h-4 w-4" fill="none" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor">
+            <path stroke-linecap="round" stroke-linejoin="round" d="M10.5 19.5L3 12m0 0l7.5-7.5M3 12h18" />
+          </svg>
+          Back to all posts
+        </a>
+      </div>
+    </div>
+  </article>
+</Base>

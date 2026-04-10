@@ -1,0 +1,131 @@
+---
+const navLinks = [
+  { label: 'Features', href: '/features' },
+  { label: 'Connectors', href: '/connectors' },
+  { label: 'Blog', href: '/blog' },
+  { label: 'Docs', href: 'https://docs.bani.dev', external: true },
+  { label: 'GitHub', href: 'https://github.com/mugumedavid/bani', external: true },
+];
+
+const currentPath = Astro.url.pathname;
+---
+
+<header class="sticky top-0 z-50 border-b border-slate-200 dark:border-slate-800 bg-white/80 dark:bg-slate-950/80 backdrop-blur-lg">
+  <nav class="mx-auto flex max-w-7xl items-center justify-between px-6 py-4 lg:px-8" aria-label="Main navigation">
+    <!-- Logo -->
+    <a href="/" class="flex items-center gap-2">
+      <img src="/favicon.svg" alt="" class="h-8 w-8" aria-hidden="true" />
+      <span class="text-xl font-bold text-slate-900 dark:text-white">Bani</span>
+    </a>
+
+    <!-- Desktop nav -->
+    <div class="hidden md:flex md:items-center md:gap-8">
+      {navLinks.map((link) => (
+        <a
+          href={link.href}
+          class:list={[
+            'text-sm font-medium transition-colors',
+            currentPath.startsWith(link.href) && !link.external
+              ? 'text-brand-600 dark:text-brand-400'
+              : 'text-slate-600 dark:text-slate-300 hover:text-slate-900 dark:hover:text-white',
+          ]}
+          {...(link.external ? { target: '_blank', rel: 'noopener noreferrer' } : {})}
+        >
+          {link.label}
+          {link.external && (
+            <svg class="ml-1 inline-block h-3 w-3" fill="none" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor">
+              <path stroke-linecap="round" stroke-linejoin="round" d="M13.5 6H5.25A2.25 2.25 0 003 8.25v10.5A2.25 2.25 0 005.25 21h10.5A2.25 2.25 0 0018 18.75V10.5m-10.5 6L21 3m0 0h-5.25M21 3v5.25" />
+            </svg>
+          )}
+        </a>
+      ))}
+    </div>
+
+    <!-- Right side -->
+    <div class="flex items-center gap-3">
+      <!-- Dark mode toggle -->
+      <button
+        id="theme-toggle"
+        type="button"
+        class="rounded-lg p-2 text-slate-500 hover:bg-slate-100 dark:text-slate-400 dark:hover:bg-slate-800 transition-colors"
+        aria-label="Toggle dark mode"
+      >
+        <!-- Sun icon (shown in dark mode) -->
+        <svg class="hidden dark:block h-5 w-5" fill="none" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor">
+          <path stroke-linecap="round" stroke-linejoin="round" d="M12 3v2.25m6.364.386l-1.591 1.591M21 12h-2.25m-.386 6.364l-1.591-1.591M12 18.75V21m-4.773-4.227l-1.591 1.591M5.25 12H3m4.227-4.773L5.636 5.636M15.75 12a3.75 3.75 0 11-7.5 0 3.75 3.75 0 017.5 0z" />
+        </svg>
+        <!-- Moon icon (shown in light mode) -->
+        <svg class="block dark:hidden h-5 w-5" fill="none" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor">
+          <path stroke-linecap="round" stroke-linejoin="round" d="M21.752 15.002A9.718 9.718 0 0118 15.75c-5.385 0-9.75-4.365-9.75-9.75 0-1.33.266-2.597.748-3.752A9.753 9.753 0 003 11.25C3 16.635 7.365 21 12.75 21a9.753 9.753 0 009.002-5.998z" />
+        </svg>
+      </button>
+
+      <!-- Get Started CTA -->
+      <a
+        href="https://docs.bani.dev/getting-started"
+        class="hidden sm:inline-flex btn-primary text-xs px-4 py-2"
+        target="_blank"
+        rel="noopener noreferrer"
+      >
+        Get Started
+      </a>
+
+      <!-- Mobile menu button -->
+      <button
+        id="mobile-menu-btn"
+        type="button"
+        class="md:hidden rounded-lg p-2 text-slate-500 hover:bg-slate-100 dark:text-slate-400 dark:hover:bg-slate-800"
+        aria-label="Open menu"
+        aria-expanded="false"
+      >
+        <svg class="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor">
+          <path id="menu-icon" stroke-linecap="round" stroke-linejoin="round" d="M3.75 6.75h16.5M3.75 12h16.5m-16.5 5.25h16.5" />
+        </svg>
+      </button>
+    </div>
+  </nav>
+
+  <!-- Mobile menu -->
+  <div id="mobile-menu" class="hidden md:hidden border-t border-slate-200 dark:border-slate-800">
+    <div class="space-y-1 px-6 py-4">
+      {navLinks.map((link) => (
+        <a
+          href={link.href}
+          class:list={[
+            'block rounded-lg px-3 py-2 text-base font-medium transition-colors',
+            currentPath.startsWith(link.href) && !link.external
+              ? 'bg-brand-50 text-brand-700 dark:bg-brand-900/30 dark:text-brand-300'
+              : 'text-slate-600 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-800',
+          ]}
+          {...(link.external ? { target: '_blank', rel: 'noopener noreferrer' } : {})}
+        >
+          {link.label}
+        </a>
+      ))}
+      <a
+        href="https://docs.bani.dev/getting-started"
+        class="block rounded-lg bg-brand-600 px-3 py-2 text-center text-base font-semibold text-white hover:bg-brand-700 mt-2"
+        target="_blank"
+        rel="noopener noreferrer"
+      >
+        Get Started
+      </a>
+    </div>
+  </div>
+</header>
+
+<script is:inline>
+  // Theme toggle
+  document.getElementById('theme-toggle')?.addEventListener('click', () => {
+    const isDark = document.documentElement.classList.toggle('dark');
+    localStorage.setItem('theme', isDark ? 'dark' : 'light');
+  });
+
+  // Mobile menu toggle
+  const menuBtn = document.getElementById('mobile-menu-btn');
+  const mobileMenu = document.getElementById('mobile-menu');
+  menuBtn?.addEventListener('click', () => {
+    const isOpen = mobileMenu?.classList.toggle('hidden') === false;
+    menuBtn.setAttribute('aria-expanded', String(isOpen));
+  });
+</script>

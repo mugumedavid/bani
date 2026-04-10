@@ -14,3 +14,7 @@ build/
 .bani/
 ui/node_modules/
 ui/dist/
+_docs_site/
+site/node_modules/
+site/dist/
+.venv/

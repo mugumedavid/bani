@@ -1,0 +1,126 @@
+---
+import Base from '../../layouts/Base.astro';
+
+const connectors = [
+  {
+    name: 'PostgreSQL',
+    abbr: 'PG',
+    bgText: 'bg-blue-50 dark:bg-blue-900/20 text-blue-600 dark:text-blue-400',
+    border: 'border-blue-200 dark:border-blue-800',
+    versions: '12, 13, 14, 15, 16, 17',
+    status: 'Stable',
+    description: 'Full support for PostgreSQL as both source and target. Handles schemas, tables, indexes, constraints, sequences, and custom types.',
+    docs: 'https://docs.bani.dev/connectors/postgresql',
+  },
+  {
+    name: 'MySQL',
+    abbr: 'My',
+    bgText: 'bg-orange-50 dark:bg-orange-900/20 text-orange-600 dark:text-orange-400',
+    border: 'border-orange-200 dark:border-orange-800',
+    versions: '5.7, 8.0, 8.4',
+    status: 'Stable',
+    description: 'Full support for MySQL as both source and target. Handles schemas, tables, indexes, foreign keys, auto-increment, and character sets.',
+    docs: 'https://docs.bani.dev/connectors/mysql',
+  },
+  {
+    name: 'Microsoft SQL Server',
+    abbr: 'MS',
+    bgText: 'bg-red-50 dark:bg-red-900/20 text-red-600 dark:text-red-400',
+    border: 'border-red-200 dark:border-red-800',
+    versions: '2017, 2019, 2022',
+    status: 'Stable',
+    description: 'Full support for MSSQL as both source and target. Handles schemas, tables, indexes, identity columns, computed columns, and filegroups.',
+    docs: 'https://docs.bani.dev/connectors/mssql',
+  },
+  {
+    name: 'Oracle',
+    abbr: 'Or',
+    bgText: 'bg-rose-50 dark:bg-rose-900/20 text-rose-600 dark:text-rose-400',
+    border: 'border-rose-200 dark:border-rose-800',
+    versions: '19c, 21c, 23ai',
+    status: 'Stable',
+    description: 'Full support for Oracle as both source and target. Handles tablespaces, schemas, tables, indexes, sequences, and LOB columns.',
+    docs: 'https://docs.bani.dev/connectors/oracle',
+  },
+  {
+    name: 'SQLite',
+    abbr: 'SL',
+    bgText: 'bg-sky-50 dark:bg-sky-900/20 text-sky-600 dark:text-sky-400',
+    border: 'border-sky-200 dark:border-sky-800',
+    versions: '3.x',
+    status: 'Stable',
+    description: 'Full support for SQLite as both source and target. Handles tables, indexes, views, and triggers. Ideal for local development and testing.',
+    docs: 'https://docs.bani.dev/connectors/sqlite',
+  },
+];
+---
+
+<Base title="Connectors" description="Bani's database connectors: PostgreSQL, MySQL, MSSQL, Oracle, and SQLite. Pluggable architecture for community extensions.">
+  <section class="section-padding bg-gradient-to-b from-slate-50 to-white dark:from-slate-900 dark:to-slate-950">
+    <div class="container-narrow text-center">
+      <h1 class="text-4xl sm:text-5xl font-bold tracking-tight text-slate-900 dark:text-white">
+        Connectors
+      </h1>
+      <p class="mt-4 text-lg text-slate-600 dark:text-slate-300 max-w-2xl mx-auto">
+        Five production-ready connectors that work as both source and target. Each one reads schemas, reads data into Arrow, and writes Arrow data to the target.
+      </p>
+    </div>
+  </section>
+
+  <section class="section-padding bg-white dark:bg-slate-950">
+    <div class="container-wide">
+      <div class="grid grid-cols-1 gap-8 lg:grid-cols-2">
+        {connectors.map((conn) => (
+          <div class:list={['rounded-xl border p-8', conn.border]}>
+            <div class="flex items-start gap-4 mb-4">
+              <div class:list={['flex h-16 w-16 items-center justify-center rounded-xl font-bold text-xl shrink-0', conn.bgText]}>
+                {conn.abbr}
+              </div>
+              <div>
+                <h2 class="text-xl font-bold text-slate-900 dark:text-white">{conn.name}</h2>
+                <div class="flex items-center gap-2 mt-1">
+                  <span class="inline-flex items-center rounded-full bg-green-50 dark:bg-green-900/20 px-2.5 py-0.5 text-xs font-medium text-green-700 dark:text-green-400">
+                    {conn.status}
+                  </span>
+                  <span class="text-sm text-slate-500 dark:text-slate-400">
+                    Versions: {conn.versions}
+                  </span>
+                </div>
+              </div>
+            </div>
+            <p class="text-slate-600 dark:text-slate-300 mb-4">{conn.description}</p>
+            <a
+              href={conn.docs}
+              class="text-sm font-medium text-brand-600 dark:text-brand-400 hover:text-brand-700 dark:hover:text-brand-300"
+              target="_blank"
+              rel="noopener noreferrer"
+            >
+              View documentation &rarr;
+            </a>
+          </div>
+        ))}
+      </div>
+
+      <!-- Community connectors -->
+      <div class="mt-16">
+        <h2 class="text-2xl font-bold text-slate-900 dark:text-white mb-4 text-center">Community Connectors</h2>
+        <p class="text-center text-slate-600 dark:text-slate-300 max-w-2xl mx-auto mb-8">
+          Bani's pluggable architecture makes it straightforward to build new connectors.
+          Implement the connector interface, register via Python entry points, and share with the community.
+        </p>
+        <div class="rounded-xl border-2 border-dashed border-slate-300 dark:border-slate-700 p-12 text-center">
+          <svg class="h-12 w-12 mx-auto text-slate-300 dark:text-slate-600 mb-4" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor">
+            <path stroke-linecap="round" stroke-linejoin="round" d="M12 4.5v15m7.5-7.5h-15" />
+          </svg>
+          <h3 class="text-lg font-semibold text-slate-500 dark:text-slate-400 mb-2">Coming soon</h3>
+          <p class="text-sm text-slate-400 dark:text-slate-500 max-w-md mx-auto">
+            MariaDB, MongoDB, CSV/Parquet, and more are on the
+            <a href="/roadmap" class="text-brand-600 dark:text-brand-400 hover:underline">roadmap</a>.
+            Want to contribute?
+            <a href="https://github.com/mugumedavid/bani/blob/main/CONTRIBUTING.md" class="text-brand-600 dark:text-brand-400 hover:underline" target="_blank" rel="noopener noreferrer">Read the contributing guide</a>.
+          </p>
+        </div>
+      </div>
+    </div>
+  </section>
+</Base>

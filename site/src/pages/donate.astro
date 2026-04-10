@@ -1,0 +1,124 @@
+---
+import Base from '../layouts/Base.astro';
+
+const tiers = [
+  {
+    amount: '$5',
+    label: 'Supporter',
+    description: 'Buy the maintainer a coffee and show your appreciation.',
+  },
+  {
+    amount: '$15',
+    label: 'Backer',
+    description: 'Help cover hosting, CI/CD costs, and testing infrastructure.',
+    featured: true,
+  },
+  {
+    amount: '$50',
+    label: 'Sponsor',
+    description: 'Fund a full day of focused development on new features.',
+  },
+  {
+    amount: 'Custom',
+    label: 'Custom',
+    description: 'Choose any amount that works for you. Every contribution counts.',
+  },
+];
+---
+
+<Base title="Donate" description="Support Bani's development. Donations fund ongoing maintenance, testing infrastructure, and new features.">
+  <section class="section-padding bg-gradient-to-b from-slate-50 to-white dark:from-slate-900 dark:to-slate-950">
+    <div class="container-narrow text-center">
+      <h1 class="text-4xl sm:text-5xl font-bold tracking-tight text-slate-900 dark:text-white">
+        Support Bani
+      </h1>
+      <p class="mt-4 text-lg text-slate-600 dark:text-slate-300 max-w-2xl mx-auto">
+        Bani is free and open source under the Apache-2.0 license. Donations help fund the ongoing
+        development, testing infrastructure, and the time needed to maintain a quality project.
+      </p>
+    </div>
+  </section>
+
+  <section class="section-padding bg-white dark:bg-slate-950">
+    <div class="container-narrow">
+      <!-- How donations are used -->
+      <div class="mb-16">
+        <h2 class="text-2xl font-bold text-slate-900 dark:text-white mb-6 text-center">
+          How your donation helps
+        </h2>
+        <div class="grid grid-cols-1 gap-6 md:grid-cols-3">
+          {[
+            {
+              title: 'Development time',
+              description: 'Bani is built by a solo developer. Donations buy focused development time for new features, bug fixes, and connector support.',
+            },
+            {
+              title: 'Infrastructure',
+              description: 'CI/CD pipelines, testing databases (PostgreSQL, MySQL, MSSQL, Oracle), hosting, and domain costs.',
+            },
+            {
+              title: 'Community',
+              description: 'Documentation, tutorials, community management, and making Bani accessible to more people.',
+            },
+          ].map((item) => (
+            <div class="rounded-xl border border-slate-200 dark:border-slate-800 p-6 text-center">
+              <h3 class="font-semibold text-slate-900 dark:text-white mb-2">{item.title}</h3>
+              <p class="text-sm text-slate-600 dark:text-slate-400">{item.description}</p>
+            </div>
+          ))}
+        </div>
+      </div>
+
+      <!-- Tiers -->
+      <div class="mb-16">
+        <h2 class="text-2xl font-bold text-slate-900 dark:text-white mb-6 text-center">
+          Suggested amounts
+        </h2>
+        <div class="grid grid-cols-1 gap-6 sm:grid-cols-2 lg:grid-cols-4">
+          {tiers.map((tier) => (
+            <div
+              class:list={[
+                'rounded-xl border p-6 text-center',
+                tier.featured
+                  ? 'border-brand-300 dark:border-brand-700 ring-2 ring-brand-100 dark:ring-brand-900/30'
+                  : 'border-slate-200 dark:border-slate-800',
+              ]}
+            >
+              <div class="text-3xl font-bold text-slate-900 dark:text-white mb-1">{tier.amount}</div>
+              <div class="text-sm font-semibold text-brand-600 dark:text-brand-400 mb-3">{tier.label}</div>
+              <p class="text-sm text-slate-600 dark:text-slate-400">{tier.description}</p>
+            </div>
+          ))}
+        </div>
+      </div>
+
+      <!-- Donate buttons -->
+      <div class="text-center mb-16">
+        <div class="flex flex-col sm:flex-row items-center justify-center gap-4">
+          <a href="#" class="btn-primary px-10 py-3.5 text-base">
+            <svg class="mr-2 h-5 w-5" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor">
+              <path stroke-linecap="round" stroke-linejoin="round" d="M2.25 8.25h19.5M2.25 9h19.5m-16.5 5.25h6m-6 2.25h3m-3.75 3h15a2.25 2.25 0 002.25-2.25V6.75A2.25 2.25 0 0019.5 4.5h-15a2.25 2.25 0 00-2.25 2.25v10.5A2.25 2.25 0 004.5 19.5z" />
+            </svg>
+            Donate via Stripe
+          </a>
+          <a href="#" class="btn-outline px-10 py-3.5 text-base">
+            Donate via PayPal
+          </a>
+        </div>
+      </div>
+
+      <!-- Sponsors -->
+      <div class="rounded-xl bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-800 p-8 md:p-12 text-center">
+        <h2 class="text-2xl font-bold text-slate-900 dark:text-white mb-4">Sponsors</h2>
+        <p class="text-slate-600 dark:text-slate-300 mb-8">
+          Organizations and individuals who sponsor Bani's development.
+        </p>
+        <div class="rounded-lg border-2 border-dashed border-slate-300 dark:border-slate-700 p-12">
+          <p class="text-sm text-slate-400 dark:text-slate-500">
+            Be the first sponsor. Your name or logo will appear here.
+          </p>
+        </div>
+      </div>
+    </div>
+  </section>
+</Base>

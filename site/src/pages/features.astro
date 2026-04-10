@@ -1,0 +1,181 @@
+---
+import Base from '../layouts/Base.astro';
+
+const features = [
+  {
+    id: 'arrow',
+    title: 'Apache Arrow Engine',
+    subtitle: 'Columnar processing for maximum throughput',
+    description: 'Bani uses Apache Arrow as a universal columnar interchange format. Source data is read into Arrow RecordBatches, then written to the target database. This N-mapper architecture means you only need one reader and one writer per database, not an N-to-N matrix of converters.',
+    details: [
+      'Zero-copy batch processing with pyarrow RecordBatch',
+      'Memory-efficient streaming for large tables',
+      'Automatic type mapping between database-specific types and Arrow types',
+      'Consistent in-memory representation regardless of source or target',
+    ],
+  },
+  {
+    id: 'bdl',
+    title: 'Bani Definition Language (BDL)',
+    subtitle: 'Declarative, version-controlled migrations',
+    description: 'Define your migration in XML or JSON using BDL. Specify source and target connections, table mappings, column transformations, and index handling. Check your BDL files into version control alongside your application code.',
+    details: [
+      'XML and JSON format support',
+      'Table-level and column-level mapping control',
+      'Schema evolution and transformation rules',
+      'Environment variable references for secrets management',
+    ],
+  },
+  {
+    id: 'connectors',
+    title: 'Connector System',
+    subtitle: 'Pluggable architecture, community extensible',
+    description: 'Each database is supported through a connector plugin. Connectors implement a standard interface for reading schema, reading data, writing schema, and writing data. New connectors can be installed as Python packages and discovered via entry points.',
+    details: [
+      '5 built-in connectors: PostgreSQL, MySQL, MSSQL, Oracle, SQLite',
+      'Standard connector interface for consistent behavior',
+      'Entry-point-based discovery for community connectors',
+      'Source-agnostic design: connectors work for both reading and writing',
+    ],
+  },
+  {
+    id: 'mcp',
+    title: 'AI Integration (MCP Server)',
+    subtitle: '10 tools for AI-driven migrations',
+    description: 'Bani includes a built-in MCP (Model Context Protocol) server that exposes 10 tools. Connect it to Claude Desktop, Cursor, or any MCP-compatible AI agent. The agent can inspect databases, generate BDL configurations, validate them, and run migrations through natural language.',
+    details: [
+      'Schema inspection and comparison tools',
+      'BDL generation and validation',
+      'Migration execution and progress monitoring',
+      'Secure environment variable references (no plaintext credentials)',
+    ],
+  },
+  {
+    id: 'webui',
+    title: 'Web Dashboard',
+    subtitle: 'Real-time progress monitoring',
+    description: 'A React-based web dashboard provides visual monitoring of running migrations. Track progress per table, view logs, and manage multiple migration projects. The backend uses Server-Sent Events (SSE) for real-time updates without polling.',
+    details: [
+      'React UI with real-time SSE updates',
+      'Per-table progress bars and row counts',
+      'Structured log viewer with filtering',
+      'Project management and history',
+    ],
+  },
+  {
+    id: 'cli',
+    title: 'CLI',
+    subtitle: '11 commands for every workflow',
+    description: 'The Bani CLI provides 11 commands covering the entire migration lifecycle. Initialize projects, inspect schemas, validate configurations, preview migrations, and run them. JSON output mode makes the CLI scriptable and CI/CD-friendly.',
+    details: [
+      'bani init, run, validate, preview, status',
+      'bani schema inspect, schema diff',
+      'bani connectors list, connectors info',
+      'bani mcp serve, mcp tools',
+      'JSON output mode for automation',
+    ],
+  },
+  {
+    id: 'sdk',
+    title: 'Python SDK',
+    subtitle: 'Programmatic control with a fluent API',
+    description: 'The Python SDK provides a ProjectBuilder API for constructing migration projects programmatically. SchemaInspector enables analysis and comparison of database schemas. Use the SDK in scripts, notebooks, CI/CD pipelines, or your own applications.',
+    details: [
+      'Fluent ProjectBuilder API',
+      'SchemaInspector for schema analysis',
+      'Full control over migration lifecycle',
+      'Type-hinted API with comprehensive docstrings',
+    ],
+  },
+  {
+    id: 'platforms',
+    title: 'Cross-Platform',
+    subtitle: 'Run everywhere your databases live',
+    description: 'Bani ships as a Python package (pip install bani), a macOS menu bar application, a Docker image, and platform-specific installers. The same migration engine runs identically across all platforms.',
+    details: [
+      'macOS .dmg with menu bar app',
+      'Docker image for containerized deployments',
+      'Linux .deb and .rpm packages',
+      'Windows installer',
+      'pip install for any Python environment',
+    ],
+  },
+];
+---
+
+<Base title="Features" description="Explore Bani's complete feature set: Apache Arrow engine, BDL config, 5 connectors, CLI, SDK, MCP server, web dashboard, and cross-platform support.">
+  <!-- Page header -->
+  <section class="section-padding bg-gradient-to-b from-slate-50 to-white dark:from-slate-900 dark:to-slate-950">
+    <div class="container-narrow text-center">
+      <h1 class="text-4xl sm:text-5xl font-bold tracking-tight text-slate-900 dark:text-white">
+        Features
+      </h1>
+      <p class="mt-4 text-lg text-slate-600 dark:text-slate-300 max-w-2xl mx-auto">
+        A complete database migration toolkit. Engine, CLI, SDK, AI integration, and web UI — all open source.
+      </p>
+    </div>
+  </section>
+
+  <!-- Feature sections -->
+  {features.map((feature, i) => (
+    <section
+      id={feature.id}
+      class:list={[
+        'section-padding',
+        i % 2 === 0 ? 'bg-white dark:bg-slate-950' : 'bg-slate-50 dark:bg-slate-900',
+      ]}
+    >
+      <div class="container-narrow">
+        <div class="max-w-3xl">
+          <p class="text-sm font-semibold text-brand-600 dark:text-brand-400 mb-2 uppercase tracking-wide">
+            {feature.subtitle}
+          </p>
+          <h2 class="text-3xl font-bold tracking-tight text-slate-900 dark:text-white mb-4">
+            {feature.title}
+          </h2>
+          <p class="text-lg text-slate-600 dark:text-slate-300 mb-8 leading-relaxed">
+            {feature.description}
+          </p>
+          <ul class="space-y-3">
+            {feature.details.map((detail) => (
+              <li class="flex items-start gap-3">
+                <svg class="h-5 w-5 mt-0.5 text-brand-500 shrink-0" fill="none" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor">
+                  <path stroke-linecap="round" stroke-linejoin="round" d="M4.5 12.75l6 6 9-13.5" />
+                </svg>
+                <span class="text-slate-700 dark:text-slate-300">{detail}</span>
+              </li>
+            ))}
+          </ul>
+        </div>
+      </div>
+    </section>
+  ))}
+
+  <!-- CTA -->
+  <section class="section-padding bg-brand-600 dark:bg-brand-800 text-white text-center">
+    <div class="container-narrow">
+      <h2 class="text-3xl font-bold mb-4">Ready to get started?</h2>
+      <p class="text-lg text-brand-100 mb-8 max-w-xl mx-auto">
+        Install Bani in seconds and run your first migration.
+      </p>
+      <div class="flex flex-col sm:flex-row items-center justify-center gap-4">
+        <a
+          href="https://docs.bani.dev/getting-started"
+          class="inline-flex items-center justify-center rounded-lg bg-white px-6 py-3 text-sm font-semibold text-brand-700 shadow-sm hover:bg-brand-50 transition-colors"
+          target="_blank"
+          rel="noopener noreferrer"
+        >
+          Read the docs
+        </a>
+        <a
+          href="https://github.com/mugumedavid/bani"
+          class="inline-flex items-center justify-center rounded-lg border border-brand-300 px-6 py-3 text-sm font-semibold text-white hover:bg-brand-700 dark:hover:bg-brand-900 transition-colors"
+          target="_blank"
+          rel="noopener noreferrer"
+        >
+          View on GitHub
+        </a>
+      </div>
+    </div>
+  </section>
+</Base>

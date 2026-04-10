@@ -1,0 +1,142 @@
+---
+import Base from '../../layouts/Base.astro';
+
+const featureMatrix = [
+  { feature: 'License', bani: 'Apache-2.0 (free)', fullconvert: 'Proprietary (from $499)' },
+  { feature: 'Platforms', bani: 'macOS, Linux, Windows, Docker', fullconvert: 'Windows only' },
+  { feature: 'Connectors', bani: '5 (PostgreSQL, MySQL, MSSQL, Oracle, SQLite)', fullconvert: '10+ (broader coverage)' },
+  { feature: 'Interface', bani: 'CLI, SDK, MCP, Web UI', fullconvert: 'GUI application' },
+  { feature: 'Configuration', bani: 'Declarative BDL (XML/JSON)', fullconvert: 'GUI wizard' },
+  { feature: 'Automation', bani: 'CLI + SDK + JSON output', fullconvert: 'Limited (command-line mode)' },
+  { feature: 'AI Integration', bani: 'MCP Server with 10 tools', fullconvert: 'None' },
+  { feature: 'Data Format', bani: 'Apache Arrow (columnar)', fullconvert: 'Proprietary' },
+  { feature: 'Version Control', bani: 'BDL files in git', fullconvert: 'Project files' },
+  { feature: 'Extensibility', bani: 'Pluggable connectors via entry points', fullconvert: 'Closed' },
+];
+---
+
+<Base title="Bani vs FullConvert" description="A detailed comparison of Bani and FullConvert for database migrations. Open-source vs proprietary, CLI vs GUI, and more.">
+  <section class="section-padding bg-gradient-to-b from-slate-50 to-white dark:from-slate-900 dark:to-slate-950">
+    <div class="container-narrow text-center">
+      <h1 class="text-4xl sm:text-5xl font-bold tracking-tight text-slate-900 dark:text-white">
+        Bani vs FullConvert
+      </h1>
+      <p class="mt-4 text-lg text-slate-600 dark:text-slate-300 max-w-2xl mx-auto">
+        An honest comparison between Bani and FullConvert for database migration.
+      </p>
+    </div>
+  </section>
+
+  <!-- Overview -->
+  <section class="section-padding bg-white dark:bg-slate-950">
+    <div class="container-narrow">
+      <div class="grid grid-cols-1 gap-8 md:grid-cols-2 mb-16">
+        <!-- Bani -->
+        <div class="rounded-xl border-2 border-brand-200 dark:border-brand-800 p-8">
+          <h2 class="text-2xl font-bold text-brand-600 dark:text-brand-400 mb-4">Bani</h2>
+          <p class="text-slate-600 dark:text-slate-300 mb-4">
+            Open-source database migration engine built on Apache Arrow. Designed for automation, AI integration, and developer workflows.
+          </p>
+          <p class="text-sm text-slate-500 dark:text-slate-400">
+            Best for: developers, DevOps teams, CI/CD pipelines, AI-assisted workflows.
+          </p>
+        </div>
+
+        <!-- FullConvert -->
+        <div class="rounded-xl border border-slate-200 dark:border-slate-800 p-8">
+          <h2 class="text-2xl font-bold text-slate-900 dark:text-white mb-4">FullConvert</h2>
+          <p class="text-slate-600 dark:text-slate-300 mb-4">
+            Commercial database conversion tool with a polished GUI and broad connector coverage. Focused on point-and-click database migration on Windows.
+          </p>
+          <p class="text-sm text-slate-500 dark:text-slate-400">
+            Best for: Windows users who prefer a GUI, teams needing many niche connectors.
+          </p>
+        </div>
+      </div>
+
+      <!-- Feature matrix -->
+      <h2 class="text-2xl font-bold text-slate-900 dark:text-white mb-6">Feature comparison</h2>
+      <div class="overflow-x-auto rounded-xl border border-slate-200 dark:border-slate-800 mb-16">
+        <table class="w-full text-sm">
+          <thead>
+            <tr class="border-b border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-900">
+              <th class="px-6 py-3 text-left font-semibold text-slate-900 dark:text-white">Feature</th>
+              <th class="px-6 py-3 text-left font-semibold text-brand-600 dark:text-brand-400">Bani</th>
+              <th class="px-6 py-3 text-left font-semibold text-slate-900 dark:text-white">FullConvert</th>
+            </tr>
+          </thead>
+          <tbody class="divide-y divide-slate-100 dark:divide-slate-800">
+            {featureMatrix.map((row) => (
+              <tr>
+                <td class="px-6 py-3 font-medium text-slate-900 dark:text-white">{row.feature}</td>
+                <td class="px-6 py-3 text-slate-700 dark:text-slate-300">{row.bani}</td>
+                <td class="px-6 py-3 text-slate-700 dark:text-slate-300">{row.fullconvert}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+
+      <!-- Honest assessment -->
+      <div class="grid grid-cols-1 gap-8 md:grid-cols-2">
+        <div>
+          <h3 class="text-xl font-bold text-slate-900 dark:text-white mb-4">Where Bani excels</h3>
+          <ul class="space-y-3">
+            {[
+              'Free and open source under Apache-2.0',
+              'Cross-platform: runs on macOS, Linux, Windows, and Docker',
+              'AI-native: MCP server enables agent-driven migrations',
+              'Automation-first: CLI, SDK, and JSON output for CI/CD',
+              'Declarative BDL configurations live in version control',
+              'Extensible connector system for community contributions',
+            ].map((item) => (
+              <li class="flex items-start gap-2 text-slate-600 dark:text-slate-300">
+                <svg class="h-5 w-5 mt-0.5 text-green-500 shrink-0" fill="none" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor">
+                  <path stroke-linecap="round" stroke-linejoin="round" d="M4.5 12.75l6 6 9-13.5" />
+                </svg>
+                {item}
+              </li>
+            ))}
+          </ul>
+        </div>
+        <div>
+          <h3 class="text-xl font-bold text-slate-900 dark:text-white mb-4">Where FullConvert excels</h3>
+          <ul class="space-y-3">
+            {[
+              'More connectors (10+) including niche databases',
+              'Mature, polished GUI for visual migration setup',
+              'Long track record with established user base',
+              'Built-in scheduling and change tracking features',
+              'Commercial support with dedicated team',
+            ].map((item) => (
+              <li class="flex items-start gap-2 text-slate-600 dark:text-slate-300">
+                <svg class="h-5 w-5 mt-0.5 text-green-500 shrink-0" fill="none" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor">
+                  <path stroke-linecap="round" stroke-linejoin="round" d="M4.5 12.75l6 6 9-13.5" />
+                </svg>
+                {item}
+              </li>
+            ))}
+          </ul>
+        </div>
+      </div>
+
+      <!-- Migration path -->
+      <div class="mt-16 rounded-xl bg-brand-50 dark:bg-brand-900/20 border border-brand-200 dark:border-brand-800 p-8">
+        <h3 class="text-xl font-bold text-slate-900 dark:text-white mb-4">Switching from FullConvert?</h3>
+        <p class="text-slate-600 dark:text-slate-300 mb-4">
+          If you are currently using FullConvert and considering Bani, the migration is straightforward.
+          Bani's declarative BDL format makes it easy to express the same migration you configured in FullConvert's GUI.
+          Start with <code class="text-sm bg-brand-100 dark:bg-brand-900/50 px-1.5 py-0.5 rounded">bani schema inspect</code> to analyze your databases, then generate a BDL configuration.
+        </p>
+        <a
+          href="https://docs.bani.dev/getting-started"
+          class="text-sm font-medium text-brand-600 dark:text-brand-400 hover:text-brand-700 dark:hover:text-brand-300"
+          target="_blank"
+          rel="noopener noreferrer"
+        >
+          Get started with Bani &rarr;
+        </a>
+      </div>
+    </div>
+  </section>
+</Base>

@@ -1,0 +1,127 @@
+---
+import Base from '../layouts/Base.astro';
+---
+
+<Base title="Bani Cloud" description="Bani Cloud: fully managed database migrations as a service. Join the waitlist for early access.">
+  <section class="section-padding bg-gradient-to-b from-slate-50 to-white dark:from-slate-900 dark:to-slate-950">
+    <div class="container-narrow text-center">
+      <div class="inline-flex items-center gap-2 rounded-full bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-800 px-3 py-1 text-xs font-medium text-amber-700 dark:text-amber-300 mb-6">
+        Coming Soon
+      </div>
+      <h1 class="text-4xl sm:text-5xl font-bold tracking-tight text-slate-900 dark:text-white">
+        Bani Cloud
+      </h1>
+      <p class="mt-4 text-lg text-slate-600 dark:text-slate-300 max-w-2xl mx-auto">
+        Fully managed database migrations as a service. No infrastructure to manage, no agents to deploy.
+      </p>
+    </div>
+  </section>
+
+  <section class="section-padding bg-white dark:bg-slate-950">
+    <div class="container-narrow">
+      <!-- What is Bani Cloud -->
+      <div class="mb-16">
+        <h2 class="text-2xl font-bold text-slate-900 dark:text-white mb-6 text-center">
+          The vision
+        </h2>
+        <div class="grid grid-cols-1 gap-8 md:grid-cols-3">
+          {[
+            {
+              title: 'Connect',
+              description: 'Provide your source and target database credentials. Bani Cloud securely connects to your databases over encrypted channels.',
+            },
+            {
+              title: 'Configure',
+              description: 'Use the web UI or AI assistant to generate your migration configuration. Preview the migration before running it.',
+            },
+            {
+              title: 'Migrate',
+              description: 'Bani Cloud handles the compute, monitors progress, retries failures, and delivers your data to the target database.',
+            },
+          ].map((step, i) => (
+            <div class="text-center">
+              <div class="mx-auto mb-4 flex h-12 w-12 items-center justify-center rounded-full bg-brand-100 dark:bg-brand-900/30 text-brand-700 dark:text-brand-300 text-lg font-bold">
+                {i + 1}
+              </div>
+              <h3 class="text-lg font-semibold text-slate-900 dark:text-white mb-2">{step.title}</h3>
+              <p class="text-sm text-slate-600 dark:text-slate-400">{step.description}</p>
+            </div>
+          ))}
+        </div>
+      </div>
+
+      <!-- Planned features -->
+      <div class="mb-16">
+        <h2 class="text-2xl font-bold text-slate-900 dark:text-white mb-6 text-center">
+          Planned features
+        </h2>
+        <div class="grid grid-cols-1 gap-4 sm:grid-cols-2">
+          {[
+            'Managed compute for migration workloads',
+            'Web dashboard with real-time monitoring',
+            'AI assistant for migration configuration',
+            'Encrypted credential storage',
+            'Automatic retry and error recovery',
+            'Migration scheduling and automation',
+            'Team collaboration and access control',
+            'Audit logging and compliance reports',
+          ].map((feature) => (
+            <div class="flex items-center gap-3 rounded-lg border border-slate-200 dark:border-slate-800 p-4">
+              <div class="h-5 w-5 rounded-full border-2 border-brand-300 dark:border-brand-600 shrink-0"></div>
+              <span class="text-sm text-slate-700 dark:text-slate-300">{feature}</span>
+            </div>
+          ))}
+        </div>
+      </div>
+
+      <!-- Waitlist -->
+      <div class="rounded-xl bg-gradient-to-br from-brand-50 to-slate-50 dark:from-brand-900/20 dark:to-slate-900 border border-brand-200 dark:border-brand-800 p-8 md:p-12 text-center">
+        <h2 class="text-2xl font-bold text-slate-900 dark:text-white mb-4">
+          Join the waitlist
+        </h2>
+        <p class="text-slate-600 dark:text-slate-300 mb-8 max-w-lg mx-auto">
+          Be among the first to try Bani Cloud when it launches. We will notify you as soon as early access opens.
+        </p>
+        <form action="#" method="POST" class="flex flex-col sm:flex-row items-center justify-center gap-3 max-w-md mx-auto">
+          <label for="cloud-waitlist-email" class="sr-only">Email address</label>
+          <input
+            id="cloud-waitlist-email"
+            type="email"
+            name="email"
+            placeholder="you@example.com"
+            required
+            class="w-full sm:flex-1 rounded-lg border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-800 px-4 py-3 text-sm text-slate-900 dark:text-white placeholder-slate-400 focus:border-brand-500 focus:ring-2 focus:ring-brand-500/20 focus:outline-none"
+          />
+          <button type="submit" class="btn-primary w-full sm:w-auto whitespace-nowrap">
+            Join Waitlist
+          </button>
+        </form>
+      </div>
+
+      <!-- Available now -->
+      <div class="mt-12 text-center">
+        <p class="text-slate-600 dark:text-slate-300 mb-4">
+          The open-source CLI and SDK are available right now. Get started with self-hosted migrations today.
+        </p>
+        <div class="flex flex-col sm:flex-row items-center justify-center gap-4">
+          <a
+            href="https://docs.bani.dev/getting-started"
+            class="btn-primary"
+            target="_blank"
+            rel="noopener noreferrer"
+          >
+            Get started with the CLI
+          </a>
+          <a
+            href="https://github.com/mugumedavid/bani"
+            class="btn-outline"
+            target="_blank"
+            rel="noopener noreferrer"
+          >
+            View on GitHub
+          </a>
+        </div>
+      </div>
+    </div>
+  </section>
+</Base>
