@@ -51,11 +51,17 @@ def build_exe(arch: str = "x86_64") -> Path:
         f'Source: "{install_dir}\\*"; DestDir: "{{app}}"; Flags: recursesubdirs\n'
         f"\n"
         f"[Icons]\n"
-        f'Name: "{{group}}\\Bani Web UI"; '
-        f'Filename: "{{app}}\\bin\\bani.bat"; Parameters: "ui"\n'
+        f'Name: "{{group}}\\Bani"; '
+        f'Filename: "{{app}}\\bin\\bani-ui.vbs"; '
+        f'Comment: "Launch Bani Web UI"\n'
         f'Name: "{{group}}\\Bani CLI"; '
         f'Filename: "cmd.exe"; '
         f'Parameters: "/k {{app}}\\bin\\bani.bat --help"\n'
+        f'Name: "{{group}}\\Uninstall Bani"; '
+        f'Filename: "{{uninstallexe}}"\n'
+        f'Name: "{{commondesktop}}\\Bani"; '
+        f'Filename: "{{app}}\\bin\\bani-ui.vbs"; '
+        f'Comment: "Launch Bani Web UI"\n'
         f"\n"
         f"[Registry]\n"
         f"Root: HKLM; "
@@ -66,8 +72,10 @@ def build_exe(arch: str = "x86_64") -> Path:
         f"Flags: preservestringtype\n"
         f"\n"
         f"[Run]\n"
-        f'Filename: "{{app}}\\bin\\bani.bat"; Parameters: "--version"; '
-        f'Description: "Verify installation"; Flags: postinstall nowait\n'
+        f'Filename: "wscript.exe"; '
+        f'Parameters: """{{app}}\\bin\\bani-ui.vbs"""; '
+        f'Description: "Launch Bani Web UI"; '
+        f"Flags: postinstall nowait\n"
     )
 
     # Run Inno Setup compiler

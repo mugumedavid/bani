@@ -176,7 +176,7 @@ def _create_unix_wrapper(bin_dir: Path, install_dir: Path) -> None:
 
 
 def _create_windows_wrapper(bin_dir: Path, install_dir: Path) -> None:
-    """Create a Windows batch wrapper script."""
+    """Create Windows batch wrapper and hidden UI launcher."""
     wrapper = bin_dir / "bani.bat"
     wrapper.write_text(
         "@echo off\r\n"
@@ -184,6 +184,19 @@ def _create_windows_wrapper(bin_dir: Path, install_dir: Path) -> None:
         '"%BANI_HOME%\\python\\python.exe" -m bani %*\r\n'
     )
     print(f"Created {wrapper}")
+
+    # Hidden UI launcher — runs "bani ui" without a console window.
+    # Uses pythonw.exe (windowless Python) so no cmd flash.
+    ui_launcher = bin_dir / "bani-ui.vbs"
+    ui_launcher.write_text(
+        'Set WshShell = CreateObject("WScript.Shell")\r\n'
+        'BaniHome = CreateObject("Scripting.FileSystemObject")'
+        ".GetParentFolderName(WScript.ScriptFullName)\r\n"
+        'PythonW = BaniHome & "\\..\\python\\pythonw.exe"\r\n'
+        "WshShell.Run Chr(34) & PythonW & Chr(34) "
+        '& " -m bani ui", 0, False\r\n'
+    )
+    print(f"Created {ui_launcher}")
 
 
 def main() -> None:

@@ -6,38 +6,48 @@ This guide walks you through installing Bani and running your first database mig
 
 ## Installation
 
-=== "pip / uv"
+"pip / uv"
 
-    ```bash
-    # Using pip
-    pip install bani
+```bash
+# Using pip
+pip install bani
 
-    # Using uv (recommended for faster installs)
-    uv pip install bani
-    ```
+# Using uv (recommended for faster installs)
+uv pip install bani
+```
 
     Optional extras:
 
-    ```bash
-    # Enhanced SQLite support (apsw driver)
-    pip install "bani[sqlite-extras]"
+```bash
+# Enhanced SQLite support (apsw driver)
+pip install "bani[sqlite-extras]"
 
-    # macOS desktop app dependencies
-    pip install "bani[macos-app]"
-    ```
+# macOS desktop app dependencies
+pip install "bani[macos-app]"
+```
 
-=== "Docker"
+"Docker"
 
-    ```bash
-    docker pull bani/bani:latest
+```bash
+docker pull bani/bani:latest
 
-    # Verify the installation
-    docker run --rm bani/bani:latest version
-    ```
+# Verify the installation
+docker run --rm bani/bani:latest version
+```
 
-=== "macOS App"
+"Desktop / Server Installers"
 
-    Download the `.dmg` from the [releases page](https://github.com/mugumedavid/bani/releases), open it, and drag Bani to your Applications folder. The menu bar app provides quick access to the Web UI and CLI.
+Download the installer for your platform from the [releases page](https://github.com/mugumedavid/bani/releases):
+
+| Platform | Format | Install |
+|---|---|---|
+| **macOS** | `.dmg` | Open the DMG, drag Bani to Applications. A menu bar app provides quick access to the Web UI and CLI. |
+| **Windows** | `.exe` | Run the installer and follow the prompts. Bani is added to your PATH automatically. |
+| **Debian / Ubuntu** | `.deb` | `sudo dpkg -i bani-*.deb` |
+| **RHEL / Fedora** | `.rpm` | `sudo rpm -i bani-*.rpm` |
+| **Linux (any)** | `.AppImage` | `chmod +x Bani-*.AppImage && ./Bani-*.AppImage` |
+
+Once installed, run `bani ui` to launch the Web UI, or use the CLI directly.
 
 ---
 
@@ -77,14 +87,13 @@ bani init --source mysql --target postgresql --out my-project.bdl
 
 ## Step 2: Edit the BDL File
 
-Open the generated file and fill in your connection details. Here is a complete example:
+Open the generated file and fill in your connection details. Here is a complete but simple example:
 
 ```xml
 <?xml version="1.0" encoding="UTF-8"?>
 <bani schemaVersion="1.0">
   <project name="my-first-migration"
-           description="Migrate ERP tables from MySQL to PostgreSQL"
-           author="data-team" />
+           description="Migrate ERP tables from MySQL to PostgreSQL" />
 
   <source connector="mysql">
     <connection host="localhost"
@@ -102,24 +111,11 @@ Open the generated file and fill in your connection details. Here is a complete 
                 password="${env:TGT_DB_PASS}" />
   </target>
 
-  <options>
-    <batchSize>100000</batchSize>
-    <parallelWorkers>4</parallelWorkers>
-    <onError>log-and-continue</onError>
-  </options>
-
-  <tables mode="include">
-    <table sourceName="customers" targetName="customers" />
-    <table sourceName="orders" targetName="orders">
-      <filter>WHERE status != 'CANCELLED'</filter>
-    </table>
-    <table sourceName="products" targetName="products" />
-  </tables>
 </bani>
 ```
 
 !!! tip "Credential security"
-    Credentials use `${env:VAR_NAME}` syntax. Bani resolves these from the process environment at runtime. Never embed plaintext passwords in BDL files.
+    Credentials use `${env:VAR_NAME}` syntax. Bani resolves these from the process environment at runtime. Though it is supported, never embed plaintext passwords in BDL files.
 
 ---
 
