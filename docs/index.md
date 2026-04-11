@@ -2,10 +2,9 @@
 
 **An open-source database migration engine powered by Apache Arrow.**
 
-[![PyPI](https://img.shields.io/pypi/v/bani)](https://pypi.org/project/bani/)
-[![CI](https://img.shields.io/github/actions/workflow/status/mugumedavid/bani/ci.yml?branch=main)](https://github.com/mugumedavid/bani/actions)
-[![License](https://img.shields.io/github/license/mugumedavid/bani)](https://github.com/mugumedavid/bani/blob/main/LICENSE)
-[![Python](https://img.shields.io/pypi/pyversions/bani)](https://pypi.org/project/bani/)
+[![CI](https://img.shields.io/github/actions/workflow/status/mugumedavid/bani/ci.yml?branch=main&label=CI)](https://github.com/mugumedavid/bani/actions)
+[![License](https://img.shields.io/badge/license-Apache--2.0-blue)](https://github.com/mugumedavid/bani/blob/main/LICENSE)
+[![Python](https://img.shields.io/badge/python-3.10%2B-blue)](https://github.com/mugumedavid/bani)
 
 Bani moves data between databases using Apache Arrow as the in-memory interchange format. Define your migration in BDL (Bani Definition Language), then run it from the CLI, Python SDK, MCP server, or Web UI.
 
@@ -16,20 +15,39 @@ Bani moves data between databases using Apache Arrow as the in-memory interchang
 - **5 Connectors** -- PostgreSQL, MySQL, SQL Server, Oracle, and SQLite, each with source and sink support.
 - **Arrow Engine** -- All data flows as `pyarrow.RecordBatch` between connectors. N type mappers, not N*N.
 - **BDL (Bani Definition Language)** -- Declarative XML or JSON format for defining migrations with table selections, column mappings, type overrides, hooks, schedules, and incremental sync.
+- **Web UI** -- React dashboard for building migrations visually, monitoring progress in real-time, and browsing schemas -- no command line required.
+- **Cross-Platform Installers** -- Native installers for macOS (.dmg with menu bar app), Windows (.exe), and Linux (.deb, .rpm, AppImage). Download, install, and start migrating.
+- **Docker** -- Multi-arch container image with all 5 database drivers pre-installed. `docker pull banilabs/bani:latest` and go.
+- **AI Agent Integration** -- MCP server with 10 tools that let AI agents (Claude, Cursor, etc.) discover connections, generate BDL, validate, preview, and execute migrations.
 - **CLI** -- 11 commands covering `run`, `validate`, `preview`, `init`, `schema inspect`, `schedule`, `connectors`, `mcp`, `ui`, and `version`.
 - **Python SDK** -- `ProjectBuilder` for fluent project construction, `Bani.load()` for file-based loading, `SchemaInspector` for live introspection.
-- **MCP Server** -- 10 tools that let AI agents discover connections, generate BDL, validate, preview, and execute migrations.
-- **Web UI** -- React dashboard with real-time progress tracking via SSE, backed by a FastAPI server.
-- **Desktop App** -- macOS menu bar application for running and monitoring migrations.
-- **Docker** -- Multi-arch container image with all 5 database drivers pre-installed.
 
 ---
 
 ## Quick Start
 
-```bash
-pip install bani
+### Download and install
 
+Bani runs on macOS, Windows, Linux, and Docker. Download the installer for your platform from the [releases page](https://github.com/mugumedavid/bani/releases), or pull the Docker image:
+
+```bash
+docker pull banilabs/bani:latest
+```
+
+### Open the Web UI
+
+Once installed, launch Bani and open the Web UI in your browser. From there you can:
+
+1. **Add connections** -- point Bani at your source and target databases.
+2. **Browse schemas** -- explore tables, columns, and relationships visually.
+3. **Build a migration** -- select tables, configure column mappings and type overrides.
+4. **Run and monitor** -- execute the migration and watch progress in real-time.
+
+No command line needed.
+
+### Or use the CLI
+
+```bash
 # Scaffold a new migration project
 bani init --source mysql --target postgresql
 
@@ -39,6 +57,10 @@ bani validate migration.bdl
 # Run the migration
 bani run migration.bdl
 ```
+
+### Or let an AI agent do it
+
+Connect Bani's MCP server to Claude, Cursor, or any MCP-compatible AI agent. The agent can inspect schemas, generate migration definitions, and run them -- all through natural language.
 
 See the [Getting Started](getting-started.md) guide for a complete walkthrough.
 

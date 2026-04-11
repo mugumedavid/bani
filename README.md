@@ -1,8 +1,8 @@
 # Bani
 
 [![CI](https://github.com/mugumedavid/bani/actions/workflows/ci.yml/badge.svg)](https://github.com/mugumedavid/bani/actions/workflows/ci.yml)
-[![PyPI](https://img.shields.io/pypi/v/bani)](https://pypi.org/project/bani/)
 [![License](https://img.shields.io/badge/license-Apache--2.0-blue)](LICENSE)
+[![Python](https://img.shields.io/badge/python-3.10%2B-blue)](https://github.com/mugumedavid/bani)
 [![Docs](https://img.shields.io/badge/docs-docs.bani.dev-teal)](https://docs.bani.dev)
 
 **An open-source database migration engine powered by Apache Arrow.**
