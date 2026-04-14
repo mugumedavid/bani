@@ -867,22 +867,27 @@ class MSSQLConnector(SourceConnector, SinkConnector):
 
     @staticmethod
     def _resolve_env_var(env_ref: str) -> str | None:
-        """Resolve an environment variable reference.
+        """Resolve a credential value.
 
-        Format: ${env:VAR_NAME} or just VAR_NAME.
+        Supports three formats:
+        - ``${env:VAR_NAME}`` — resolve from environment variable.
+        - A bare string that exists as an env var — resolve it.
+        - A bare string that is not an env var — treat as literal value.
 
         Args:
-            env_ref: Environment variable reference.
+            env_ref: Environment variable reference or literal value.
 
         Returns:
-            The environment variable value, or None if not set.
+            The resolved value, or None if empty.
         """
         if not env_ref:
             return None
 
+        # Handle ${env:VAR} format — always an env var lookup
         if env_ref.startswith("${env:") and env_ref.endswith("}"):
             var_name = env_ref[6:-1]
-        else:
-            var_name = env_ref
+            return os.environ.get(var_name)
 
-        return os.environ.get(var_name)
+        # Try as env var name first, fall back to literal value
+        env_val = os.environ.get(env_ref)
+        return env_val if env_val is not None else env_ref
