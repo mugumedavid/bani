@@ -43,6 +43,7 @@ dependencies = [
 [project.optional-dependencies]
 sqlite-extras = ["apsw>=3.40"]
 macos-app = ["rumps>=0.4.0", "pyobjc-framework-Cocoa>=9.0"]
+tray = ["pystray>=0.19", "Pillow>=10.0"]
 
 [dependency-groups]
 dev = [
@@ -122,6 +123,8 @@ module = [
     "jsonschema", "jsonschema.*",
     "pyodbc", "pyodbc.*",
     "rumps", "rumps.*",
+    "pystray", "pystray.*",
+    "PIL", "PIL.*",
 ]
 ignore_missing_imports = true
 

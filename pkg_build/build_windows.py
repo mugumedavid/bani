@@ -27,6 +27,21 @@ def build_exe(arch: str = "x86_64") -> Path:
     # Assemble the installation
     install_dir = assemble("windows", arch)
 
+    # Install tray app dependencies (pystray + Pillow)
+    python_exe = install_dir / "python" / "python.exe"
+    subprocess.run(
+        [
+            str(python_exe),
+            "-m",
+            "pip",
+            "install",
+            "--no-cache-dir",
+            "pystray>=0.19",
+            "Pillow>=10.0",
+        ],
+        check=True,
+    )
+
     # Generate Inno Setup script
     iss_path = REPO_ROOT / "build" / "bani.iss"
     output_dir = REPO_ROOT / "build"

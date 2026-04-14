@@ -185,8 +185,8 @@ def _create_windows_wrapper(bin_dir: Path, install_dir: Path) -> None:
     )
     print(f"Created {wrapper}")
 
-    # Hidden UI launcher — runs "bani ui" without a console window.
-    # Uses pythonw.exe (windowless Python) so no cmd flash.
+    # Hidden tray launcher — runs the system tray app without a console.
+    # Uses pythonw.exe (windowless Python) so no cmd window appears.
     ui_launcher = bin_dir / "bani-ui.vbs"
     ui_launcher.write_text(
         'Set WshShell = CreateObject("WScript.Shell")\r\n'
@@ -194,7 +194,7 @@ def _create_windows_wrapper(bin_dir: Path, install_dir: Path) -> None:
         ".GetParentFolderName(WScript.ScriptFullName)\r\n"
         'PythonW = BaniHome & "\\..\\python\\pythonw.exe"\r\n'
         "WshShell.Run Chr(34) & PythonW & Chr(34) "
-        '& " -m bani ui", 0, False\r\n'
+        '& " -m bani.desktop.tray", 0, False\r\n'
     )
     print(f"Created {ui_launcher}")
 
