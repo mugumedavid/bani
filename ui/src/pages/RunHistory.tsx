@@ -7,6 +7,7 @@ const PAGE_SIZE = 15;
 const statusColors: Record<string, string> = {
   completed: 'bg-green-100 text-green-700',
   failed: 'bg-red-100 text-red-700',
+  skipped: 'bg-yellow-100 text-yellow-700',
 };
 
 function formatDate(iso: string): string {
@@ -86,6 +87,9 @@ export function RunHistory() {
                     Project
                   </th>
                   <th className="text-left px-6 py-3 font-medium text-gray-500 uppercase tracking-wider text-xs">
+                    Type
+                  </th>
+                  <th className="text-left px-6 py-3 font-medium text-gray-500 uppercase tracking-wider text-xs">
                     Status
                   </th>
                   <th className="text-left px-6 py-3 font-medium text-gray-500 uppercase tracking-wider text-xs">
@@ -111,28 +115,45 @@ export function RunHistory() {
                       </span>
                     </td>
                     <td className="px-6 py-4">
+                      <span className={`inline-flex px-2 py-0.5 rounded text-xs font-medium ${
+                        run.run_type === 'scheduled'
+                          ? 'bg-blue-50 text-blue-600'
+                          : 'bg-gray-50 text-gray-600'
+                      }`}>
+                        {run.run_type ?? 'manual'}
+                      </span>
+                    </td>
+                    <td className="px-6 py-4">
                       <span
                         className={`inline-flex px-2.5 py-0.5 rounded-full text-xs font-medium ${
                           statusColors[run.status] ?? 'bg-gray-100 text-gray-700'
                         }`}
+                        title={run.reason ?? undefined}
                       >
                         {run.status}
                       </span>
+                      {run.reason && (
+                        <p className="text-xs text-gray-400 mt-0.5">{run.reason}</p>
+                      )}
                     </td>
                     <td className="px-6 py-4 text-gray-500">
                       {formatDate(run.started_at)}
                     </td>
                     <td className="px-6 py-4 text-gray-500">
-                      {formatDuration(run.duration_seconds)}
+                      {run.status === 'skipped' ? '--' : formatDuration(run.duration_seconds)}
                     </td>
                     <td className="px-6 py-4 text-right text-gray-500">
-                      <span className="text-green-600">{run.tables_completed}</span>
-                      {run.tables_failed > 0 && (
-                        <span className="text-red-500 ml-1">/ {run.tables_failed} failed</span>
+                      {run.status === 'skipped' ? '--' : (
+                        <>
+                          <span className="text-green-600">{run.tables_completed}</span>
+                          {run.tables_failed > 0 && (
+                            <span className="text-red-500 ml-1">/ {run.tables_failed} failed</span>
+                          )}
+                        </>
                       )}
                     </td>
                     <td className="px-6 py-4 text-right text-gray-500">
-                      {run.total_rows.toLocaleString()}
+                      {run.status === 'skipped' ? '--' : run.total_rows.toLocaleString()}
                     </td>
                   </tr>
                 ))}

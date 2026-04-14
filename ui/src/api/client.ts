@@ -168,6 +168,8 @@ export interface RunLogEntry {
   total_rows: number;
   duration_seconds: number;
   error: string | null;
+  run_type?: string;
+  reason?: string | null;
 }
 
 export function getRunHistory(_n: number = 50): Promise<RunLogEntry[]> {

@@ -59,6 +59,7 @@ nav:
   - Home: index.md
   - Getting Started: getting-started.md
   - Guides:
+      - Web UI: guides/web-ui.md
       - BDL Reference: guides/bdl-reference.md
       - CLI Reference: guides/cli-reference.md
       - Python SDK: guides/python-sdk.md

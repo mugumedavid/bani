@@ -222,6 +222,24 @@ class SchedulerRegistry:
                 if stop_event.is_set():
                     break
 
+                # Check if another migration is already running
+                from bani.application.active_migration import (
+                    ActiveMigrationTracker,
+                )
+
+                tracker = ActiveMigrationTracker()
+                active = tracker.list_active()
+                if active:
+                    active_name = active[0].get("project_name", "unknown")
+                    reason = f"Another migration is already running ({active_name})"
+                    logger.warning(
+                        "Skipping scheduled run for '%s': %s",
+                        project_name,
+                        reason,
+                    )
+                    self._log_skipped_run(project_name, reason)
+                    continue
+
                 # Time to run — create connectors, execute, disconnect
                 self._execute_scheduled_run(project_name, bdl_path, stop_event)
 
@@ -266,6 +284,7 @@ class SchedulerRegistry:
                 project, source, sink, checkpoint=checkpoint
             )
             orchestrator.set_cancel_event(stop_event)
+            orchestrator.run_type = "scheduled"
 
             result = orchestrator.execute(resume=resume)
 
@@ -285,6 +304,32 @@ class SchedulerRegistry:
                 sink.disconnect()
             except Exception:
                 pass
+
+    @staticmethod
+    def _log_skipped_run(project_name: str, reason: str) -> None:
+        """Record a skipped scheduled run in the run history."""
+        from datetime import datetime, timezone
+
+        from bani.application.run_log import RunLog, RunLogEntry
+
+        now = datetime.now(timezone.utc).isoformat()
+        try:
+            RunLog().append(
+                RunLogEntry(
+                    project_name=project_name,
+                    started_at=now,
+                    finished_at=now,
+                    status="skipped",
+                    tables_completed=0,
+                    tables_failed=0,
+                    total_rows=0,
+                    duration_seconds=0,
+                    run_type="scheduled",
+                    reason=reason,
+                )
+            )
+        except Exception:
+            logger.debug("Failed to log skipped run", exc_info=True)
 
     @staticmethod
     def _pre_setup_credentials_from_xml(bdl_path: Path, project_name: str) -> None:

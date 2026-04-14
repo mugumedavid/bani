@@ -20,12 +20,14 @@ class RunLogEntry:
     project_name: str
     started_at: str  # ISO timestamp
     finished_at: str  # ISO timestamp
-    status: str  # "completed" | "failed"
+    status: str  # "completed" | "failed" | "skipped"
     tables_completed: int
     tables_failed: int
     total_rows: int
     duration_seconds: float
     error: str | None = None
+    run_type: str = "manual"  # "manual" | "scheduled"
+    reason: str | None = None  # human-readable reason for skipped/failed
 
 
 class RunLog:
@@ -149,4 +151,6 @@ class RunLog:
             "total_rows": entry.total_rows,
             "duration_seconds": entry.duration_seconds,
             "error": entry.error,
+            "run_type": entry.run_type,
+            "reason": entry.reason,
         }

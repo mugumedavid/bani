@@ -98,6 +98,7 @@ class MigrationOrchestrator:
         self._quarantine = quarantine or QuarantineManager()
         self._cancel_event: threading.Event | None = None
         self._skipped_tables: list[str] = []
+        self.run_type: str = "manual"
         self._hook_runner = HookRunner(
             source_executor=source,  # type: ignore[arg-type]  # SourceConnector has execute_sql but doesn't explicitly implement SqlExecutor
             target_executor=sink,
@@ -404,6 +405,7 @@ class MigrationOrchestrator:
                     total_rows=total_rows_written,
                     duration_seconds=duration,
                     error="; ".join(errors) if errors else None,
+                    run_type=self.run_type,
                 )
             )
         except Exception:

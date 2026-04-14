@@ -34,16 +34,18 @@ Bani runs on macOS, Windows, Linux, and Docker. Download the installer for your 
 docker pull banilabs/bani:latest
 ```
 
-### Open the Web UI
+### Launch and use the Web UI
 
-Once installed, launch Bani and open the Web UI in your browser. From there you can:
+On macOS and Windows, Bani runs as a background app with a menu bar or system tray icon. After installing, the browser opens automatically with the Web UI. From there you can:
 
 1. **Add connections** -- point Bani at your source and target databases.
 2. **Browse schemas** -- explore tables, columns, and relationships visually.
 3. **Build a migration** -- select tables, configure column mappings and type overrides.
 4. **Run and monitor** -- execute the migration and watch progress in real-time.
 
-No command line needed.
+Close the browser and Bani keeps running in the background. Click the tray/menu bar icon to reopen it. No command line needed.
+
+On Linux and Docker, run `bani ui` to start the server and open the browser.
 
 ### Or use the CLI
 
@@ -71,6 +73,7 @@ See the [Getting Started](getting-started.md) guide for a complete walkthrough.
 | Section | Description |
 |---|---|
 | [Getting Started](getting-started.md) | Install, configure, and run your first migration |
+| [Web UI Guide](guides/web-ui.md) | Dashboard, connections, schema browser, projects, migration monitor |
 | [BDL Reference](guides/bdl-reference.md) | Full specification of the Bani Definition Language |
 | [CLI Reference](guides/cli-reference.md) | All commands, flags, and output formats |
 | [Python SDK](guides/python-sdk.md) | Build and run migrations programmatically |

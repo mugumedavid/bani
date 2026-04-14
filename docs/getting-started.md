@@ -27,13 +27,26 @@ Download the installer for your platform from the [releases page](https://github
 | **RHEL / Fedora** | `.rpm` | `sudo rpm -i bani-*.rpm` |
 | **Linux (any)** | `.AppImage` | `chmod +x Bani-*.AppImage && ./Bani-*.AppImage` |
 
-Once installed, the UI normally opens automatically in a browser. If its a docker or linux install, you may need to look at the install logs for a UI browser link. You can also always run `bani ui` to launch the Web UI, or use the CLI directly.
+## Launching Bani
+
+After installation, Bani runs as a background app with a tray or menu bar icon. The Web UI opens automatically in your browser.
+
+| Platform | What happens after install |
+|---|---|
+| **macOS** | A **"B" icon** appears in the menu bar. Click it to open the Web UI. The server runs in the background -- close the browser and it keeps running. |
+| **Windows** | A **tray icon** appears in the system tray (bottom-right). Right-click to open the Web UI. A "Bani" desktop shortcut is also created. The server runs in the background. |
+| **Linux** | Run `bani ui` from a terminal. The browser opens automatically. |
+| **Docker** | Run `docker run -p 8910:8910 banilabs/bani:latest bani ui --host 0.0.0.0` and open `http://localhost:8910`. |
+
+On macOS and Windows, the experience is the same: install, the tray/menu bar icon appears, the browser opens, and you are ready to build your first migration. No terminal needed.
+
+See the [Web UI Guide](guides/web-ui.md) for a detailed walkthrough of every screen.
 
 ---
 
 ## Prerequisites
 
-You need access to a source and target database. Bani reads credentials from environment variables -- never hardcode passwords in BDL files. The UI does support direct password provision when setting up a migration project.
+You need access to a source and target database. The Web UI lets you enter credentials directly when adding connections.
 
 ---
 
