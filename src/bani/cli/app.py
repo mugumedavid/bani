@@ -97,7 +97,7 @@ app.command(name="ui")(ui_command)
 def main() -> None:
     """Entry point for the CLI."""
     try:
-        app()
+        app(prog_name="bani")
     except KeyboardInterrupt:
         console.print("[red]Interrupted by user[/red]")
         sys.exit(1)
