@@ -56,7 +56,7 @@ def build_exe(arch: str = "x86_64") -> Path:
         f'Comment: "Launch Bani Web UI"\n'
         f'Name: "{{group}}\\Bani CLI"; '
         f'Filename: "cmd.exe"; '
-        f'Parameters: "/k {{app}}\\bin\\bani.bat --help"\n'
+        f'Parameters: "/k ""{{app}}\\bin\\bani.bat"" --help"\n'
         f'Name: "{{group}}\\Uninstall Bani"; '
         f'Filename: "{{uninstallexe}}"\n'
         f'Name: "{{commondesktop}}\\Bani"; '

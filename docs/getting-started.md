@@ -6,26 +6,6 @@ This guide walks you through installing Bani and running your first database mig
 
 ## Installation
 
-"pip / uv"
-
-```bash
-# Using pip
-pip install bani
-
-# Using uv (recommended for faster installs)
-uv pip install bani
-```
-
-    Optional extras:
-
-```bash
-# Enhanced SQLite support (apsw driver)
-pip install "bani[sqlite-extras]"
-
-# macOS desktop app dependencies
-pip install "bani[macos-app]"
-```
-
 "Docker"
 
 ```bash
@@ -47,166 +27,118 @@ Download the installer for your platform from the [releases page](https://github
 | **RHEL / Fedora** | `.rpm` | `sudo rpm -i bani-*.rpm` |
 | **Linux (any)** | `.AppImage` | `chmod +x Bani-*.AppImage && ./Bani-*.AppImage` |
 
-Once installed, run `bani ui` to launch the Web UI, or use the CLI directly.
+Once installed, the UI normally opens automatically in a browser. If its a docker or linux install, you may need to look at the install logs for a UI browser link. You can also always run `bani ui` to launch the Web UI, or use the CLI directly.
 
 ---
 
 ## Prerequisites
 
-You need access to a source and target database. Bani reads credentials from environment variables -- never hardcode passwords in BDL files.
-
-Set up your credentials:
-
-```bash
-# Source database (e.g. MySQL)
-export SRC_DB_USER=myuser
-export SRC_DB_PASS=mypassword
-
-# Target database (e.g. PostgreSQL)
-export TGT_DB_USER=pguser
-export TGT_DB_PASS=pgpassword
-```
+You need access to a source and target database. Bani reads credentials from environment variables -- never hardcode passwords in BDL files. The UI does support direct password provision when setting up a migration project.
 
 ---
 
-## Step 1: Scaffold a Project
+## Your First Migration (Web UI)
 
-Use `bani init` to generate a BDL project file with an interactive wizard:
+The Web UI is the easiest way to set up and run a migration. No command line or configuration files needed.
 
-```bash
-bani init --source mysql --target postgresql
-```
+### Step 1: Add your database connections
 
-This creates a `migration.bdl` file with connection placeholders. You can also specify an output path:
+From the dashboard, go to **Connections** and add your source and target databases. For each connection, provide:
 
-```bash
-bani init --source mysql --target postgresql --out my-project.bdl
-```
+- **Name** -- a label for this connection (e.g. "Production MySQL", "Analytics PG")
+- **Connector** -- the database type (PostgreSQL, MySQL, SQL Server, Oracle, or SQLite)
+- **Host, Port, Database** -- your database server details
+- **Username and Password** -- credentials for the database
+
+Click **Test Connection** to verify connectivity before saving.
+
+### Step 2: Browse the source schema
+
+Go to **Schema Browser** and select your source connection. Bani connects to the database and displays all schemas, tables, columns, indexes, and foreign keys. Use this to understand what you are migrating and verify that the connection is working.
+
+### Step 3: Create a migration project
+
+Go to **Projects** and click **New Project**. Then:
+
+1. **Name** your project (e.g. "ERP to Analytics")
+2. **Select source** -- choose the source connection you added
+3. **Select target** -- choose the target connection
+4. **Choose tables** -- select which tables to migrate, or leave blank to migrate all
+5. **Configure options** -- Leave as is or set batch size, parallelism, error handling, and any column or type overrides
+6. **Save** the project
+
+Bani generates a BDL (Bani Definition Language) file behind the scenes. You can view and edit the raw BDL from the project editor if needed.
+
+### Step 4: Run and monitor
+
+Click **Run Migration** on your project. The **Migration Monitor** shows real-time progress:
+
+- Overall progress bar with rows read and written
+- Per-table status (pending, in progress, completed, failed)
+- Elapsed time and estimated completion
+- Warnings and errors as they occur
+
+Once complete, the results summary shows total tables migrated, rows transferred, and any issues encountered.
+
+### Step 5: Review history
+
+The **Run History** page keeps a log of all past migrations with their results, so you can track what was migrated and when.
 
 ---
 
-## Step 2: Edit the BDL File
+## Alternative: CLI
 
-Open the generated file and fill in your connection details. Here is a complete but simple example:
-
-```xml
-<?xml version="1.0" encoding="UTF-8"?>
-<bani schemaVersion="1.0">
-  <project name="my-first-migration"
-           description="Migrate ERP tables from MySQL to PostgreSQL" />
-
-  <source connector="mysql">
-    <connection host="localhost"
-                port="3306"
-                database="erp"
-                username="${env:SRC_DB_USER}"
-                password="${env:SRC_DB_PASS}" />
-  </source>
-
-  <target connector="postgresql">
-    <connection host="localhost"
-                port="5432"
-                database="analytics"
-                username="${env:TGT_DB_USER}"
-                password="${env:TGT_DB_PASS}" />
-  </target>
-
-</bani>
-```
-
-!!! tip "Credential security"
-    Credentials use `${env:VAR_NAME}` syntax. Bani resolves these from the process environment at runtime. Though it is supported, never embed plaintext passwords in BDL files.
-
----
-
-## Step 3: Validate
-
-Check that the BDL file is well-formed and the configuration is valid:
+For scripting, automation, or headless environments, you can use the CLI:
 
 ```bash
+# Scaffold a migration project
+bani init --source mysql --target postgresql --out migration.bdl
+
+# Edit migration.bdl with your connection details and table selections
+
+# Validate the project
 bani validate migration.bdl
-```
 
-A successful validation prints a green checkmark. If there are errors, Bani prints each one with a diagnostic code.
-
----
-
-## Step 4: Preview (Optional)
-
-Before running a full migration, preview the source data:
-
-```bash
+# Preview source data (optional)
 bani preview migration.bdl --sample-size 5
-```
 
-This connects to the source database and displays sample rows from each table, helping you verify connectivity and inspect the data before committing to a full transfer.
-
----
-
-## Step 5: Run the Migration
-
-Execute the migration:
-
-```bash
+# Run the migration
 bani run migration.bdl
 ```
 
-Bani will:
-
-1. Parse and validate the BDL file
-2. Connect to source and target databases
-3. Introspect the source schema
-4. Resolve table dependencies (foreign keys)
-5. Create tables in the target database
-6. Transfer data in batches as Arrow RecordBatches
-7. Create indexes and foreign keys on the target
-8. Report results
-
-!!! note "Dry run"
-    Use `--dry-run` to validate without executing: `bani run migration.bdl --dry-run`
+See the [CLI Reference](guides/cli-reference.md) for all 11 commands.
 
 ---
 
-## SDK Alternative
+## Alternative: Python SDK
 
-You can build and run migrations entirely in Python:
+For programmatic control, use the Python SDK:
 
 ```python
 from bani.sdk.project_builder import ProjectBuilder
+from bani.sdk.bani import BaniProject
 
 project = (
     ProjectBuilder("my-migration")
-    .source(
-        dialect="mysql",
-        host="localhost",
-        port=3306,
-        database="erp",
-        username_env="SRC_DB_USER",
-        password_env="SRC_DB_PASS",
-    )
-    .target(
-        dialect="postgresql",
-        host="localhost",
-        port=5432,
-        database="analytics",
-        username_env="TGT_DB_USER",
-        password_env="TGT_DB_PASS",
-    )
+    .source("mysql", host="localhost", port=3306, database="erp",
+            username_env="SRC_DB_USER", password_env="SRC_DB_PASS")
+    .target("postgresql", host="localhost", port=5432, database="analytics",
+            username_env="TGT_DB_USER", password_env="TGT_DB_PASS")
     .batch_size(100_000)
-    .parallel_workers(4)
     .build()
 )
 
-from bani.sdk.bani import Bani, BaniProject
-
-bani_project = BaniProject(project)
-result = bani_project.run()
-
-print(f"Completed: {result.tables_completed} tables, "
-      f"{result.total_rows_written:,} rows in {result.duration_seconds:.1f}s")
+result = BaniProject(project).run()
+print(f"{result.tables_completed} tables, {result.total_rows_written:,} rows")
 ```
 
 See the [Python SDK](guides/python-sdk.md) guide for the full API.
+
+---
+
+## Alternative: AI Agent
+
+Connect Bani to Claude, Cursor, or any MCP-compatible AI agent and let it drive the migration through natural language. See the [MCP Server](guides/mcp-server.md) guide.
 
 ---
 

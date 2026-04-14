@@ -24,19 +24,13 @@ Add Bani to your Claude Desktop configuration at `~/Library/Application Support/
     "bani": {
       "command": "bani",
       "args": ["mcp", "serve"],
-      "env": {
-        "PG_USER": "myuser",
-        "PG_PASS": "mypassword",
-        "MYSQL_USER": "root",
-        "MYSQL_PASS": "password"
-      }
     }
   }
 }
 ```
 
-!!! tip "Environment variables"
-    Database credentials are passed via the `env` block. The MCP server never receives or stores plaintext passwords -- it uses environment variable *names* that are resolved at runtime by the connector layer.
+!!! tip "Database connections"
+    The MCP server uses the connections you have saved locally. Use the Web UI to create and save database connections (Connections page), and the MCP server will automatically know about them by name during AI interactions. For example, if you save a connection called "production-mysql" in the UI, an AI agent can reference it directly when inspecting schemas or running migrations.
 
 ---
 
