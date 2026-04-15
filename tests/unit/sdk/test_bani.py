@@ -233,7 +233,7 @@ class TestBani:
         # Create a minimal BDL XML file
         bdl_content = (
             '<?xml version="1.0" encoding="UTF-8"?>\n'
-            '<migration xmlns="https://bani.dev/bdl/1.0" schemaVersion="1.0">\n'
+            '<migration xmlns="https://bani.tools/bdl/1.0" schemaVersion="1.0">\n'
             '    <project name="test_project" description="Test migration">\n'
             '        <source dialect="postgresql" host="localhost" port="5432"\n'
             '                database="source_db" />\n'
@@ -276,7 +276,7 @@ class TestBani:
         """Test file validation."""
         bdl_content = (
             '<?xml version="1.0" encoding="UTF-8"?>\n'
-            '<migration xmlns="https://bani.dev/bdl/1.0" schemaVersion="1.0">\n'
+            '<migration xmlns="https://bani.tools/bdl/1.0" schemaVersion="1.0">\n'
             '    <project name="test_project">\n'
             '        <source dialect="postgresql" />\n'
             '        <target dialect="mysql" />\n'

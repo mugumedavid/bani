@@ -4,7 +4,7 @@ import mdx from '@astrojs/mdx';
 import sitemap from '@astrojs/sitemap';
 
 export default defineConfig({
-  site: 'https://bani.dev',
+  site: 'https://bani.tools',
   output: 'static',
   integrations: [
     tailwind(),

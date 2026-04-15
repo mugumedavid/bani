@@ -3,7 +3,7 @@
 [![CI](https://github.com/mugumedavid/bani/actions/workflows/ci.yml/badge.svg)](https://github.com/mugumedavid/bani/actions/workflows/ci.yml)
 [![License](https://img.shields.io/badge/license-Apache--2.0-blue)](LICENSE)
 [![Python](https://img.shields.io/badge/python-3.10%2B-blue)](https://github.com/mugumedavid/bani)
-[![Docs](https://img.shields.io/badge/docs-docs.bani.dev-teal)](https://docs.bani.dev)
+[![Docs](https://img.shields.io/badge/docs-docs.bani.tools-teal)](https://docs.bani.tools)
 
 **An open-source database migration engine powered by Apache Arrow.**
 
@@ -140,14 +140,14 @@ Monitor migrations in real-time with progress tracking, table-level status, and 
 
 ## Documentation
 
-Full documentation is available at [docs.bani.dev](https://docs.bani.dev):
+Full documentation is available at [docs.bani.tools](https://docs.bani.tools):
 
-- [Getting Started](https://docs.bani.dev/getting-started/) -- Install and run your first migration in under 10 minutes
-- [BDL Reference](https://docs.bani.dev/guides/bdl-reference/) -- Complete specification for the Bani Definition Language
-- [CLI Reference](https://docs.bani.dev/guides/cli-reference/) -- All commands, flags, and output formats
-- [Python SDK](https://docs.bani.dev/guides/python-sdk/) -- Programmatic migration API
-- [MCP Server](https://docs.bani.dev/guides/mcp-server/) -- AI agent integration guide
-- [Connector Reference](https://docs.bani.dev/connectors/) -- Per-database configuration and type mappings
+- [Getting Started](https://docs.bani.tools/getting-started/) -- Install and run your first migration in under 10 minutes
+- [BDL Reference](https://docs.bani.tools/guides/bdl-reference/) -- Complete specification for the Bani Definition Language
+- [CLI Reference](https://docs.bani.tools/guides/cli-reference/) -- All commands, flags, and output formats
+- [Python SDK](https://docs.bani.tools/guides/python-sdk/) -- Programmatic migration API
+- [MCP Server](https://docs.bani.tools/guides/mcp-server/) -- AI agent integration guide
+- [Connector Reference](https://docs.bani.tools/connectors/) -- Per-database configuration and type mappings
 
 ## Development
 
@@ -174,8 +174,8 @@ Apache-2.0. See [LICENSE](LICENSE) for details.
 
 ## Links
 
-- [Website](https://bani.dev) -- Project homepage
-- [Documentation](https://docs.bani.dev) -- Technical docs and guides
+- [Website](https://bani.tools) -- Project homepage
+- [Documentation](https://docs.bani.tools) -- Technical docs and guides
 - [GitHub](https://github.com/mugumedavid/bani) -- Source code and issues
 - [Docker Hub](https://hub.docker.com/r/banilabs/bani) -- Container images
 - [Discord](https://discord.gg/ffVYuNQz) -- Community chat

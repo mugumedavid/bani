@@ -1,6 +1,6 @@
 # BDL Example Library
 
-Annotated [BDL (Bani Definition Language)](https://bani.dev) files covering common database migration and synchronisation scenarios. Each file includes XML comments explaining every element, serving as documentation for both humans and AI models generating BDL.
+Annotated [BDL (Bani Definition Language)](https://bani.tools) files covering common database migration and synchronisation scenarios. Each file includes XML comments explaining every element, serving as documentation for both humans and AI models generating BDL.
 
 ## Files
 

@@ -24,7 +24,7 @@ from bani.domain.project import (
     TypeMappingOverride,
 )
 
-NS = {"b": "https://bani.dev/bdl/1.0"}
+NS = {"b": "https://bani.tools/bdl/1.0"}
 
 
 def parse(source: str | Path) -> ProjectModel:

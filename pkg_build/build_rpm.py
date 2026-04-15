@@ -50,7 +50,7 @@ def build_rpm(arch: str = "x86_64") -> Path:
         f"Release: 1\n"
         f"Summary: Database migration engine powered by Apache Arrow\n"
         f"License: Apache-2.0\n"
-        f"URL: https://bani.dev\n"
+        f"URL: https://bani.tools\n"
         f"BuildArch: {rpm_arch}\n"
         f"AutoReqProv: no\n"
         f"\n"

@@ -55,8 +55,8 @@ dev = [
 ]
 
 [project.urls]
-Homepage = "https://bani.dev"
-Documentation = "https://docs.bani.dev"
+Homepage = "https://bani.tools"
+Documentation = "https://docs.bani.tools"
 Repository = "https://github.com/mugumedavid/bani"
 
 [project.scripts]

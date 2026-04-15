@@ -59,7 +59,7 @@ def build_deb(arch: str = "x86_64") -> Path:
         f"Description: Database migration engine powered by Apache Arrow\n"
         f" Bani migrates data between PostgreSQL, MySQL, MSSQL, Oracle,\n"
         f" and SQLite with a Web UI, CLI, SDK, and MCP server.\n"
-        f"Homepage: https://bani.dev\n"
+        f"Homepage: https://bani.tools\n"
     )
 
     # DEBIAN/postinst — make wrapper executable

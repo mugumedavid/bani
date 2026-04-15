@@ -21,9 +21,9 @@
   default mappings for any source type.
 -->
 <bani schemaVersion="1.0"
-      xmlns="https://bani.dev/bdl/1.0"
+      xmlns="https://bani.tools/bdl/1.0"
       xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
-      xsi:schemaLocation="https://bani.dev/bdl/1.0 bdl-1.0.xsd">
+      xsi:schemaLocation="https://bani.tools/bdl/1.0 bdl-1.0.xsd">
 
   <project name="mssql-erp-to-pg"
            description="MSSQL ERP to PostgreSQL with type mapping overrides"

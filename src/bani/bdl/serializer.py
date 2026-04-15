@@ -18,11 +18,11 @@ def serialize(project: ProjectModel) -> str:
     """
     root = ET.Element("bani")
     root.set("schemaVersion", "1.0")
-    root.set("xmlns", "https://bani.dev/bdl/1.0")
+    root.set("xmlns", "https://bani.tools/bdl/1.0")
     root.set("xmlns:xsi", "http://www.w3.org/2001/XMLSchema-instance")
     root.set(
         "xsi:schemaLocation",
-        "https://bani.dev/bdl/1.0 bdl-1.0.xsd",
+        "https://bani.tools/bdl/1.0 bdl-1.0.xsd",
     )
 
     # Project

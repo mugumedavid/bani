@@ -141,8 +141,8 @@ To try AI-powered migrations with Bani:
 2. Configure the MCP server in your AI client of choice
 3. Start a conversation: *"Inspect my source database"*
 
-For the complete MCP setup guide, visit [docs.bani.dev/mcp](https://docs.bani.dev/mcp).
+For the complete MCP setup guide, visit [docs.bani.tools/mcp](https://docs.bani.tools/mcp).
 
-For general getting-started instructions, see [docs.bani.dev/getting-started](https://docs.bani.dev/getting-started).
+For general getting-started instructions, see [docs.bani.tools/getting-started](https://docs.bani.tools/getting-started).
 
 The source code is available on [GitHub](https://github.com/mugumedavid/bani) under the Apache-2.0 license.
