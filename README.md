@@ -142,12 +142,12 @@ Monitor migrations in real-time with progress tracking, table-level status, and 
 
 Full documentation is available at [docs.bani.tools](https://docs.bani.tools):
 
-- [Getting Started](https://docs.bani.tools/getting-started/) -- Install and run your first migration in under 10 minutes
-- [BDL Reference](https://docs.bani.tools/guides/bdl-reference/) -- Complete specification for the Bani Definition Language
-- [CLI Reference](https://docs.bani.tools/guides/cli-reference/) -- All commands, flags, and output formats
-- [Python SDK](https://docs.bani.tools/guides/python-sdk/) -- Programmatic migration API
-- [MCP Server](https://docs.bani.tools/guides/mcp-server/) -- AI agent integration guide
-- [Connector Reference](https://docs.bani.tools/connectors/) -- Per-database configuration and type mappings
+- [Getting Started](https://docs.bani.tools/en/latest/getting-started/) -- Install and run your first migration in under 10 minutes
+- [BDL Reference](https://docs.bani.tools/en/latest/guides/bdl-reference/) -- Complete specification for the Bani Definition Language
+- [CLI Reference](https://docs.bani.tools/en/latest/guides/cli-reference/) -- All commands, flags, and output formats
+- [Python SDK](https://docs.bani.tools/en/latest/guides/python-sdk/) -- Programmatic migration API
+- [MCP Server](https://docs.bani.tools/en/latest/guides/mcp-server/) -- AI agent integration guide
+- [Connector Reference](https://docs.bani.tools/en/latest/connectors/) -- Per-database configuration and type mappings
 
 ## Development
 

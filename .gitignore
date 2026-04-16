@@ -18,3 +18,4 @@ _docs_site/
 site/node_modules/
 site/dist/
 .venv/
+site/.astro/

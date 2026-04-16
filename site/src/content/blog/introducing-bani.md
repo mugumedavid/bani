@@ -87,7 +87,7 @@ Edit the generated BDL configuration, then run the migration:
 bani run project.bdl.xml
 ```
 
-For the full getting-started guide, visit [docs.bani.tools/getting-started](https://docs.bani.tools/getting-started).
+For the full getting-started guide, visit [docs.bani.tools/en/latest/getting-started/](https://docs.bani.tools/en/latest/getting-started/).
 
 ## What's next
 

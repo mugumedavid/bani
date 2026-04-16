@@ -124,4 +124,4 @@ Apache Arrow is not the only way to build a database migration tool. You can bui
 
 The N-mapper architecture means that adding new database support is O(1) in complexity rather than O(N). The batch processing model means that performance scales with data volume. And the standardized type system means that type mapping is consistent and predictable.
 
-If you want to see this architecture in action, [install Bani](https://docs.bani.tools/getting-started) and try a migration. The source code is available on [GitHub](https://github.com/mugumedavid/bani) under the Apache-2.0 license.
+If you want to see this architecture in action, [install Bani](https://docs.bani.tools/en/latest/getting-started/) and try a migration. The source code is available on [GitHub](https://github.com/mugumedavid/bani) under the Apache-2.0 license.
