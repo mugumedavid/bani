@@ -23,7 +23,7 @@ Add Bani to your Claude Desktop configuration at `~/Library/Application Support/
   "mcpServers": {
     "bani": {
       "command": "bani",
-      "args": ["mcp", "serve"],
+      "args": ["mcp", "serve"]
     }
   }
 }
@@ -34,14 +34,20 @@ Add Bani to your Claude Desktop configuration at `~/Library/Application Support/
 
 ---
 
-## Security Model
+## Credentials
 
-The MCP server enforces a strict credential security policy:
+Bani resolves database credentials from three places, in this order:
 
-- Tools accept environment variable **names** (e.g. `username_env`, `password_env`), not values.
-- Any parameter named `password` or `credentials` is **rejected** with a `SecurityError`.
+1. **Saved connections** -- if you reference a connection by key (e.g. `prod-mysql`), Bani looks it up in `~/.bani/connections.json`. This is the most secure and recommended path. Saved connections are managed via the Web UI.
+2. **Environment variables** -- BDL files can use `${env:VAR_NAME}` to reference a credential held in an env var, or use a bare `username="MY_VAR"` which Bani resolves as an env var if one exists with that name.
+3. **Plaintext in BDL** -- if neither a saved connection nor an env var is found, Bani uses the literal value from the BDL. Useful for ad-hoc migrations and the Web UI's direct password entry, but avoid checking plaintext credentials into version control.
+
+### MCP-specific rules
+
 - The `bani_connections` tool returns connection metadata (host, port, database) but **never** credentials.
-- Connection details can be pre-configured in `~/.bani/connections.json` and referenced by key.
+- Tools that take connection parameters accept either a saved `connection` key (preferred) or individual fields (`host`, `port`, `database`, `username_env`, `password_env`).
+- Any parameter named `password` or `credentials` (passed as plaintext to a tool) is **rejected** with a `SecurityError` -- AI agents must use connection keys or env var references, not raw passwords.
+- BDL content passed to `bani_validate_bdl`, `bani_save_project`, `bani_preview`, and `bani_run` may contain plaintext credentials in connection elements, since BDL is a user document. Resolution follows the order above when the migration runs.
 
 ---
 

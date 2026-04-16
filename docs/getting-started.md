@@ -6,26 +6,58 @@ This guide walks you through installing Bani and running your first database mig
 
 ## Installation
 
-"Docker"
-
-```bash
-docker pull bani/bani:latest
-
-# Verify the installation
-docker run --rm bani/bani:latest version
-```
-
-"Desktop / Server Installers"
+### Desktop / Server Installers (recommended)
 
 Download the installer for your platform from the [releases page](https://github.com/mugumedavid/bani/releases):
 
 | Platform | Format | Install |
 |---|---|---|
 | **macOS** | `.dmg` | Open the DMG, drag Bani to Applications. A menu bar app provides quick access to the Web UI and CLI. |
-| **Windows** | `.exe` | Run the installer and follow the prompts. Bani is added to your PATH automatically. |
+| **Windows** | `.exe` | Run the installer and follow the prompts. A tray icon and desktop shortcut are created automatically. |
 | **Debian / Ubuntu** | `.deb` | `sudo dpkg -i bani-*.deb` |
 | **RHEL / Fedora** | `.rpm` | `sudo rpm -i bani-*.rpm` |
 | **Linux (any)** | `.AppImage` | `chmod +x Bani-*.AppImage && ./Bani-*.AppImage` |
+
+These installers bundle Python, all 5 database drivers, and the Web UI. Nothing else to install.
+
+### Docker
+
+For containerised or CI environments:
+
+```bash
+docker pull banilabs/bani:latest
+
+# Verify the installation
+docker run --rm banilabs/bani:latest version
+
+# Launch the Web UI
+docker run -p 8910:8910 banilabs/bani:latest bani ui --host 0.0.0.0
+```
+
+### pip install (Python developers)
+
+If you already have Python 3.10+ and want to integrate Bani into an existing environment:
+
+```bash
+pip install bani
+```
+
+This gives you the `bani` CLI with all commands:
+
+```bash
+bani ui                  # Launch the Web UI in your browser
+bani run migration.bdl   # Run a migration from a BDL file
+bani mcp serve           # Start the MCP server for AI agents
+bani --help              # See all 11 commands
+```
+
+!!! note "What pip install does NOT include"
+    The native tray/menu bar app (macOS "B" icon, Windows system tray) is only available in the platform installers. With pip, you launch the Web UI manually with `bani ui` each time. The Web UI itself is identical -- it's only the always-running background launcher that differs.
+
+!!! warning "System dependencies for some connectors"
+    PostgreSQL, MySQL, Oracle, and SQLite work out of the box with pip. SQL Server requires additional system libraries (`unixodbc-dev` and FreeTDS on Linux, or `brew install unixodbc freetds` on macOS). The platform installers and Docker image bundle all system dependencies -- use those if you need MSSQL support without manual setup.
+
+---
 
 ## Launching Bani
 
@@ -36,7 +68,8 @@ After installation, Bani runs as a background app with a tray or menu bar icon. 
 | **macOS** | A **"B" icon** appears in the menu bar. Click it to open the Web UI. The server runs in the background -- close the browser and it keeps running. |
 | **Windows** | A **tray icon** appears in the system tray (bottom-right). Right-click to open the Web UI. A "Bani" desktop shortcut is also created. The server runs in the background. |
 | **Linux** | Run `bani ui` from a terminal. The browser opens automatically. |
-| **Docker** | Run `docker run -p 8910:8910 banilabs/bani:latest bani ui --host 0.0.0.0` and open `http://localhost:8910`. |
+| **Docker** | Run `docker run -p 8910:8910 banilabs/bani:latest bani ui --host 0.0.0.0`. The container logs print the auth token and a ready-to-click URL with the token embedded -- copy it from the logs and open it in your browser. |
+| **pip install** | Run `bani ui` from a terminal. The browser opens automatically with the auth token in the URL. |
 
 On macOS and Windows, the experience is the same: install, the tray/menu bar icon appears, the browser opens, and you are ready to build your first migration. No terminal needed.
 

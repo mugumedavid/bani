@@ -4,24 +4,45 @@ Bani provides a multi-arch Docker image with all 5 database drivers pre-installe
 
 ---
 
-## Quick Start
+## Quick Start: Web UI
+
+The simplest way to use Bani in Docker is to launch the Web UI:
 
 ```bash
-# Pull the image
-docker pull bani/bani:latest
+docker run -p 8910:8910 banilabs/bani:latest bani ui --host 0.0.0.0
+```
 
-# Show help
-docker run --rm bani/bani:latest --help
+The container logs will print a ready-to-click URL with the auth token embedded -- copy it from the logs and open it in your browser. From the Web UI you add connections, build migrations, and run them visually. No BDL files or environment variables required.
 
-# Show version
-docker run --rm bani/bani:latest version
+### Persist projects and connections across restarts
+
+Mount a host directory so saved projects and connections survive container restarts:
+
+```bash
+docker run -p 8910:8910 \
+  -v $(pwd)/.bani:/home/bani/.bani \
+  banilabs/bani:latest bani ui --host 0.0.0.0
 ```
 
 ---
 
-## Running a Migration
+## Headless / CI usage
 
-Mount your BDL file and pass database credentials as environment variables:
+For automation, scheduled jobs, or CI pipelines, run a migration directly from a BDL file without the UI.
+
+### With credentials in the BDL file
+
+If your BDL file already includes credentials (e.g. `username="myuser" password="mypass"`), the `docker run` is straightforward:
+
+```bash
+docker run --rm \
+  -v $(pwd)/migration.bdl:/home/bani/migration.bdl:ro \
+  banilabs/bani:latest run /home/bani/migration.bdl
+```
+
+### With credentials in environment variables
+
+If your BDL references env vars (e.g. `username="${env:SRC_DB_USER}"` or `username="SRC_DB_USER"`), pass them via `-e`:
 
 ```bash
 docker run --rm \
@@ -30,27 +51,11 @@ docker run --rm \
   -e SRC_DB_PASS=mypassword \
   -e TGT_DB_USER=pguser \
   -e TGT_DB_PASS=pgpassword \
-  bani/bani:latest \
-  run /home/bani/migration.bdl
+  banilabs/bani:latest run /home/bani/migration.bdl
 ```
 
-!!! tip
-    Use `--network host` if your databases are running on the Docker host machine, or use the appropriate Docker network to reach containerized databases.
-
----
-
-## Running the Web UI
-
-```bash
-docker run --rm -p 8910:8910 \
-  -v $(pwd)/projects:/home/bani/.bani/projects \
-  -e PG_USER=myuser \
-  -e PG_PASS=mypassword \
-  bani/bani:latest \
-  ui --host 0.0.0.0
-```
-
-Open `http://localhost:8910` in your browser.
+!!! tip "Network access"
+    Use `--network host` if your databases run on the Docker host. For containerised databases, attach to the same Docker network.
 
 ---
 
@@ -73,18 +78,17 @@ The container runs as user `bani` with a home directory at `/home/bani`. Mount y
 
 ## Environment Variables
 
-Pass database credentials and configuration via `-e`:
+Bani supports the following environment variables in Docker:
 
 | Variable | Description |
 |---|---|
-| `PG_USER`, `PG_PASS` | PostgreSQL credentials |
-| `MYSQL_USER`, `MYSQL_PASS` | MySQL credentials |
-| `MSSQL_USER`, `MSSQL_PASS` | SQL Server credentials |
-| `ORACLE_USER`, `ORACLE_PASS` | Oracle credentials |
-| `BANI_BATCH_SIZE` | Override default batch size |
-| `BANI_PARALLEL_WORKERS` | Override default parallel workers |
-| `BANI_MEMORY_LIMIT_MB` | Override default memory limit |
-| `BANI_LOG_LEVEL` | Logging level (debug, info, warn, error) |
+| `BANI_AUTH_TOKEN` | Use a fixed Web UI auth token (instead of a random one each restart). |
+| `BANI_LOG_LEVEL` | Logging level (`debug`, `info`, `warn`, `error`). |
+
+For database credentials, you can either:
+
+- **Embed them in the BDL file** -- simplest, no `-e` flags needed
+- **Reference env vars** -- use any names you like in the BDL (`${env:MY_VAR}` or bare `MY_VAR`) and pass them with `-e MY_VAR=value`
 
 ---
 
@@ -100,7 +104,7 @@ docker compose up -d
 
 | Service | Image | Port | Description |
 |---|---|---|---|
-| `bani` | `bani/bani:latest` | `8910` | Bani Web UI |
+| `bani` | `banilabs/bani:latest` | `8910` | Bani Web UI |
 | `postgres` | `postgres:16` | `5433` | PostgreSQL 16 |
 | `mysql` | `mysql:8.4` | `3306` | MySQL 8.4 |
 | `mysql55` | `mysql:5.7` | `3307` | MySQL 5.7 |
@@ -152,6 +156,6 @@ Included system dependencies:
 The image runs as a non-root `bani` user with `PYTHONUNBUFFERED=1` for immediate log output. The default entrypoint is `bani`, so you pass subcommands directly:
 
 ```bash
-docker run --rm bani/bani:latest validate /path/to/file.bdl
-docker run --rm bani/bani:latest schema inspect --connector postgresql ...
+docker run --rm banilabs/bani:latest validate /path/to/file.bdl
+docker run --rm banilabs/bani:latest schema inspect --connector postgresql ...
 ```
