@@ -6,7 +6,7 @@ author: "David Mugume"
 tags: ["mcp", "ai", "claude", "automation"]
 ---
 
-One of Bani's most distinctive features is its built-in MCP (Model Context Protocol) server. MCP is an open standard created by Anthropic that allows AI assistants to interact with external tools and services. Bani's MCP server exposes 10 tools that let AI agents inspect databases, generate migration configurations, validate them, and run migrations — all through natural language conversation.
+One of Bani's most distinctive features is its built-in MCP (Model Context Protocol) server. MCP is an open standard created by Anthropic that allows AI assistants to interact with external tools and services. Bani's MCP server exposes 10 tools that let AI agents inspect databases, generate migration configurations, validate them, and run migrations -- all through natural language conversation.
 
 This post explains what the MCP server does, how to set it up, and what an AI-driven migration workflow looks like in practice.
 
@@ -18,35 +18,33 @@ Think of it as a USB standard for AI tools. Bani implements the MCP server; AI c
 
 ## Bani's 10 MCP tools
 
-Bani's MCP server exposes the following tools:
+### Discovery
+1. **`bani_connections`** -- List all saved database connections by name
+2. **`bani_connectors_list`** -- List available connector engines (postgresql, mysql, etc.)
+3. **`bani_connector_info`** -- Get details about a specific connector's capabilities
 
-### Inspection tools
-1. **`inspect_source`** — Read the schema of the source database (tables, columns, types, indexes)
-2. **`inspect_target`** — Read the schema of the target database
-3. **`compare_schemas`** — Compare source and target schemas, highlighting differences
+### Inspection
+4. **`bani_schema_inspect`** -- Introspect a database schema (tables, columns, indexes, foreign keys)
 
-### Configuration tools
-4. **`generate_bdl`** — Generate a BDL (Bani Definition Language) configuration based on source and target schemas
-5. **`validate_bdl`** — Validate a BDL configuration for correctness and completeness
-6. **`preview_migration`** — Show what a migration would do without executing it
+### Configuration
+5. **`bani_generate_bdl`** -- Generate a BDL migration definition from source and target connections
+6. **`bani_validate_bdl`** -- Validate a BDL document for correctness
+7. **`bani_save_project`** -- Save a BDL project to disk
 
-### Execution tools
-7. **`run_migration`** — Execute a migration
-8. **`get_status`** — Check the status of a running migration
-9. **`list_connectors`** — List available database connectors and their capabilities
-
-### Utility tools
-10. **`connector_info`** — Get detailed information about a specific connector
+### Execution
+8. **`bani_preview`** -- Preview sample data from the source before migrating
+9. **`bani_run`** -- Execute a saved migration project
+10. **`bani_status`** -- Check the checkpoint status of a migration
 
 ## Setting up the MCP server
 
 Setting up Bani's MCP server with Claude Desktop takes about two minutes.
 
-### 1. Install Bani
+### 1. Install Bani and save your database connections
 
-```bash
-pip install bani
-```
+Install Bani using any method (platform installer, Docker, or pip). Then open the Web UI (`bani ui`) and add your database connections on the Connections page. Give each connection a name you will recognise, like "production-mysql" or "staging-pg".
+
+These saved connections are what the MCP server uses -- the AI agent references them by name during conversations.
 
 ### 2. Configure Claude Desktop
 
@@ -61,15 +59,13 @@ Open your Claude Desktop configuration file and add the Bani MCP server:
   "mcpServers": {
     "bani": {
       "command": "bani",
-      "args": ["mcp", "serve"],
-      "env": {
-        "SOURCE_DSN": "postgresql://user:password@localhost:5432/mydb",
-        "TARGET_DSN": "mysql://user:password@localhost:3306/mydb"
-      }
+      "args": ["mcp", "serve"]
     }
   }
 }
 ```
+
+No environment variables or credentials are passed in this config. The MCP server reads connections from the local Bani connections registry (`~/.bani/connections.json`) that you set up via the Web UI.
 
 ### 3. Restart Claude Desktop
 
@@ -79,53 +75,51 @@ After saving the configuration, restart Claude Desktop. You should see Bani's to
 
 With the MCP server configured, you can drive an entire migration through conversation. Here is a typical workflow:
 
-### Step 1: Inspect the source
+### Step 1: Discover connections
 
-You tell the AI agent: *"Inspect my source database and show me the schema."*
+You tell the AI agent: *"What databases do I have configured in Bani?"*
 
-The agent calls `inspect_source`, which reads the database schema and returns a structured representation of all tables, columns, types, indexes, and constraints. The agent then presents this information in a readable format.
+The agent calls `bani_connections`, which returns the names and metadata (host, port, database) of all your saved connections. Credentials are never exposed to the agent.
 
-### Step 2: Inspect the target (optional)
+### Step 2: Inspect a database
 
-If you are migrating to an existing database, you might ask: *"Now inspect the target and compare it to the source."*
+You say: *"Inspect the schema of my production-mysql connection."*
 
-The agent calls `inspect_target` and then `compare_schemas` to identify what already exists in the target, what needs to be created, and what differs between the two schemas.
+The agent calls `bani_schema_inspect` with the connection name. It returns all tables, columns, types, indexes, and foreign keys. The agent presents this in a readable format.
 
-### Step 3: Generate the configuration
+### Step 3: Generate a migration
 
-You tell the agent: *"Generate a migration configuration for all tables."*
+You tell the agent: *"Generate a migration from production-mysql to staging-pg for all tables."*
 
-The agent calls `generate_bdl`, which produces a complete BDL configuration file based on the source and target schemas. The agent shows you the configuration and explains the type mappings it chose.
+The agent calls `bani_generate_bdl`, which produces a complete BDL configuration based on the source and target connection details. The agent shows you the configuration and explains the type mappings it chose.
 
 ### Step 4: Review and refine
 
 You might say: *"Exclude the audit_logs table and rename the users table to app_users in the target."*
 
-The agent modifies the BDL configuration accordingly and calls `validate_bdl` to make sure the changes are valid.
+The agent modifies the BDL accordingly and calls `bani_validate_bdl` to confirm the changes are valid.
 
-### Step 5: Preview
+### Step 5: Save and run
 
-Before running the migration, you ask: *"Show me a preview of what this migration will do."*
+When you are satisfied, you say: *"Save and run the migration."*
 
-The agent calls `preview_migration`, which returns a dry-run summary: how many tables, how many rows estimated, what schema changes will be applied. No data is modified.
+The agent calls `bani_save_project` to save the BDL to disk, then `bani_run` to execute it. If the client supports progress notifications, you see real-time updates on which tables are being migrated, how many rows have been processed, and the estimated time remaining.
 
-### Step 6: Execute
+### Step 6: Check status
 
-When you are satisfied, you say: *"Run the migration."*
+If you come back later, you can ask: *"What is the status of my migration?"*
 
-The agent calls `run_migration` and then periodically calls `get_status` to report progress. You see real-time updates on which tables are being migrated, how many rows have been processed, and the estimated time remaining.
+The agent calls `bani_status` to check the checkpoint and report which tables completed, failed, or are pending.
 
 ## Security model
 
-Bani's MCP server is designed with security in mind:
-
-**Environment variable references only.** Database credentials are passed as environment variables in the Claude Desktop configuration, not in conversation. The AI agent never sees plaintext passwords.
+**Saved connections, not passwords in config.** Database credentials live in Bani's local connections registry, not in the Claude Desktop config file and not in conversation. The AI agent references connections by name and never sees plaintext passwords.
 
 **Local execution.** The MCP server runs on your local machine. No data leaves your network. The AI agent sends tool invocations to the local MCP server, which connects directly to your databases.
 
-**Preview before execute.** The `preview_migration` tool lets you see exactly what will happen before any data is modified. The agent can explain the preview and answer questions before you approve execution.
+**Preview before execute.** The `bani_preview` tool lets you inspect sample data before committing to a full migration. The agent can explain what it sees and answer questions before you approve execution.
 
-**Read-only inspection.** The `inspect_source` and `inspect_target` tools are read-only operations. They read schema metadata only — they do not read or modify data.
+**Read-only inspection.** The `bani_schema_inspect` tool is a read-only operation. It reads schema metadata only -- it does not read or modify data.
 
 ## Beyond Claude Desktop
 
@@ -137,9 +131,9 @@ The MCP protocol is also straightforward to integrate into custom applications. 
 
 To try AI-powered migrations with Bani:
 
-1. Install Bani: `pip install bani`
+1. Install Bani and open the Web UI to save your database connections
 2. Configure the MCP server in your AI client of choice
-3. Start a conversation: *"Inspect my source database"*
+3. Start a conversation: *"What databases do I have in Bani?"*
 
 For the complete MCP setup guide, visit [docs.bani.tools/en/latest/guides/mcp-server/](https://docs.bani.tools/en/latest/guides/mcp-server/).
 
