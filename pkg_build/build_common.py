@@ -103,7 +103,7 @@ def assemble(
     # 2. Install Bani + dependencies
     print("\n=== Installing Bani + dependencies ===")
     wheel_dir = REPO_ROOT / "dist"
-    if not list(wheel_dir.glob("bani-*.whl")):
+    if not list(wheel_dir.glob("*.whl")):
         print("Building wheel first...")
         subprocess.run(
             [sys.executable, "-m", "build", "--wheel", "--outdir", str(wheel_dir)],
@@ -111,7 +111,7 @@ def assemble(
             check=True,
         )
 
-    wheel = next(wheel_dir.glob("bani-*.whl"))
+    wheel = next(wheel_dir.glob("*.whl"))
     subprocess.run(
         [str(python_exe), "-m", "pip", "install", "--no-cache-dir", str(wheel)],
         check=True,
