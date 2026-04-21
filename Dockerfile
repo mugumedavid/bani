@@ -51,8 +51,8 @@ RUN ARCH=$(dpkg --print-architecture) \
     && rm -rf /var/lib/apt/lists/*
 
 # Install Bani from the wheel built in stage 1
-COPY --from=builder /build/dist/bani-*.whl /tmp/
-RUN pip install --no-cache-dir /tmp/bani-*.whl && rm /tmp/bani-*.whl
+COPY --from=builder /build/dist/*.whl /tmp/
+RUN pip install --no-cache-dir /tmp/*.whl && rm /tmp/*.whl
 
 # Rebuild pymssql against FreeTDS 1.4 then remove build tools
 RUN pip install --no-cache-dir --force-reinstall --no-binary=pymssql pymssql \
