@@ -62,23 +62,16 @@ macOS menu bar app, Docker image, Linux packages (.deb, .rpm), and a Windows ins
 
 ## Getting started
 
-Install Bani with pip:
+Download the installer for your platform from the [releases page](https://github.com/mugumedavid/bani/releases), or use Docker:
 
 ```bash
-pip install bani
+docker pull banilabs/bani:latest
 ```
 
-Initialize a new migration project:
+Then launch the Web UI to set up your first migration visually:
 
 ```bash
-bani init my-migration
-cd my-migration
-```
-
-Inspect your source database:
-
-```bash
-bani schema inspect --dsn "postgresql://user:pass@host/db"
+bani ui
 ```
 
 Edit the generated BDL configuration, then run the migration:

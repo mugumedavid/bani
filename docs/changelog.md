@@ -95,7 +95,8 @@ Security model: env var references only, no plaintext credentials accepted.
 - macOS `.dmg` installer
 - Linux `.deb`, `.rpm`, and AppImage
 - Windows `.exe` installer
-- PyPI package (`pip install bani`)
+- Docker multi-arch image (`banilabs/bani`)
+- PyPI package (planned)
 
 ### CI/CD
 
