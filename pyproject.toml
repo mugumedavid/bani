@@ -72,6 +72,9 @@ sqlite = "bani.connectors.sqlite:SQLiteConnector"
 [tool.hatch.build.targets.wheel]
 packages = ["src/bani"]
 
+[tool.hatch.build.targets.wheel.force-include]
+"ui/dist" = "bani/ui/dist"
+
 # --- Ruff (Black-compatible formatting + isort) ---
 [tool.ruff]
 target-version = "py310"
