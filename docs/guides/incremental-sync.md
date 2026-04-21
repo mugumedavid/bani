@@ -1,5 +1,10 @@
 # Incremental Sync
 
+!!! info "Coming Soon"
+    Incremental sync is on the roadmap but not yet available. This page will be updated when the feature is released. Want to help build it? [Contribute on GitHub](https://github.com/mugumedavid/bani).
+
+<!-- HIDDEN_CONTENT_START
+
 Incremental sync (delta synchronisation) transfers only rows that have changed since the last run, rather than copying the entire dataset. This is essential for ongoing replication, data warehouse refreshes, and near-real-time data pipelines.
 
 ---
@@ -235,3 +240,5 @@ When configuring `<options>` for incremental sync, consider these differences fr
   </sync>
 </bani>
 ```
+
+HIDDEN_CONTENT_END -->

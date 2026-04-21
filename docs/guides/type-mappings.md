@@ -1,5 +1,10 @@
 # Type Mappings
 
+!!! info "Coming Soon"
+    User-configurable type mapping overrides are on the roadmap. This page will be updated when the feature is released. Want to help build it? [Contribute on GitHub](https://github.com/mugumedavid/bani).
+
+<!-- HIDDEN_CONTENT_START
+
 Bani uses Apache Arrow as a **canonical type intermediate** between source and target databases. This gives N type mappers (one per connector) instead of N*N cross-database translation tables.
 
 ---
@@ -264,3 +269,5 @@ SQLite uses a type affinity system with only 5 storage classes: NULL, INTEGER, R
 - **VARCHAR length loss:** `VARCHAR(255)` maps to Arrow `string`, then to `TEXT` (PostgreSQL/MySQL) or `NVARCHAR(MAX)` (MSSQL). The MSSQL connector recovers the length from the source `data_type` when it is <= 4000 characters.
 - **Oracle DATE includes time:** Oracle's `DATE` type stores both date and time, so it maps to `timestamp[us]`, not `date32`.
 - **SQLite dates as TEXT:** SQLite stores dates as ISO 8601 text strings. The type mapper handles coercion during reads.
+
+HIDDEN_CONTENT_END -->

@@ -1,5 +1,10 @@
 # Error Handling
 
+!!! info "Coming Soon"
+    Advanced error handling features (quarantine, structured context, and detailed resumability) are on the roadmap. This page will be updated when the feature is released. Want to help build it? [Contribute on GitHub](https://github.com/mugumedavid/bani).
+
+<!-- HIDDEN_CONTENT_START
+
 Bani uses a structured exception hierarchy so that callers can programmatically inspect failures without parsing message strings. Every exception carries a `context` dict with structured metadata.
 
 ---
@@ -219,3 +224,5 @@ During migration, errors at the table level (create table, write batch, create i
 - If `create_indexes` or `create_foreign_keys` fails for a specific index or FK, that constraint is skipped and the migration continues.
 
 This per-FK and per-index error handling is especially important for cross-dialect migrations where FK types, cascade rules, or index expressions may not translate perfectly.
+
+HIDDEN_CONTENT_END -->
