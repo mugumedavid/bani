@@ -6,12 +6,10 @@ The Bani Python SDK lets you build, validate, and execute migrations programmati
 
 ## Installation
 
-The SDK is included with all Bani installations (platform installers, Docker, and development installs). For development, install from source:
+The SDK is included with all Bani installations. The quickest way to get it:
 
 ```bash
-git clone https://github.com/mugumedavid/bani.git
-cd bani
-pip install -e .
+pip install bani-tools
 ```
 
 ---

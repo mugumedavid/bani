@@ -24,9 +24,14 @@ Bani migrates schema, data, and indexes across relational databases using Apache
 
 ### Install
 
-Download the installer for your platform from the [releases page](https://github.com/mugumedavid/bani/releases) (macOS `.dmg`, Windows `.exe`, Linux `.deb`/`.rpm`/AppImage), or use Docker:
+Download the installer for your platform from the [releases page](https://github.com/mugumedavid/bani/releases) (macOS `.dmg`, Windows `.exe`, Linux `.deb`/`.rpm`/AppImage), or:
 
 ```bash
+# pip (Python 3.11+)
+pip install bani-tools
+bani ui   # opens the Web UI in your browser
+
+# Docker
 docker pull banilabs/bani:latest
 ```
 
