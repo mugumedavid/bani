@@ -195,18 +195,20 @@ class BaniUIServer:
         ]
         dist_dir = next((d for d in candidates if d.is_dir()), None)
 
-        if dist_dir is not None:
+        if dist_dir is not None and (dist_dir / "index.html").exists():
             from fastapi.responses import FileResponse
             from fastapi.staticfiles import StaticFiles
 
             index_html = dist_dir / "index.html"
 
             # Serve static assets (JS, CSS, images) from dist/assets/
-            app.mount(
-                "/assets",
-                StaticFiles(directory=str(dist_dir / "assets")),
-                name="assets",
-            )
+            assets_dir = dist_dir / "assets"
+            if assets_dir.is_dir():
+                app.mount(
+                    "/assets",
+                    StaticFiles(directory=str(assets_dir)),
+                    name="assets",
+                )
 
             # Catch-all: serve index.html for any non-API path so that
             # React Router handles client-side routing on refresh.
