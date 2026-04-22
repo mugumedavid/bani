@@ -1,12 +1,22 @@
 # Bani — Database Migration Engine
 # Multi-stage build for minimal image size.
 
-# ── Stage 1: Build wheel ─────────────────────────────────────────────
+# ── Stage 1: Build UI + wheel ────────────────────────────────────────
+FROM node:20-slim AS ui-builder
+
+WORKDIR /ui
+COPY ui/package.json ui/package-lock.json ./
+RUN npm ci
+COPY ui/ .
+RUN npm run build
+
+# ── Stage 2: Build Python wheel ─────────────────────────────────────
 FROM python:3.12-slim AS builder
 
 WORKDIR /build
 COPY pyproject.toml README.md ./
 COPY src/ src/
+COPY --from=ui-builder /ui/dist ui/dist/
 
 RUN pip install --no-cache-dir build \
     && python -m build --wheel --outdir /build/dist
@@ -60,8 +70,9 @@ RUN pip install --no-cache-dir --force-reinstall --no-binary=pymssql pymssql \
     && apt-get autoremove -y \
     && rm -rf /var/lib/apt/lists/*
 
-# Copy pre-built React UI into the package directory
-COPY ui/dist/ /usr/local/lib/python3.12/site-packages/bani/ui/dist/
+# Copy pre-built React UI into the package directory (belt-and-suspenders;
+# the wheel already includes it, but this ensures it's always present)
+COPY --from=ui-builder /ui/dist /usr/local/lib/python3.12/site-packages/bani/ui/dist/
 
 # Non-root user for security
 RUN useradd --create-home bani
